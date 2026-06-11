@@ -155,4 +155,37 @@ export class CorsairCalendarService implements CalendarService {
     }
     return mapped;
   }
+
+  async cancelEvent(tenantId: string, eventId: string) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") {
+      throw new Error("Google Calendar is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.googlecalendar.api.events.update({
+      calendarId: "primary",
+      id: eventId,
+      sendUpdates: "all",
+      event: { status: "cancelled" },
+    });
+
+    return { success: true as const };
+  }
+
+  async deleteEvent(tenantId: string, eventId: string) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") {
+      throw new Error("Google Calendar is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.googlecalendar.api.events.delete({
+      calendarId: "primary",
+      id: eventId,
+      sendUpdates: "all",
+    });
+
+    return { success: true as const };
+  }
 }

@@ -38,6 +38,8 @@ export interface CalendarService {
       attendeeEmails?: string[];
     },
   ): Promise<CalendarEvent>;
+  cancelEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
+  deleteEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
 }
 
 let calendarService: CalendarService | null = null;

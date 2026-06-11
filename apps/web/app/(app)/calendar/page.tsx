@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Archive,
   Calendar as CalIcon,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   ListChecks,
   Loader2,
   Plus,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -49,6 +52,28 @@ function formatEventTime(value?: string) {
   return parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+function formatEventWhen(start?: string, end?: string) {
+  if (!start) return "";
+  const startLabel = formatEventTime(start);
+  const endLabel = end ? formatEventTime(end) : "";
+  if (start.length === 10) return "All day";
+  const day = new Date(start).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return endLabel ? `${day} · ${startLabel} – ${endLabel}` : `${day} · ${startLabel}`;
+}
+
+type CalendarEventItem = {
+  id: string;
+  summary: string;
+  start?: string;
+  end?: string;
+  htmlLink?: string;
+  status?: string;
+};
+
 export default function CalendarPage() {
   const searchParams = useSearchParams();
   const utils = trpc.useUtils();
@@ -60,6 +85,7 @@ export default function CalendarPage() {
   const [endAt, setEndAt] = useState(() =>
     toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
   );
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const timeMin = week[0]!.toISOString();
@@ -87,6 +113,28 @@ export default function CalendarPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const refreshEvents = async () => {
+    await utils.calendar.listEvents.invalidate({ timeMin, timeMax, maxResults: 100 });
+  };
+
+  const cancelEvent = trpc.calendar.cancelEvent.useMutation({
+    onSuccess: async () => {
+      await refreshEvents();
+      setSelectedEvent(null);
+      toast.success("Event cancelled — guests notified on Google Calendar");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteEvent = trpc.calendar.deleteEvent.useMutation({
+    onSuccess: async () => {
+      await refreshEvents();
+      setSelectedEvent(null);
+      toast.success("Event deleted from Google Calendar");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const banner = useMemo(() => {
     if (searchParams.get("calendar") === "connected") {
       return { type: "success" as const, text: "Google Calendar connected successfully." };
@@ -103,17 +151,20 @@ export default function CalendarPage() {
   }, [searchParams, utils]);
 
   const eventsByDay = useMemo(() => {
-    const map = new Map<string, Array<{ id: string; summary: string; start?: string }>>();
+    const map = new Map<string, CalendarEventItem[]>();
     for (const day of week) {
       map.set(localDayKey(day), []);
     }
     for (const event of eventsQuery.data?.events ?? []) {
+      if (event.status === "cancelled") continue;
       const key = eventDayKey(event.start);
       if (!key || !map.has(key)) continue;
       map.get(key)!.push(event);
     }
     return map;
   }, [eventsQuery.data?.events, week]);
+
+  const eventBusy = cancelEvent.isPending || deleteEvent.isPending;
 
   return (
     <div>
@@ -211,10 +262,16 @@ export default function CalendarPage() {
                     <div className="thread-cal-empty-note">No events</div>
                   ) : (
                     dayEvents.map((event) => (
-                      <div key={event.id} className="thread-cal-event">
+                      <button
+                        key={event.id}
+                        type="button"
+                        className="thread-cal-event"
+                        data-selected={selectedEvent?.id === event.id}
+                        onClick={() => setSelectedEvent(event)}
+                      >
                         <span className="thread-cal-event-time">{formatEventTime(event.start)}</span>
                         <span className="thread-cal-event-title">{event.summary}</span>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -315,6 +372,66 @@ export default function CalendarPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {selectedEvent ? (
+        <div className="thread-modal-backdrop" onClick={() => !eventBusy && setSelectedEvent(null)}>
+          <div className="thread-modal thread-cal-event-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="thread-modal-head">
+              <h3>{selectedEvent.summary}</h3>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                disabled={eventBusy}
+                onClick={() => setSelectedEvent(null)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="thread-cal-event-detail">
+              <p className="thread-cal-event-when">{formatEventWhen(selectedEvent.start, selectedEvent.end)}</p>
+              <p className="thread-cal-event-detail-copy">
+                Cancel notifies guests and removes this from your schedule. Delete permanently removes it from
+                Google Calendar.
+              </p>
+              {selectedEvent.htmlLink ? (
+                <a
+                  href={selectedEvent.htmlLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="thread-cal-event-open"
+                >
+                  <ExternalLink size={13} />
+                  Open in Google Calendar
+                </a>
+              ) : null}
+            </div>
+            <div className="thread-modal-actions">
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                disabled={eventBusy}
+                onClick={() => cancelEvent.mutate({ eventId: selectedEvent.id })}
+              >
+                <Archive size={14} />
+                {cancelEvent.isPending ? "Cancelling…" : "Cancel event"}
+              </button>
+              <button
+                type="button"
+                className="thread-btn-ghost thread-cal-event-delete"
+                disabled={eventBusy}
+                onClick={() => {
+                  if (window.confirm(`Delete "${selectedEvent.summary}" permanently?`)) {
+                    deleteEvent.mutate({ eventId: selectedEvent.id });
+                  }
+                }}
+              >
+                <Trash2 size={14} />
+                {deleteEvent.isPending ? "Deleting…" : "Delete"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

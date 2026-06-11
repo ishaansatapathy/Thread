@@ -77,4 +77,22 @@ export const calendarRouter = router({
       const calendar = getCalendarService();
       return calendar.createEvent(ctx.user.id, input);
     }),
+
+  cancelEvent: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/events/{eventId}/cancel"), tags: TAGS } })
+    .input(z.object({ eventId: z.string().min(1) }))
+    .output(z.object({ success: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      const calendar = getCalendarService();
+      return calendar.cancelEvent(ctx.user.id, input.eventId);
+    }),
+
+  deleteEvent: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/events/{eventId}"), tags: TAGS } })
+    .input(z.object({ eventId: z.string().min(1) }))
+    .output(z.object({ success: z.literal(true) }))
+    .mutation(async ({ ctx, input }) => {
+      const calendar = getCalendarService();
+      return calendar.deleteEvent(ctx.user.id, input.eventId);
+    }),
 });

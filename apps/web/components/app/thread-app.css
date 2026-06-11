@@ -927,10 +927,22 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 100%;
+  text-align: left;
   padding: 8px;
   border-radius: 8px;
   border: 1px solid rgba(59, 130, 246, 0.25);
   background: rgba(30, 58, 138, 0.35);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.thread-cal-event:hover,
+.thread-cal-event[data-selected="true"] {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.42);
 }
 
 .thread-cal-event-time {
@@ -945,6 +957,55 @@
   font-size: 12px;
   line-height: 1.4;
   color: var(--thread-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-cal-event-modal .thread-modal-actions {
+  margin-top: 0;
+}
+
+.thread-cal-event-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-cal-event-when {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--thread-text);
+}
+
+.thread-cal-event-detail-copy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--thread-dim);
+}
+
+.thread-cal-event-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--thread-accent-bright);
+  text-decoration: none;
+}
+
+.thread-cal-event-open:hover {
+  text-decoration: underline;
+}
+
+.thread-cal-event-delete {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.thread-cal-event-delete:hover:not(:disabled) {
+  background: rgba(127, 29, 29, 0.25);
 }
 
 .thread-inbox-compose {
