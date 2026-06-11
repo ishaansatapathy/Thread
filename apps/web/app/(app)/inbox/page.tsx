@@ -17,6 +17,7 @@ export default function InboxPage() {
   const [tab, setTab] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const utils = trpc.useUtils();
   const statusQuery = trpc.inbox.connectionStatus.useQuery({});
   const threadsQuery = trpc.inbox.listThreads.useQuery(
     { maxResults: 25 },
@@ -44,6 +45,12 @@ export default function InboxPage() {
       setSelectedId(threads[0]?.id ?? null);
     }
   }, [threads, selectedId]);
+
+  useEffect(() => {
+    if (searchParams.get("gmail") === "connected") {
+      void utils.inbox.connectionStatus.invalidate();
+    }
+  }, [searchParams, utils]);
 
   const connectHref = `/api-connect/gmail?state=${encodeURIComponent("/inbox")}`;
 

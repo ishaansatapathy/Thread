@@ -10,7 +10,6 @@ import {
   Bot,
   Settings,
   Search,
-  Mail,
   LogOut,
   ChevronsUpDown,
   PanelsTopLeft,
@@ -19,6 +18,7 @@ import {
 import { trpc } from "~/trpc/client";
 import { ThreadWordmark } from "~/components/thread/thread-logo";
 import { ThreadCommand } from "./thread-command";
+import { ThreadGmailConnect, ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 
 const NAV = [
@@ -126,10 +126,7 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
                 <Settings size={14} />
                 Settings
               </Link>
-              <a href="/api-auth/google?state=/inbox" className="thread-app-menu-item">
-                <Mail size={14} />
-                Connect Gmail
-              </a>
+              <ThreadGmailConnectMenuItem onNavigate={() => setMenuOpen(false)} />
               <div className="thread-app-menu-sep" />
               <button
                 type="button"
@@ -177,9 +174,7 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
             </span>
           </button>
 
-          <a href="/api-auth/google?state=/inbox" className="thread-btn-accent">
-            Connect Gmail
-          </a>
+          <ThreadGmailConnect />
         </header>
 
         <main className="thread-app-content">{children}</main>
