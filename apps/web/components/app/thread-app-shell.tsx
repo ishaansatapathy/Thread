@@ -19,6 +19,7 @@ import { trpc } from "~/trpc/client";
 import { ThreadWordmark } from "~/components/thread/thread-logo";
 import { ThreadCommand } from "./thread-command";
 import { ThreadGmailConnect, ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
+import { ThreadCalendarConnect } from "./thread-calendar-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 
 const NAV = [
@@ -174,7 +175,10 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
             </span>
           </button>
 
-          <ThreadGmailConnect />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <ThreadCalendarConnect />
+            <ThreadGmailConnect />
+          </div>
         </header>
 
         <main className="thread-app-content">{children}</main>

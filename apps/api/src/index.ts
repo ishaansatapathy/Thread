@@ -64,6 +64,16 @@ async function bootstrap() {
   }
 
   try {
+    const { registerCalendarService } = await import("@repo/services/calendar");
+    const { CorsairCalendarService } = await import("./services/calendar");
+    registerCalendarService(new CorsairCalendarService());
+  } catch (err) {
+    logger.warn("Calendar service registration failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
     const { bootstrapCorsair } = await import("./corsair-bootstrap");
     await bootstrapCorsair();
   } catch (err) {

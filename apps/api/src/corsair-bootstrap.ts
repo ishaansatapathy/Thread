@@ -1,8 +1,14 @@
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
 
-import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "./corsair";
+import {
+  getCorsair,
+  getCorsairCalendarRedirectUri,
+  getCorsairGmailRedirectUri,
+  isCorsairConfigured,
+} from "./corsair";
 import { getCorsairSetupModule } from "./corsair-imports";
+
 export async function bootstrapCorsair() {
   if (!isCorsairConfigured()) {
     logger.warn("Corsair skipped — CORSAIR_KEK is not set");
@@ -11,7 +17,7 @@ export async function bootstrapCorsair() {
 
   const google = getGoogleOAuthConfig();
   if (!google.clientId || !google.clientSecret) {
-    logger.warn("Corsair Gmail skipped — GOOGLE_OAUTH_CLIENT_ID/SECRET not configured");
+    logger.warn("Corsair skipped — GOOGLE_OAUTH_CLIENT_ID/SECRET not configured");
     return;
   }
 
@@ -25,6 +31,11 @@ export async function bootstrapCorsair() {
           client_id: google.clientId,
           client_secret: google.clientSecret,
           redirect_url: getCorsairGmailRedirectUri(),
+        },
+        googlecalendar: {
+          client_id: google.clientId,
+          client_secret: google.clientSecret,
+          redirect_url: getCorsairCalendarRedirectUri(),
         },
       },
     });

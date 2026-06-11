@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Inbox, Mail, Sparkles, Filter, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Inbox, Mail, Sparkles, Filter, Loader2, Send, FilePenLine } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 
@@ -12,10 +13,26 @@ const TABS = [
   { id: "drafts", label: "Drafts" },
 ];
 
+function parseReplyTo(from?: string) {
+  if (!from) return "";
+  const bracket = from.match(/<([^>]+)>/);
+  if (bracket?.[1]) return bracket[1];
+  const plain = from.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
+  return plain?.[0] ?? from;
+}
+
+function replySubject(subject?: string) {
+  const trimmed = subject?.trim() || "No subject";
+  return trimmed.toLowerCase().startsWith("re:") ? trimmed : `Re: ${trimmed}`;
+}
+
 export default function InboxPage() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState("");
+  const [replySubjectValue, setReplySubjectValue] = useState("");
+  const [replyBody, setReplyBody] = useState("");
 
   const utils = trpc.useUtils();
   const statusQuery = trpc.inbox.connectionStatus.useQuery({});
@@ -27,6 +44,21 @@ export default function InboxPage() {
     { threadId: selectedId ?? "" },
     { enabled: Boolean(selectedId) && statusQuery.data?.gmail === "connected" },
   );
+
+  const sendMessage = trpc.inbox.sendMessage.useMutation({
+    onSuccess: async () => {
+      await utils.inbox.listThreads.invalidate();
+      if (selectedId) await utils.inbox.getThread.invalidate({ threadId: selectedId });
+      toast.success("Email sent");
+      setReplyBody("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const createDraft = trpc.inbox.createDraft.useMutation({
+    onSuccess: () => toast.success("Draft saved in Gmail"),
+    onError: (error) => toast.error(error.message),
+  });
 
   const gmailStatus = statusQuery.data?.gmail ?? "not_configured";
   const isConnected = gmailStatus === "connected";
@@ -51,6 +83,12 @@ export default function InboxPage() {
       void utils.inbox.connectionStatus.invalidate();
     }
   }, [searchParams, utils]);
+
+  useEffect(() => {
+    if (!selectedQuery.data) return;
+    setReplyTo(parseReplyTo(selectedQuery.data.from));
+    setReplySubjectValue(replySubject(selectedQuery.data.subject));
+  }, [selectedQuery.data]);
 
   const connectHref = `/api-connect/gmail?state=${encodeURIComponent("/inbox")}`;
 
@@ -186,7 +224,79 @@ export default function InboxPage() {
                 <p className="thread-inbox-message-meta">{selectedQuery.data.date}</p>
               ) : null}
             </div>
-            <p className="thread-inbox-message-body">{selectedQuery.data.snippet}</p>
+            <p className="thread-inbox-message-body">
+              {selectedQuery.data.body?.trim() || selectedQuery.data.snippet}
+            </p>
+
+            <div className="thread-inbox-compose">
+              <div className="thread-inbox-compose-head">
+                <h3>Reply</h3>
+                <span className="thread-mono-tag">Gmail via Corsair</span>
+              </div>
+              <label className="thread-set-label" htmlFor="reply-to">
+                To
+              </label>
+              <input
+                id="reply-to"
+                className="thread-set-input"
+                value={replyTo}
+                onChange={(event) => setReplyTo(event.target.value)}
+              />
+              <label className="thread-set-label" htmlFor="reply-subject">
+                Subject
+              </label>
+              <input
+                id="reply-subject"
+                className="thread-set-input"
+                value={replySubjectValue}
+                onChange={(event) => setReplySubjectValue(event.target.value)}
+              />
+              <label className="thread-set-label" htmlFor="reply-body">
+                Message
+              </label>
+              <textarea
+                id="reply-body"
+                className="thread-set-input thread-inbox-compose-body"
+                rows={8}
+                value={replyBody}
+                onChange={(event) => setReplyBody(event.target.value)}
+                placeholder="Write your reply…"
+              />
+              <div className="thread-inbox-compose-actions">
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  disabled={createDraft.isPending || !replyBody.trim()}
+                  onClick={() =>
+                    createDraft.mutate({
+                      to: replyTo,
+                      subject: replySubjectValue,
+                      body: replyBody,
+                      threadId: selectedQuery.data?.id,
+                    })
+                  }
+                >
+                  <FilePenLine size={14} />
+                  {createDraft.isPending ? "Saving…" : "Save draft"}
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-accent"
+                  disabled={sendMessage.isPending || !replyBody.trim() || !replyTo.trim()}
+                  onClick={() =>
+                    sendMessage.mutate({
+                      to: replyTo,
+                      subject: replySubjectValue,
+                      body: replyBody,
+                      threadId: selectedQuery.data?.id,
+                    })
+                  }
+                >
+                  <Send size={14} />
+                  {sendMessage.isPending ? "Sending…" : "Send"}
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="thread-app-empty">

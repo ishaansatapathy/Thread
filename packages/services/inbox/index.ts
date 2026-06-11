@@ -16,6 +16,8 @@ export type InboxThread = {
   from?: string;
   to?: string;
   date?: string;
+  body?: string;
+  messageId?: string;
 };
 
 export interface InboxService {
@@ -26,6 +28,14 @@ export interface InboxService {
     opts?: { maxResults?: number; pageToken?: string },
   ): Promise<{ threads: InboxThread[]; nextPageToken?: string }>;
   getThread(tenantId: string, threadId: string): Promise<InboxThread | null>;
+  sendMessage(
+    tenantId: string,
+    input: { to: string; subject: string; body: string; threadId?: string },
+  ): Promise<{ id?: string; threadId?: string }>;
+  createDraft(
+    tenantId: string,
+    input: { to: string; subject: string; body: string; threadId?: string },
+  ): Promise<{ id?: string }>;
 }
 
 let inboxService: InboxService | null = null;

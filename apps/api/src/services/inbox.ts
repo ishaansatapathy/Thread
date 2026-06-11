@@ -4,15 +4,12 @@ import type { InboxConnectionStatus, InboxService, InboxThread } from "@repo/ser
 
 import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
-
-async function ensureTenant(tenantId: string) {
-  const corsair = getCorsair();
-  try {
-    await corsair.manage.tenants.get(tenantId);
-  } catch {
-    await corsair.manage.tenants.create({ id: tenantId });
-  }
-}
+import {
+  buildRawEmail,
+  extractPlainBody,
+  parseEmailAddress,
+} from "../utils/gmail-message";
+import { ensureCorsairTenant } from "./corsair-tenant";
 
 export class CorsairInboxService implements InboxService {
   isConfigured() {
@@ -27,7 +24,7 @@ export class CorsairInboxService implements InboxService {
     }
 
     try {
-      await ensureTenant(tenantId);
+      await ensureCorsairTenant(tenantId);
       const corsair = getCorsair();
       const status = await corsair.manage.connectionStatus.get({ tenantId });
       return { gmail: status.gmail ?? "not_connected" };
@@ -45,7 +42,7 @@ export class CorsairInboxService implements InboxService {
       throw new Error("Gmail integration is not configured on the server");
     }
 
-    await ensureTenant(tenantId);
+    await ensureCorsairTenant(tenantId);
     const corsair = getCorsair();
     const redirectUri = getCorsairGmailRedirectUri();
     const { generateOAuthUrl } = getCorsairOAuthModule();
@@ -109,15 +106,17 @@ export class CorsairInboxService implements InboxService {
     const corsair = getCorsair().withTenant(tenantId);
     const thread = await corsair.gmail.api.threads.get({
       id: threadId,
-      format: "metadata",
-      metadataHeaders: ["From", "To", "Subject", "Date"],
+      format: "full",
     });
 
     if (!thread.id) return null;
 
-    const headers = thread.messages?.[0]?.payload?.headers ?? [];
+    const message = thread.messages?.[thread.messages.length - 1];
+    const headers = message?.payload?.headers ?? [];
     const header = (name: string) =>
       headers.find((entry: { name?: string; value?: string }) => entry.name?.toLowerCase() === name.toLowerCase())?.value;
+
+    const body = extractPlainBody(message?.payload) || thread.snippet || "";
 
     return {
       id: thread.id,
@@ -127,6 +126,50 @@ export class CorsairInboxService implements InboxService {
       from: header("From"),
       to: header("To"),
       date: header("Date"),
+      body,
+      messageId: message?.id,
     };
+  }
+
+  async sendMessage(
+    tenantId: string,
+    input: { to: string; subject: string; body: string; threadId?: string },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const raw = buildRawEmail(input);
+    const result = await corsair.gmail.api.messages.send({
+      raw,
+      threadId: input.threadId,
+    });
+
+    return { id: result.id, threadId: result.threadId ?? input.threadId };
+  }
+
+  async createDraft(
+    tenantId: string,
+    input: { to: string; subject: string; body: string; threadId?: string },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const raw = buildRawEmail(input);
+    const result = await corsair.gmail.api.drafts.create({
+      draft: {
+        message: {
+          raw,
+          threadId: input.threadId,
+        },
+      },
+    });
+
+    return { id: result.id };
   }
 }

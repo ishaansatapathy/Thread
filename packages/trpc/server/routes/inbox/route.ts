@@ -16,10 +16,19 @@ const inboxThreadSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   date: z.string().optional(),
+  body: z.string().optional(),
+  messageId: z.string().optional(),
 });
 
 const connectionStatusSchema = z.object({
   gmail: z.enum(["connected", "missing_credentials", "not_connected", "not_configured"]),
+});
+
+const composeInputSchema = z.object({
+  to: z.string().min(3).max(320),
+  subject: z.string().min(1).max(998),
+  body: z.string().min(1).max(100_000),
+  threadId: z.string().optional(),
 });
 
 export const inboxRouter = router({
@@ -58,5 +67,32 @@ export const inboxRouter = router({
     .query(async ({ ctx, input }) => {
       const inbox = getInboxService();
       return inbox.getThread(ctx.user.id, input.threadId);
+    }),
+
+  sendMessage: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/send"), tags: TAGS } })
+    .input(composeInputSchema)
+    .output(
+      z.object({
+        id: z.string().optional(),
+        threadId: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.sendMessage(ctx.user.id, input);
+    }),
+
+  createDraft: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/drafts"), tags: TAGS } })
+    .input(composeInputSchema)
+    .output(
+      z.object({
+        id: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.createDraft(ctx.user.id, input);
     }),
 });
