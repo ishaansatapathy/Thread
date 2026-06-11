@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dev
+      JWT_SECRET: ci-test-jwt-secret-min-16-chars
+      JWT_REFRESH_SECRET: ci-test-refresh-secret-min-16
+      CLIENT_URL: http://localhost:3000
+      BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: /trpc
+      API_INTERNAL_URL: http://localhost:8000
+      SEED_USER_EMAIL: demo@thread.dev
+      SEED_DEMO_PASSWORD: DemoPass123!
+      CI: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm db:migrate
+
+      - run: pnpm db:seed
+
+      - run: pnpm check-types
+
+      - run: pnpm lint
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: API readiness gate
+        run: |
+          pnpm --filter @repo/api start &
+          API_PID=$!
+          trap "kill $API_PID" EXIT
+
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:8000/ready
+          curl -fsS http://127.0.0.1:8000/openapi.json >/dev/null
