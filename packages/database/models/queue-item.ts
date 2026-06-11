@@ -8,6 +8,7 @@ export const queueItemKindEnum = [
   "email_draft",
   "calendar_invite",
   "meeting_bundle",
+  "calendar_archive",
 ] as const;
 export type QueueItemKind = (typeof queueItemKindEnum)[number];
 
@@ -34,7 +35,7 @@ export const threadQueueItemsTable = pgTable(
   (table) => ({
     kindCheck: check(
       "thread_queue_items_kind_check",
-      sql`${table.kind} in ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle')`,
+      sql`${table.kind} in ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive')`,
     ),
     statusCheck: check(
       "thread_queue_items_status_check",

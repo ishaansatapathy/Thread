@@ -1,4 +1,9 @@
-export type QueueItemKind = "email_send" | "email_draft" | "calendar_invite" | "meeting_bundle";
+export type QueueItemKind =
+  | "email_send"
+  | "email_draft"
+  | "calendar_invite"
+  | "meeting_bundle"
+  | "calendar_archive";
 
 export type QueueItemStatus = "pending" | "approved" | "dismissed" | "failed";
 
@@ -22,6 +27,15 @@ export type CalendarQueuePayload = {
 export type MeetingBundlePayload = {
   email: EmailQueuePayload;
   calendar: CalendarQueuePayload;
+};
+
+export type CalendarArchivePayload = {
+  eventId: string;
+  summary: string;
+  startDateTime: string;
+  endDateTime: string;
+  timeZone?: string;
+  htmlLink?: string;
 };
 
 export type QueueItem = {
@@ -66,7 +80,21 @@ export interface QueueService {
       sourceThreadId?: string;
     },
   ): Promise<QueueItem>;
-  approve(userId: string, itemId: string): Promise<QueueItem>;
+  enqueueCalendarArchive(
+    userId: string,
+    input: {
+      archive: CalendarArchivePayload;
+      title?: string;
+      preview?: string;
+    },
+  ): Promise<QueueItem>;
+  approve(
+    userId: string,
+    itemId: string,
+    opts?: {
+      archive?: { startDateTime: string; endDateTime: string; timeZone?: string };
+    },
+  ): Promise<QueueItem>;
   dismiss(userId: string, itemId: string): Promise<QueueItem>;
 }
 

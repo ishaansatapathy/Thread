@@ -40,6 +40,11 @@ export interface CalendarService {
   ): Promise<CalendarEvent>;
   cancelEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
   deleteEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
+  updateEventTimes(
+    tenantId: string,
+    eventId: string,
+    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+  ): Promise<CalendarEvent>;
 }
 
 let calendarService: CalendarService | null = null;

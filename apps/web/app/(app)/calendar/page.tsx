@@ -19,6 +19,7 @@ import {
 import { trpc } from "~/trpc/client";
 import {
   eventDayKey,
+  eventToArchivePayload,
   localDateTimeInputToPayload,
   localDayKey,
   toLocalDateTimeInput,
@@ -86,6 +87,7 @@ export default function CalendarPage() {
     toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
   );
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const timeMin = week[0]!.toISOString();
@@ -117,11 +119,11 @@ export default function CalendarPage() {
     await utils.calendar.listEvents.invalidate({ timeMin, timeMax, maxResults: 100 });
   };
 
-  const cancelEvent = trpc.calendar.cancelEvent.useMutation({
+  const queueArchive = trpc.queue.enqueueCalendarArchive.useMutation({
     onSuccess: async () => {
-      await refreshEvents();
+      await utils.queue.pendingCount.invalidate();
       setSelectedEvent(null);
-      toast.success("Event cancelled — guests notified on Google Calendar");
+      toast.success("Archive request queued — approve from Queue");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -130,6 +132,7 @@ export default function CalendarPage() {
     onSuccess: async () => {
       await refreshEvents();
       setSelectedEvent(null);
+      setShowDeleteConfirm(false);
       toast.success("Event deleted from Google Calendar");
     },
     onError: (error) => toast.error(error.message),
@@ -164,7 +167,7 @@ export default function CalendarPage() {
     return map;
   }, [eventsQuery.data?.events, week]);
 
-  const eventBusy = cancelEvent.isPending || deleteEvent.isPending;
+  const eventBusy = queueArchive.isPending || deleteEvent.isPending;
 
   return (
     <div>
@@ -393,7 +396,7 @@ export default function CalendarPage() {
             <div className="thread-cal-event-detail">
               <p className="thread-cal-event-when">{formatEventWhen(selectedEvent.start, selectedEvent.end)}</p>
               <p className="thread-cal-event-detail-copy">
-                Cancel notifies guests and removes this from your schedule. Delete permanently removes it from
+                Archive sends a request to the approval queue. Delete removes the event immediately from
                 Google Calendar.
               </p>
               {selectedEvent.htmlLink ? (
@@ -413,23 +416,73 @@ export default function CalendarPage() {
                 type="button"
                 className="thread-btn-ghost"
                 disabled={eventBusy}
-                onClick={() => cancelEvent.mutate({ eventId: selectedEvent.id })}
+                onClick={() =>
+                  queueArchive.mutate({
+                    archive: eventToArchivePayload(selectedEvent),
+                    title: `Archive: ${selectedEvent.summary}`,
+                  })
+                }
               >
                 <Archive size={14} />
-                {cancelEvent.isPending ? "Cancelling…" : "Cancel event"}
+                {queueArchive.isPending ? "Queuing…" : "Archive request"}
               </button>
               <button
                 type="button"
                 className="thread-btn-ghost thread-cal-event-delete"
                 disabled={eventBusy}
-                onClick={() => {
-                  if (window.confirm(`Delete "${selectedEvent.summary}" permanently?`)) {
-                    deleteEvent.mutate({ eventId: selectedEvent.id });
-                  }
-                }}
+                onClick={() => setShowDeleteConfirm(true)}
               >
                 <Trash2 size={14} />
-                {deleteEvent.isPending ? "Deleting…" : "Delete"}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDeleteConfirm && selectedEvent ? (
+        <div
+          className="thread-modal-backdrop thread-modal-backdrop--confirm"
+          onClick={() => !deleteEvent.isPending && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="thread-modal thread-cal-delete-modal thread-cal-confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="thread-modal-head">
+              <h3>Delete event?</h3>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                disabled={deleteEvent.isPending}
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="thread-cal-event-detail">
+              <p className="thread-cal-confirm-title">{selectedEvent.summary}</p>
+              <p className="thread-cal-event-detail-copy">
+                This permanently removes the event from Google Calendar. This cannot be undone.
+              </p>
+            </div>
+            <div className="thread-modal-actions">
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                disabled={deleteEvent.isPending}
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Keep event
+              </button>
+              <button
+                type="button"
+                className="thread-btn-accent thread-cal-event-delete-confirm"
+                disabled={deleteEvent.isPending}
+                onClick={() => deleteEvent.mutate({ eventId: selectedEvent.id })}
+              >
+                <Trash2 size={14} />
+                {deleteEvent.isPending ? "Deleting…" : "Delete permanently"}
               </button>
             </div>
           </div>

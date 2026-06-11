@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS thread_queue_items (
   error_message text,
   created_at timestamp DEFAULT now(),
   resolved_at timestamp,
-  CONSTRAINT thread_queue_items_kind_check CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle')),
+  CONSTRAINT thread_queue_items_kind_check CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive')),
   CONSTRAINT thread_queue_items_status_check CHECK (status IN ('pending', 'approved', 'dismissed', 'failed'))
 );
 
@@ -191,6 +191,11 @@ export async function runMigrations() {
   await client.connect();
   try {
     await client.query(ENSURE_SCHEMA_SQL);
+    await client.query(`
+      ALTER TABLE thread_queue_items DROP CONSTRAINT IF EXISTS thread_queue_items_kind_check;
+      ALTER TABLE thread_queue_items ADD CONSTRAINT thread_queue_items_kind_check
+        CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive'));
+    `);
   } finally {
     await client.end();
   }

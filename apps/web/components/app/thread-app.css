@@ -962,14 +962,21 @@
   white-space: nowrap;
 }
 
+.thread-cal-event-modal .thread-cal-event-detail {
+  padding: 18px 22px 10px;
+  gap: 12px;
+}
+
 .thread-cal-event-modal .thread-modal-actions {
   margin-top: 0;
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--thread-line);
 }
 
 .thread-cal-event-detail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .thread-cal-event-when {
@@ -977,13 +984,23 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--thread-text);
+  line-height: 1.45;
 }
 
 .thread-cal-event-detail-copy {
   margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.65;
   color: var(--thread-dim);
+}
+
+.thread-cal-confirm-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--thread-text);
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .thread-cal-event-open {
@@ -1006,6 +1023,53 @@
 
 .thread-cal-event-delete:hover:not(:disabled) {
   background: rgba(127, 29, 29, 0.25);
+}
+
+.thread-modal-backdrop--confirm {
+  z-index: 60;
+}
+
+.thread-cal-delete-modal,
+.thread-cal-confirm-modal {
+  width: fit-content;
+  min-width: min(400px, calc(100vw - 48px));
+  max-width: min(560px, calc(100vw - 48px));
+}
+
+.thread-cal-confirm-modal .thread-cal-event-detail {
+  padding: 22px 24px 8px;
+  gap: 16px;
+}
+
+.thread-cal-confirm-modal .thread-cal-event-detail-copy {
+  max-width: 42ch;
+}
+
+.thread-cal-confirm-modal .thread-modal-row {
+  margin-top: 4px;
+  gap: 16px;
+}
+
+.thread-cal-confirm-modal .thread-modal-actions {
+  margin-top: 0;
+  padding: 16px 24px 22px;
+  border-top: 1px solid var(--thread-line);
+  gap: 12px;
+}
+
+@media (max-width: 520px) {
+  .thread-cal-confirm-modal .thread-modal-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.thread-cal-event-delete-confirm {
+  background: rgba(185, 28, 28, 0.85);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.thread-cal-event-delete-confirm:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.95);
 }
 
 .thread-inbox-compose {

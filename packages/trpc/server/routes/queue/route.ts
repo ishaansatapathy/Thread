@@ -25,9 +25,18 @@ const calendarPayloadSchema = z.object({
   attendeeEmails: z.array(z.string().email()).max(20).optional(),
 });
 
+const calendarArchivePayloadSchema = z.object({
+  eventId: z.string().min(1),
+  summary: z.string().min(1).max(200),
+  startDateTime: z.string().min(1),
+  endDateTime: z.string().min(1),
+  timeZone: z.string().max(64).optional(),
+  htmlLink: z.string().optional(),
+});
+
 const queueItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["email_send", "email_draft", "calendar_invite", "meeting_bundle"]),
+  kind: z.enum(["email_send", "email_draft", "calendar_invite", "meeting_bundle", "calendar_archive"]),
   title: z.string(),
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -116,13 +125,39 @@ export const queueRouter = router({
       });
     }),
 
-  approve: protectedProcedure
-    .meta({ openapi: { method: "POST", path: getPath("/approve"), tags: TAGS } })
-    .input(z.object({ id: z.string().uuid() }))
+  enqueueCalendarArchive: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/enqueue/calendar-archive"), tags: TAGS } })
+    .input(
+      z.object({
+        archive: calendarArchivePayloadSchema,
+        title: z.string().max(200).optional(),
+        preview: z.string().max(500).optional(),
+      }),
+    )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
       const queue = getQueueService();
-      return queue.approve(ctx.user.id, input.id);
+      return queue.enqueueCalendarArchive(ctx.user.id, input);
+    }),
+
+  approve: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/approve"), tags: TAGS } })
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        archive: z
+          .object({
+            startDateTime: z.string().min(1),
+            endDateTime: z.string().min(1),
+            timeZone: z.string().max(64).optional(),
+          })
+          .optional(),
+      }),
+    )
+    .output(queueItemSchema)
+    .mutation(async ({ ctx, input }) => {
+      const queue = getQueueService();
+      return queue.approve(ctx.user.id, input.id, { archive: input.archive });
     }),
 
   dismiss: protectedProcedure
