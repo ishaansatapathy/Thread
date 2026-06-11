@@ -8,6 +8,15 @@ import { generatePath } from "../../utils/path-generator";
 const TAGS = ["Inbox"];
 const getPath = generatePath("/inbox");
 
+const inboxMessageSchema = z.object({
+  id: z.string(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  date: z.string().optional(),
+  body: z.string(),
+  snippet: z.string(),
+});
+
 const inboxThreadSchema = z.object({
   id: z.string(),
   snippet: z.string(),
@@ -18,6 +27,9 @@ const inboxThreadSchema = z.object({
   date: z.string().optional(),
   body: z.string().optional(),
   messageId: z.string().optional(),
+  messages: z.array(inboxMessageSchema).optional(),
+  suggestedReplyTo: z.string().optional(),
+  messageCount: z.number().optional(),
 });
 
 const connectionStatusSchema = z.object({
@@ -66,7 +78,7 @@ export const inboxRouter = router({
     .output(inboxThreadSchema.nullable())
     .query(async ({ ctx, input }) => {
       const inbox = getInboxService();
-      return inbox.getThread(ctx.user.id, input.threadId);
+      return inbox.getThread(ctx.user.id, input.threadId, { userEmail: ctx.user.email });
     }),
 
   sendMessage: protectedProcedure

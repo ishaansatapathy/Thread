@@ -74,6 +74,16 @@ async function bootstrap() {
   }
 
   try {
+    const { registerQueueService } = await import("@repo/services/queue");
+    const { ThreadQueueService } = await import("./services/queue");
+    registerQueueService(new ThreadQueueService());
+  } catch (err) {
+    logger.warn("Queue service registration failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
     const { bootstrapCorsair } = await import("./corsair-bootstrap");
     await bootstrapCorsair();
   } catch (err) {

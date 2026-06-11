@@ -158,6 +158,25 @@ CREATE TABLE IF NOT EXISTS corsair_permissions (
   expires_at TEXT NOT NULL,
   error TEXT NULL
 );
+
+CREATE TABLE IF NOT EXISTS thread_queue_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind varchar(32) NOT NULL,
+  title varchar(200) NOT NULL,
+  preview text,
+  payload jsonb NOT NULL DEFAULT '{}',
+  source_thread_id varchar(128),
+  status varchar(20) NOT NULL DEFAULT 'pending',
+  error_message text,
+  created_at timestamp DEFAULT now(),
+  resolved_at timestamp,
+  CONSTRAINT thread_queue_items_kind_check CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle')),
+  CONSTRAINT thread_queue_items_status_check CHECK (status IN ('pending', 'approved', 'dismissed', 'failed'))
+);
+
+CREATE INDEX IF NOT EXISTS thread_queue_user_status_idx
+  ON thread_queue_items (user_id, status, created_at DESC);
 `;
 
 export async function runMigrations() {

@@ -6,10 +6,12 @@ import { formsTable } from "./models/form";
 import { submissionsTable } from "./models/submission";
 import { submissionAuditEventsTable } from "./models/submission-audit-event";
 import { submissionResponsesTable } from "./models/submission-response";
+import { threadQueueItemsTable } from "./models/queue-item";
 import { usersTable } from "./models/user";
 
 export const usersRelations = relations(usersTable, ({ many }) => ({
   forms: many(formsTable),
+  queueItems: many(threadQueueItemsTable),
 }));
 
 export const formsRelations = relations(formsTable, ({ one, many }) => ({
@@ -73,6 +75,13 @@ export const submissionAuditEventsRelations = relations(submissionAuditEventsTab
   }),
   actor: one(usersTable, {
     fields: [submissionAuditEventsTable.actorUserId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const threadQueueItemsRelations = relations(threadQueueItemsTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [threadQueueItemsTable.userId],
     references: [usersTable.id],
   }),
 }));

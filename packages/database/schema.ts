@@ -5,4 +5,5 @@ export * from "./models/form-field";
 export * from "./models/submission";
 export * from "./models/submission-response";
 export * from "./models/submission-audit-event";
+export * from "./models/queue-item";
 export * from "./relations";
