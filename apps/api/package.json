@@ -1,0 +1,51 @@
+{
+  "name": "@repo/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node dist/index.js",
+    "dev": "dotenv -e ../../.env -- tsx watch --include ../../packages/trpc/** --include ../../packages/services/** ./src/index.ts",
+    "build": "tsup",
+    "lint": "eslint src --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "corsair:setup": "dotenv -e ../../.env -- corsair setup --plugin=gmail --backfill"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@swc/core": "^1.15.8",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.15.3",
+    "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
+    "dotenv": "^17.2.3",
+    "dotenv-cli": "^11.0.0",
+    "supertest": "^7.1.4",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@corsair-dev/app": "^0.1.5",
+    "@corsair-dev/cli": "^0.1.19",
+    "@corsair-dev/gmail": "^0.1.4",
+    "@repo/database": "workspace:*",
+    "@repo/logger": "workspace:*",
+    "@repo/services": "workspace:*",
+    "@repo/trpc": "workspace:*",
+    "@scalar/express-api-reference": "^0.8.30",
+    "@trpc/server": "^11.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "corsair": "^0.1.76",
+    "express": "^5.2.1",
+    "helmet": "^8.2.0",
+    "pg": "^8.16.3",
+    "trpc-to-openapi": "^3.1.0",
+    "zod": "^4.3.5"
+  }
+}
