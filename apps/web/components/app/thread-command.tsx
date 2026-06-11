@@ -11,6 +11,7 @@ import {
   PenLine,
   Send,
   Mail,
+  ListChecks,
   CornerDownLeft,
 } from "lucide-react";
 
@@ -36,11 +37,13 @@ export function ThreadCommand({ open, onClose }: { open: boolean; onClose: () =>
     };
     return [
       { id: "inbox", group: "Navigate", label: "Go to Inbox", icon: Inbox, run: go("/inbox") },
+      { id: "queue", group: "Navigate", label: "Open approval queue", icon: ListChecks, run: go("/queue") },
       { id: "calendar", group: "Navigate", label: "Go to Calendar", icon: Calendar, run: go("/calendar") },
       { id: "agent", group: "Navigate", label: "Go to Agent", icon: Bot, run: go("/agent") },
       { id: "settings", group: "Navigate", label: "Go to Settings", icon: Settings, run: go("/settings") },
-      { id: "compose", group: "Actions", label: "Compose reply", hint: "Connect Gmail", icon: PenLine, run: go("/inbox") },
-      { id: "invite", group: "Actions", label: "Send calendar invite", hint: "Connect Gmail", icon: Send, run: go("/calendar") },
+      { id: "compose", group: "Actions", label: "Compose reply", hint: "Inbox", icon: PenLine, run: go("/inbox") },
+      { id: "approve", group: "Actions", label: "Review approval queue", icon: ListChecks, run: go("/queue") },
+      { id: "invite", group: "Actions", label: "Send calendar invite", hint: "Calendar", icon: Send, run: go("/calendar") },
       { id: "ask", group: "Actions", label: "Ask the agent", hint: "Corsair MCP", icon: Bot, run: go("/agent") },
       { id: "connect", group: "Actions", label: "Connect Gmail", icon: Mail, run: go("/settings") },
     ];

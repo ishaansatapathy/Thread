@@ -7,12 +7,19 @@ import {
   Calendar as CalIcon,
   ChevronLeft,
   ChevronRight,
+  ListChecks,
   Loader2,
   Plus,
   X,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import {
+  eventDayKey,
+  localDateTimeInputToPayload,
+  localDayKey,
+  toLocalDateTimeInput,
+} from "~/lib/calendar-datetime";
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -34,20 +41,12 @@ function getWeekDays(anchor: Date) {
   });
 }
 
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function formatEventTime(value?: string) {
   if (!value) return "";
-  if (value.length === 10) return "All day";
-  return new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
-function toLocalDateTimeInput(date: Date) {
-  const offset = date.getTimezoneOffset();
-  const local = new Date(date.getTime() - offset * 60_000);
-  return local.toISOString().slice(0, 16);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return "All day";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 export default function CalendarPage() {
@@ -65,7 +64,7 @@ export default function CalendarPage() {
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const timeMin = week[0]!.toISOString();
   const timeMax = new Date(week[6]!.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
-  const todayKey = dayKey(new Date());
+  const todayKey = localDayKey(new Date());
   const monthLabel = week[0]!.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   const statusQuery = trpc.calendar.connectionStatus.useQuery({});
@@ -77,10 +76,10 @@ export default function CalendarPage() {
     { enabled: isConnected },
   );
 
-  const createEvent = trpc.calendar.createEvent.useMutation({
+  const queueInvite = trpc.queue.enqueueCalendar.useMutation({
     onSuccess: async () => {
-      await utils.calendar.listEvents.invalidate();
-      toast.success("Invite sent on Google Calendar");
+      await utils.queue.pendingCount.invalidate();
+      toast.success("Invite queued — approve from Queue to send");
       setShowCreate(false);
       setSummary("");
       setAttendee("");
@@ -106,10 +105,10 @@ export default function CalendarPage() {
   const eventsByDay = useMemo(() => {
     const map = new Map<string, Array<{ id: string; summary: string; start?: string }>>();
     for (const day of week) {
-      map.set(dayKey(day), []);
+      map.set(localDayKey(day), []);
     }
     for (const event of eventsQuery.data?.events ?? []) {
-      const key = event.start?.slice(0, 10);
+      const key = eventDayKey(event.start);
       if (!key || !map.has(key)) continue;
       map.get(key)!.push(event);
     }
@@ -194,7 +193,7 @@ export default function CalendarPage() {
       ) : (
         <div className="thread-cal-grid">
           {week.map((day) => {
-            const key = dayKey(day);
+            const key = localDayKey(day);
             const isToday = key === todayKey;
             const dayEvents = eventsByDay.get(key) ?? [];
             return (
@@ -238,11 +237,18 @@ export default function CalendarPage() {
               className="thread-modal-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                createEvent.mutate({
-                  summary,
-                  startDateTime: new Date(startAt).toISOString(),
-                  endDateTime: new Date(endAt).toISOString(),
-                  attendeeEmails: attendee.trim() ? [attendee.trim()] : undefined,
+                const start = localDateTimeInputToPayload(startAt);
+                const end = localDateTimeInputToPayload(endAt);
+                queueInvite.mutate({
+                  calendar: {
+                    summary,
+                    description: "Scheduled from Thread calendar.",
+                    startDateTime: start.startDateTime,
+                    endDateTime: end.endDateTime,
+                    timeZone: start.timeZone,
+                    attendeeEmails: attendee.trim() ? [attendee.trim()] : undefined,
+                  },
+                  title: summary,
                 });
               }}
             >
@@ -303,8 +309,9 @@ export default function CalendarPage() {
                 <button type="button" className="thread-btn-ghost" onClick={() => setShowCreate(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="thread-btn-accent" disabled={createEvent.isPending}>
-                  {createEvent.isPending ? "Sending…" : "Send invite"}
+                <button type="submit" className="thread-btn-accent" disabled={queueInvite.isPending}>
+                  <ListChecks size={14} />
+                  {queueInvite.isPending ? "Queuing…" : "Queue invite"}
                 </button>
               </div>
             </form>

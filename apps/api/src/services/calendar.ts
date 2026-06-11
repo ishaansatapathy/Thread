@@ -134,7 +134,7 @@ export class CorsairCalendarService implements CalendarService {
       throw new Error("Google Calendar is not connected");
     }
 
-    const timeZone = input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+    const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
     const created = await corsair.googlecalendar.api.events.create({
       calendarId: "primary",

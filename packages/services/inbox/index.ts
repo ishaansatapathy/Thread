@@ -8,6 +8,15 @@ export type InboxConnectionStatus = {
   gmail: InboxConnectionState;
 };
 
+export type InboxMessage = {
+  id: string;
+  from?: string;
+  to?: string;
+  date?: string;
+  body: string;
+  snippet: string;
+};
+
 export type InboxThread = {
   id: string;
   snippet: string;
@@ -18,6 +27,9 @@ export type InboxThread = {
   date?: string;
   body?: string;
   messageId?: string;
+  messages?: InboxMessage[];
+  suggestedReplyTo?: string;
+  messageCount?: number;
 };
 
 export interface InboxService {
@@ -27,7 +39,11 @@ export interface InboxService {
     tenantId: string,
     opts?: { maxResults?: number; pageToken?: string },
   ): Promise<{ threads: InboxThread[]; nextPageToken?: string }>;
-  getThread(tenantId: string, threadId: string): Promise<InboxThread | null>;
+  getThread(
+    tenantId: string,
+    threadId: string,
+    opts?: { userEmail?: string },
+  ): Promise<InboxThread | null>;
   sendMessage(
     tenantId: string,
     input: { to: string; subject: string; body: string; threadId?: string },

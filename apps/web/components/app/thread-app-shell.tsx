@@ -13,6 +13,7 @@ import {
   LogOut,
   ChevronsUpDown,
   PanelsTopLeft,
+  ListChecks,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -24,12 +25,14 @@ import { useThreadUser, initials } from "./use-thread-user";
 
 const NAV = [
   { label: "Inbox", href: "/inbox", icon: Inbox },
+  { label: "Queue", href: "/queue", icon: ListChecks },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Agent", href: "/agent", icon: Bot },
 ];
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/inbox": { title: "Inbox", sub: "Triage what matters" },
+  "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
   "/agent": { title: "Agent", sub: "Corsair MCP commands" },
   "/settings": { title: "Settings", sub: "Account & connections" },
@@ -43,6 +46,8 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
   const [cmdOpen, setCmdOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
+  const queueCountQuery = trpc.queue.pendingCount.useQuery({});
+  const queueCount = queueCountQuery.data?.count ?? 0;
 
   const logout = trpc.auth.logout.useMutation({
     onSettled: async () => {
@@ -103,7 +108,12 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
               <Link key={item.href} href={item.href} className="thread-app-nav-item" data-active={active}>
                 <item.icon size={16} />
                 {item.label}
-                {item.href === "/inbox" && <span className="thread-app-nav-count">0</span>}
+                {item.href === "/inbox" && queueCount > 0 && (
+                  <span className="thread-app-nav-count">{queueCount}</span>
+                )}
+                {item.href === "/queue" && queueCount > 0 && (
+                  <span className="thread-app-nav-count">{queueCount}</span>
+                )}
                 {item.href === "/agent" && <span className="thread-app-nav-pill">MCP</span>}
               </Link>
             );

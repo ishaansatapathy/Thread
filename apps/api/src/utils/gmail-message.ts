@@ -9,22 +9,57 @@ export function decodeBase64Url(data: string): string {
   return Buffer.from(normalized, "base64").toString("utf8");
 }
 
-export function extractPlainBody(payload: MessagePart | undefined): string {
-  if (!payload) return "";
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+function findPlainTextPart(payload: MessagePart): string {
   if (payload.mimeType === "text/plain" && payload.body?.data) {
-    return decodeBase64Url(payload.body.data).trim();
-  }
-
-  if (payload.mimeType === "text/html" && payload.body?.data) {
-    const html = decodeBase64Url(payload.body.data);
-    return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const text = decodeBase64Url(payload.body.data).trim();
+    if (text) return text;
   }
 
   for (const part of payload.parts ?? []) {
-    const text = extractPlainBody(part);
+    const text = findPlainTextPart(part);
     if (text) return text;
   }
+
+  return "";
+}
+
+function findHtmlPart(payload: MessagePart): string {
+  if (payload.mimeType === "text/html" && payload.body?.data) {
+    return decodeBase64Url(payload.body.data);
+  }
+
+  for (const part of payload.parts ?? []) {
+    const html = findHtmlPart(part);
+    if (html) return html;
+  }
+
+  return "";
+}
+
+export function extractPlainBody(payload: MessagePart | undefined): string {
+  if (!payload) return "";
+
+  const plain = findPlainTextPart(payload);
+  if (plain) return plain;
+
+  const html = findHtmlPart(payload);
+  if (html) return stripHtmlToText(html);
 
   return "";
 }
@@ -58,4 +93,74 @@ export function parseEmailAddress(value: string | undefined) {
   if (!value) return "";
   const match = value.match(/<([^>]+)>/);
   return (match?.[1] ?? value).trim();
+}
+
+type GmailHeader = { name?: string; value?: string };
+
+export type ParsedGmailMessage = {
+  id: string;
+  from?: string;
+  to?: string;
+  date?: string;
+  body: string;
+  snippet: string;
+};
+
+export function getHeader(headers: GmailHeader[], name: string) {
+  return headers.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value;
+}
+
+export function parseGmailMessage(message: {
+  id?: string;
+  snippet?: string;
+  payload?: MessagePart & { headers?: GmailHeader[] };
+}): ParsedGmailMessage | null {
+  if (!message.id) return null;
+
+  const headers = message.payload?.headers ?? [];
+  const body = extractPlainBody(message.payload) || message.snippet || "";
+
+  return {
+    id: message.id,
+    from: getHeader(headers, "From"),
+    to: getHeader(headers, "To"),
+    date: getHeader(headers, "Date"),
+    body,
+    snippet: message.snippet ?? body.slice(0, 140),
+  };
+}
+
+export function normalizeSubject(subject?: string) {
+  if (!subject?.trim()) return "No subject";
+  let value = subject.trim();
+  while (/^(re|fwd):\s*/i.test(value)) {
+    value = value.replace(/^(re|fwd):\s*/i, "").trim();
+  }
+  return value || "No subject";
+}
+
+export function displaySender(from?: string) {
+  if (!from) return "Unknown";
+  const nameMatch = from.match(/^([^<]+)</);
+  if (nameMatch?.[1]) {
+    return nameMatch[1].trim().replace(/^"|"$/g, "");
+  }
+  return parseEmailAddress(from);
+}
+
+export function suggestReplyTo(
+  messages: ParsedGmailMessage[],
+  userEmail?: string,
+) {
+  const me = userEmail?.trim().toLowerCase();
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const from = parseEmailAddress(messages[index]?.from).toLowerCase();
+    if (from && from !== me) {
+      return parseEmailAddress(messages[index]?.from);
+    }
+  }
+
+  const last = messages[messages.length - 1];
+  return parseEmailAddress(last?.to) || parseEmailAddress(messages[0]?.from) || "";
 }

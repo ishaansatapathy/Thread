@@ -6,8 +6,11 @@ import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../
 import { getCorsairOAuthModule } from "../corsair-imports";
 import {
   buildRawEmail,
-  extractPlainBody,
+  getHeader,
+  normalizeSubject,
   parseEmailAddress,
+  parseGmailMessage,
+  suggestReplyTo,
 } from "../utils/gmail-message";
 import { ensureCorsairTenant } from "./corsair-tenant";
 
@@ -97,7 +100,11 @@ export class CorsairInboxService implements InboxService {
     };
   }
 
-  async getThread(tenantId: string, threadId: string): Promise<InboxThread | null> {
+  async getThread(
+    tenantId: string,
+    threadId: string,
+    opts?: { userEmail?: string },
+  ): Promise<InboxThread | null> {
     if (!this.isConfigured()) return null;
 
     const status = await this.getConnectionStatus(tenantId);
@@ -111,23 +118,29 @@ export class CorsairInboxService implements InboxService {
 
     if (!thread.id) return null;
 
-    const message = thread.messages?.[thread.messages.length - 1];
-    const headers = message?.payload?.headers ?? [];
-    const header = (name: string) =>
-      headers.find((entry: { name?: string; value?: string }) => entry.name?.toLowerCase() === name.toLowerCase())?.value;
+    const messages = (thread.messages ?? [])
+      .map((message) => parseGmailMessage(message))
+      .filter((message): message is NonNullable<typeof message> => Boolean(message));
 
-    const body = extractPlainBody(message?.payload) || thread.snippet || "";
+    if (messages.length === 0) return null;
+
+    const firstHeaders = thread.messages?.[0]?.payload?.headers ?? [];
+    const subject = normalizeSubject(getHeader(firstHeaders, "Subject"));
+    const last = messages[messages.length - 1]!;
 
     return {
       id: thread.id,
-      snippet: thread.snippet ?? "",
+      snippet: thread.snippet ?? last.snippet,
       historyId: thread.historyId,
-      subject: header("Subject"),
-      from: header("From"),
-      to: header("To"),
-      date: header("Date"),
-      body,
-      messageId: message?.id,
+      subject,
+      from: last.from,
+      to: last.to,
+      date: last.date,
+      body: last.body,
+      messageId: last.id,
+      messages,
+      messageCount: messages.length,
+      suggestedReplyTo: suggestReplyTo(messages, opts?.userEmail),
     };
   }
 

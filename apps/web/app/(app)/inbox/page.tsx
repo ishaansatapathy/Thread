@@ -1,10 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Inbox, Mail, Sparkles, Filter, Loader2, Send, FilePenLine } from "lucide-react";
+import {
+  Inbox,
+  Mail,
+  Filter,
+  Loader2,
+  Send,
+  FilePenLine,
+  CalendarPlus,
+  ListChecks,
+  X,
+} from "lucide-react";
 
+import { SenderAvatar } from "~/components/app/sender-avatar";
+import { localDateTimeInputToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import { trpc } from "~/trpc/client";
 
 const TABS = [
@@ -23,7 +36,46 @@ function parseReplyTo(from?: string) {
 
 function replySubject(subject?: string) {
   const trimmed = subject?.trim() || "No subject";
-  return trimmed.toLowerCase().startsWith("re:") ? trimmed : `Re: ${trimmed}`;
+  let base = trimmed;
+  while (/^(re|fwd):\s*/i.test(base)) {
+    base = base.replace(/^(re|fwd):\s*/i, "").trim();
+  }
+  return `Re: ${base || "No subject"}`;
+}
+
+function displaySender(from?: string) {
+  if (!from) return "Unknown";
+  const nameMatch = from.match(/^([^<]+)</);
+  if (nameMatch?.[1]) {
+    return nameMatch[1].trim().replace(/^"|"$/g, "");
+  }
+  const bracket = from.match(/<([^>]+)>/);
+  return (bracket?.[1] ?? from).trim();
+}
+
+function formatMessageDate(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function replyTargetForMessage(
+  message: { from?: string; to?: string },
+  userEmail?: string,
+) {
+  const from = parseReplyTo(message.from);
+  const me = userEmail?.trim().toLowerCase();
+  if (from && me && from.toLowerCase() === me) {
+    return parseReplyTo(message.to) || from;
+  }
+  return from;
 }
 
 export default function InboxPage() {
@@ -33,9 +85,22 @@ export default function InboxPage() {
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
   const [replyBody, setReplyBody] = useState("");
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [meetingStart, setMeetingStart] = useState(() => toLocalDateTimeInput(new Date(Date.now() + 86_400_000)));
+  const [meetingEnd, setMeetingEnd] = useState(() =>
+    toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
+  );
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
+  const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
 
   const utils = trpc.useUtils();
+  const meQuery = trpc.auth.me.useQuery({});
+  const userEmail = meQuery.data?.email;
+  const userPhotoUrl = meQuery.data?.profileImageUrl;
   const statusQuery = trpc.inbox.connectionStatus.useQuery({});
+  const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
+  const pendingCount = trpc.queue.pendingCount.useQuery({});
   const threadsQuery = trpc.inbox.listThreads.useQuery(
     { maxResults: 25 },
     { enabled: statusQuery.data?.gmail === "connected" },
@@ -55,13 +120,27 @@ export default function InboxPage() {
     onError: (error) => toast.error(error.message),
   });
 
-  const createDraft = trpc.inbox.createDraft.useMutation({
-    onSuccess: () => toast.success("Draft saved in Gmail"),
+  const queueEmail = trpc.queue.enqueueEmail.useMutation({
+    onSuccess: async () => {
+      await utils.queue.pendingCount.invalidate();
+      toast.success("Added to approval queue");
+      setReplyBody("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const queueMeeting = trpc.queue.enqueueMeeting.useMutation({
+    onSuccess: async () => {
+      await utils.queue.pendingCount.invalidate();
+      toast.success("Meeting queued — approve from Queue to send invite + email");
+      setShowSchedule(false);
+    },
     onError: (error) => toast.error(error.message),
   });
 
   const gmailStatus = statusQuery.data?.gmail ?? "not_configured";
   const isConnected = gmailStatus === "connected";
+  const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
   const threads = threadsQuery.data?.threads ?? [];
 
   const banner = useMemo(() => {
@@ -86,11 +165,49 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selectedQuery.data) return;
-    setReplyTo(parseReplyTo(selectedQuery.data.from));
+    const messages = selectedQuery.data.messages ?? [];
+    const last = messages[messages.length - 1];
+    const lastId = last?.id ?? null;
+    setReplyTo(
+      last
+        ? replyTargetForMessage(last, userEmail) ||
+            selectedQuery.data.suggestedReplyTo?.trim() ||
+            parseReplyTo(selectedQuery.data.from)
+        : selectedQuery.data.suggestedReplyTo?.trim() || parseReplyTo(selectedQuery.data.from),
+    );
     setReplySubjectValue(replySubject(selectedQuery.data.subject));
-  }, [selectedQuery.data]);
+    setMeetingTitle(selectedQuery.data.subject?.trim() ? `Sync: ${selectedQuery.data.subject}` : "Meeting");
+    setActiveMessageId(lastId);
+    if (lastId) {
+      setExpandedMessageIds(new Set([lastId]));
+    }
+  }, [selectedQuery.data, userEmail]);
+
+  const threadMessages = selectedQuery.data?.messages ?? [];
+
+  const handleMessageClick = (message: (typeof threadMessages)[number]) => {
+    setActiveMessageId(message.id);
+    setReplyTo(replyTargetForMessage(message, userEmail));
+    setExpandedMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(message.id)) {
+        next.delete(message.id);
+      } else {
+        next.add(message.id);
+      }
+      return next;
+    });
+  };
 
   const connectHref = `/api-connect/gmail?state=${encodeURIComponent("/inbox")}`;
+  const queueCount = pendingCount.data?.count ?? 0;
+
+  const emailPayload = {
+    to: replyTo,
+    subject: replySubjectValue,
+    body: replyBody,
+    threadId: selectedQuery.data?.id,
+  };
 
   return (
     <div className="thread-inbox">
@@ -107,10 +224,19 @@ export default function InboxPage() {
               {t.label}
             </button>
           ))}
+          <Link
+            href="/queue"
+            className="thread-inbox-queue-link"
+            aria-label={`Open approval queue${queueCount ? `, ${queueCount} pending` : ""}`}
+          >
+            <ListChecks size={14} />
+            Queue
+            {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
+          </Link>
           <button
             type="button"
             className="thread-app-iconbtn"
-            style={{ marginLeft: "auto", width: 30, height: 30 }}
+            style={{ width: 30, height: 30 }}
             aria-label="Filter"
           >
             <Filter size={14} />
@@ -161,9 +287,6 @@ export default function InboxPage() {
               <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
                 Inbox is empty
               </p>
-              <p style={{ marginTop: 6, fontSize: 12, color: "var(--thread-dim)" }}>
-                No threads in your Gmail inbox yet.
-              </p>
             </div>
           ) : (
             threads.map((thread) => (
@@ -192,21 +315,11 @@ export default function InboxPage() {
             </div>
             <div>
               <h3>Your inbox is not connected</h3>
-              <p>
-                Connect Gmail through Corsair to pull mail into Thread. Login Google OAuth is separate — this
-                flow requests Gmail read/send scopes and stores tokens encrypted in your database.
-              </p>
+              <p>Connect Gmail through Corsair to pull mail into Thread.</p>
             </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <a href={connectHref} className="thread-btn-primary" style={{ fontSize: 13, padding: "10px 18px" }}>
-                Connect Gmail
-              </a>
-              <a href="/agent" className="thread-btn-ghost" style={{ fontSize: 13, padding: "10px 18px" }}>
-                <Sparkles size={14} />
-                Try the agent
-              </a>
-            </div>
-            <span className="thread-example-label">Powered by Corsair — your data only</span>
+            <a href={connectHref} className="thread-btn-primary" style={{ fontSize: 13, padding: "10px 18px" }}>
+              Connect Gmail
+            </a>
           </div>
         ) : selectedQuery.isLoading ? (
           <div className="thread-app-empty">
@@ -216,25 +329,95 @@ export default function InboxPage() {
         ) : selectedQuery.data ? (
           <div className="thread-inbox-message">
             <div className="thread-inbox-message-head">
-              <h2>{selectedQuery.data.subject?.trim() || "No subject"}</h2>
-              {selectedQuery.data.from ? (
-                <p className="thread-inbox-message-meta">From: {selectedQuery.data.from}</p>
-              ) : null}
-              {selectedQuery.data.date ? (
-                <p className="thread-inbox-message-meta">{selectedQuery.data.date}</p>
-              ) : null}
+              <div className="thread-inbox-message-head-row">
+                <div>
+                  <h2>{selectedQuery.data.subject?.trim() || "No subject"}</h2>
+                  {threadMessages.length > 1 ? (
+                    <p className="thread-inbox-message-count">
+                      {threadMessages.length} messages in this conversation
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0 }}
+                  disabled={!calendarConnected || !replyTo.trim()}
+                  onClick={() => setShowSchedule(true)}
+                >
+                  <CalendarPlus size={14} />
+                  Schedule meeting
+                </button>
+              </div>
             </div>
-            <p className="thread-inbox-message-body">
-              {selectedQuery.data.body?.trim() || selectedQuery.data.snippet}
-            </p>
+
+            <div className="thread-inbox-thread">
+              {threadMessages.length > 0 ? (
+                threadMessages.map((message, index) => {
+                  const expanded = expandedMessageIds.has(message.id);
+                  const isLast = index === threadMessages.length - 1;
+                  const isActive = activeMessageId === message.id;
+                  return (
+                    <article
+                      key={message.id}
+                      className="thread-inbox-msg"
+                      data-expanded={expanded}
+                      data-last={isLast}
+                      data-active={isActive}
+                    >
+                      <button
+                        type="button"
+                        className="thread-inbox-msg-head"
+                        onClick={() => handleMessageClick(message)}
+                        aria-expanded={expanded}
+                        aria-pressed={isActive}
+                      >
+                        <SenderAvatar
+                          from={message.from}
+                          selfEmail={userEmail}
+                          selfPhotoUrl={userPhotoUrl}
+                        />
+                        <span className="thread-inbox-msg-summary">
+                          <span className="thread-inbox-msg-top">
+                            <strong>{displaySender(message.from)}</strong>
+                            <span className="thread-inbox-msg-date">{formatMessageDate(message.date)}</span>
+                          </span>
+                          {!expanded ? (
+                            <span className="thread-inbox-msg-snippet">
+                              {message.body?.trim() || message.snippet}
+                            </span>
+                          ) : (
+                            <span className="thread-inbox-msg-to">
+                              to {displaySender(message.to) || parseReplyTo(message.to) || "you"}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                      {expanded ? (
+                        <div className="thread-inbox-msg-body">
+                          {message.body?.trim() || message.snippet || "(No content)"}
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })
+              ) : (
+                <p className="thread-inbox-message-body">
+                  {selectedQuery.data.body?.trim() || selectedQuery.data.snippet}
+                </p>
+              )}
+            </div>
 
             <div className="thread-inbox-compose">
               <div className="thread-inbox-compose-head">
                 <h3>Reply</h3>
-                <span className="thread-mono-tag">Gmail via Corsair</span>
+                <span className="thread-mono-tag">Queued before send</span>
               </div>
               <label className="thread-set-label" htmlFor="reply-to">
                 To
+                {activeMessageId ? (
+                  <span className="thread-inbox-reply-hint"> — replying based on selected message</span>
+                ) : null}
               </label>
               <input
                 id="reply-to"
@@ -266,36 +449,39 @@ export default function InboxPage() {
                 <button
                   type="button"
                   className="thread-btn-ghost"
-                  disabled={createDraft.isPending || !replyBody.trim()}
+                  disabled={queueEmail.isPending || !replyBody.trim()}
                   onClick={() =>
-                    createDraft.mutate({
-                      to: replyTo,
-                      subject: replySubjectValue,
-                      body: replyBody,
-                      threadId: selectedQuery.data?.id,
-                    })
+                    queueEmail.mutate({ mode: "draft", email: emailPayload, title: "Draft reply" })
                   }
                 >
                   <FilePenLine size={14} />
-                  {createDraft.isPending ? "Saving…" : "Save draft"}
+                  Queue draft
                 </button>
                 <button
                   type="button"
                   className="thread-btn-accent"
-                  disabled={sendMessage.isPending || !replyBody.trim() || !replyTo.trim()}
+                  disabled={queueEmail.isPending || !replyBody.trim() || !replyTo.trim()}
                   onClick={() =>
-                    sendMessage.mutate({
-                      to: replyTo,
-                      subject: replySubjectValue,
-                      body: replyBody,
-                      threadId: selectedQuery.data?.id,
-                    })
+                    queueEmail.mutate({ mode: "send", email: emailPayload, title: "Reply email" })
                   }
                 >
+                  <ListChecks size={14} />
+                  {queueEmail.isPending ? "Queuing…" : "Add to queue"}
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost thread-inbox-send-now"
+                  disabled={sendMessage.isPending || !replyBody.trim() || !replyTo.trim()}
+                  onClick={() => sendMessage.mutate(emailPayload)}
+                >
                   <Send size={14} />
-                  {sendMessage.isPending ? "Sending…" : "Send"}
+                  Send now
                 </button>
               </div>
+              <p className="thread-inbox-compose-note">
+                Approve queued actions from{" "}
+                <Link href="/queue">Queue</Link>. Nothing sends until you approve.
+              </p>
             </div>
           </div>
         ) : (
@@ -310,6 +496,120 @@ export default function InboxPage() {
           </div>
         )}
       </div>
+
+      {showSchedule ? (
+        <div className="thread-modal-backdrop" onClick={() => setShowSchedule(false)}>
+          <div className="thread-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="thread-modal-head">
+              <h3>Schedule meeting from thread</h3>
+              <button type="button" className="thread-app-iconbtn" onClick={() => setShowSchedule(false)}>
+                <X size={14} />
+              </button>
+            </div>
+            <form
+              className="thread-modal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const start = localDateTimeInputToPayload(meetingStart);
+                const end = localDateTimeInputToPayload(meetingEnd);
+                queueMeeting.mutate({
+                  email: {
+                    ...emailPayload,
+                    body:
+                      replyBody.trim() ||
+                      `Looking forward to our meeting about ${meetingTitle}. Calendar invite attached.`,
+                    subject: `Meeting: ${meetingTitle}`,
+                  },
+                  calendar: {
+                    summary: meetingTitle,
+                    description: `Scheduled from Thread inbox thread.`,
+                    startDateTime: start.startDateTime,
+                    endDateTime: end.endDateTime,
+                    timeZone: start.timeZone,
+                    attendeeEmails: replyTo.trim() ? [replyTo.trim()] : undefined,
+                  },
+                  sourceThreadId: selectedQuery.data?.id,
+                  title: `Meeting with ${replyTo || "guest"}`,
+                });
+              }}
+            >
+              <label className="thread-set-label" htmlFor="meeting-title">
+                Meeting title
+              </label>
+              <input
+                id="meeting-title"
+                className="thread-set-input"
+                value={meetingTitle}
+                onChange={(event) => setMeetingTitle(event.target.value)}
+                required
+              />
+
+              <label className="thread-set-label" htmlFor="meeting-guest">
+                Guest
+              </label>
+              <input
+                id="meeting-guest"
+                className="thread-set-input"
+                type="email"
+                value={replyTo}
+                onChange={(event) => setReplyTo(event.target.value)}
+                required
+              />
+
+              <div className="thread-modal-row">
+                <div>
+                  <label className="thread-set-label" htmlFor="meeting-start">
+                    Starts
+                  </label>
+                  <input
+                    id="meeting-start"
+                    className="thread-set-input"
+                    type="datetime-local"
+                    value={meetingStart}
+                    onChange={(event) => setMeetingStart(event.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="thread-set-label" htmlFor="meeting-end">
+                    Ends
+                  </label>
+                  <input
+                    id="meeting-end"
+                    className="thread-set-input"
+                    type="datetime-local"
+                    value={meetingEnd}
+                    onChange={(event) => setMeetingEnd(event.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <label className="thread-set-label" htmlFor="meeting-email">
+                Email message
+              </label>
+              <textarea
+                id="meeting-email"
+                className="thread-set-input"
+                rows={4}
+                value={replyBody}
+                onChange={(event) => setReplyBody(event.target.value)}
+                placeholder="Optional note to send with the invite…"
+              />
+
+              <div className="thread-modal-actions">
+                <button type="button" className="thread-btn-ghost" onClick={() => setShowSchedule(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="thread-btn-accent" disabled={queueMeeting.isPending}>
+                  <ListChecks size={14} />
+                  {queueMeeting.isPending ? "Queuing…" : "Queue invite + email"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
