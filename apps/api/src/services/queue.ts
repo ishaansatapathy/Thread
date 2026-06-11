@@ -5,6 +5,7 @@ import { logger } from "@repo/logger";
 import { getCalendarService } from "@repo/services/calendar";
 import { getInboxService } from "@repo/services/inbox";
 import type {
+  CalendarArchivePayload,
   CalendarQueuePayload,
   EmailQueuePayload,
   MeetingBundlePayload,
@@ -167,7 +168,40 @@ export class ThreadQueueService implements QueueService {
     return mapRow(row);
   }
 
-  async approve(userId: string, itemId: string) {
+  async enqueueCalendarArchive(
+    userId: string,
+    input: {
+      archive: CalendarArchivePayload;
+      title?: string;
+      preview?: string;
+    },
+  ) {
+    const title = input.title?.trim() || `Archive: ${input.archive.summary}`;
+    const preview =
+      input.preview?.trim() ||
+      truncate(`${input.archive.summary} · ${input.archive.startDateTime} → ${input.archive.endDateTime}`);
+
+    const [row] = await db
+      .insert(threadQueueItemsTable)
+      .values({
+        userId,
+        kind: "calendar_archive",
+        title,
+        preview,
+        payload: input.archive,
+        status: "pending",
+      })
+      .returning();
+
+    if (!row) throw new Error("Could not queue calendar archive");
+    return mapRow(row);
+  }
+
+  async approve(
+    userId: string,
+    itemId: string,
+    opts?: { archive?: { startDateTime: string; endDateTime: string; timeZone?: string } },
+  ) {
     const [item] = await db
       .select()
       .from(threadQueueItemsTable)
@@ -177,7 +211,7 @@ export class ThreadQueueService implements QueueService {
     if (item.status !== "pending") throw new Error("Queue item is no longer pending");
 
     try {
-      await this.executeItem(userId, item.kind, item.payload);
+      await this.executeItem(userId, item.kind, item.payload, opts);
       const [updated] = await db
         .update(threadQueueItemsTable)
         .set({ status: "approved", resolvedAt: new Date(), errorMessage: null })
@@ -215,7 +249,12 @@ export class ThreadQueueService implements QueueService {
     return mapRow(updated);
   }
 
-  private async executeItem(userId: string, kind: QueueItemKind, payload: Record<string, unknown>) {
+  private async executeItem(
+    userId: string,
+    kind: QueueItemKind,
+    payload: Record<string, unknown>,
+    opts?: { archive?: { startDateTime: string; endDateTime: string; timeZone?: string } },
+  ) {
     const inbox = getInboxService();
     const calendar = getCalendarService();
 
@@ -239,6 +278,24 @@ export class ThreadQueueService implements QueueService {
         const bundle = payload as MeetingBundlePayload;
         await calendar.createEvent(userId, bundle.calendar);
         await inbox.sendMessage(userId, bundle.email);
+        return;
+      }
+      case "calendar_archive": {
+        const archive = payload as CalendarArchivePayload;
+        const confirm = opts?.archive;
+        if (confirm) {
+          const datesChanged =
+            confirm.startDateTime !== archive.startDateTime ||
+            confirm.endDateTime !== archive.endDateTime;
+          if (datesChanged) {
+            await calendar.updateEventTimes(userId, archive.eventId, {
+              startDateTime: confirm.startDateTime,
+              endDateTime: confirm.endDateTime,
+              timeZone: confirm.timeZone ?? archive.timeZone,
+            });
+          }
+        }
+        await calendar.cancelEvent(userId, archive.eventId);
         return;
       }
       default:

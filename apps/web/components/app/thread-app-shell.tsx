@@ -162,7 +162,6 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
             </span>
             <span className="thread-app-user-meta">
               <span className="thread-app-user-name">{user.displayName || user.fullName || "Thread user"}</span>
-              <span className="thread-app-user-mail">{user.email}</span>
             </span>
             <ChevronsUpDown size={15} style={{ color: "var(--thread-dim)", flexShrink: 0 }} />
           </button>

@@ -31,3 +31,45 @@ export function localDateTimeInputToPayload(value: string) {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   };
 }
+
+export function localDateTimeRangeToPayload(startValue: string, endValue: string) {
+  const start = localDateTimeInputToPayload(startValue);
+  const end = localDateTimeInputToPayload(endValue);
+  return {
+    startDateTime: start.startDateTime,
+    endDateTime: end.startDateTime,
+    timeZone: start.timeZone,
+  };
+}
+
+export function isoToLocalDateTimeInput(value?: string) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T09:00`;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return toLocalDateTimeInput(parsed);
+}
+
+export function eventToArchivePayload(event: {
+  id: string;
+  summary: string;
+  start?: string;
+  end?: string;
+  htmlLink?: string;
+}) {
+  const startInput = isoToLocalDateTimeInput(event.start);
+  const endInput = isoToLocalDateTimeInput(event.end) || startInput;
+  const start = localDateTimeInputToPayload(startInput || toLocalDateTimeInput(new Date()));
+  const end = endInput
+    ? localDateTimeInputToPayload(endInput)
+    : { startDateTime: start.startDateTime, timeZone: start.timeZone };
+
+  return {
+    eventId: event.id,
+    summary: event.summary,
+    startDateTime: start.startDateTime,
+    endDateTime: end.startDateTime,
+    timeZone: start.timeZone,
+    htmlLink: event.htmlLink,
+  };
+}

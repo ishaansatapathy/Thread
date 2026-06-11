@@ -163,14 +163,56 @@ export class CorsairCalendarService implements CalendarService {
     }
 
     const corsair = getCorsair().withTenant(tenantId);
+    const existing = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+
     await corsair.googlecalendar.api.events.update({
       calendarId: "primary",
       id: eventId,
       sendUpdates: "all",
-      event: { status: "cancelled" },
+      event: {
+        summary: existing.summary,
+        description: existing.description,
+        location: existing.location,
+        start: existing.start,
+        end: existing.end,
+        attendees: existing.attendees,
+        status: "cancelled",
+      },
     });
 
     return { success: true as const };
+  }
+
+  async updateEventTimes(
+    tenantId: string,
+    eventId: string,
+    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") {
+      throw new Error("Google Calendar is not connected");
+    }
+
+    const timeZone = input.timeZone?.trim() || "UTC";
+    const corsair = getCorsair().withTenant(tenantId);
+    const updated = await corsair.googlecalendar.api.events.update({
+      calendarId: "primary",
+      id: eventId,
+      sendUpdates: "all",
+      event: {
+        start: { dateTime: input.startDateTime, timeZone },
+        end: { dateTime: input.endDateTime, timeZone },
+      },
+    });
+
+    const mapped = mapEvent(updated);
+    if (!mapped) {
+      throw new Error("Calendar event was updated but returned no id");
+    }
+    return mapped;
   }
 
   async deleteEvent(tenantId: string, eventId: string) {
