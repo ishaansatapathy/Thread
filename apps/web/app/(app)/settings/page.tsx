@@ -7,9 +7,35 @@ import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut } from "lucide-
 import { trpc } from "~/trpc/client";
 import { useThreadUser, initials } from "~/components/app/use-thread-user";
 
+function ConnectionButton({
+  connected,
+  connectHref,
+  connectedLabel,
+}: {
+  connected: boolean;
+  connectHref: string;
+  connectedLabel: string;
+}) {
+  if (connected) {
+    return (
+      <span className="thread-set-status" data-on={true}>
+        {connectedLabel}
+      </span>
+    );
+  }
+
+  return (
+    <a href={connectHref} className="thread-btn-accent">
+      Connect
+    </a>
+  );
+}
+
 export default function SettingsPage() {
   const { user } = useThreadUser();
   const utils = trpc.useUtils();
+  const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
+  const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -103,9 +129,11 @@ export default function SettingsPage() {
             <h4>Gmail</h4>
             <p>Sync threads, rank urgency, and draft replies.</p>
           </div>
-          <a href="/api-auth/google?state=/settings" className="thread-btn-accent">
-            Connect
-          </a>
+          <ConnectionButton
+            connected={inboxStatus.data?.gmail === "connected"}
+            connectHref="/api-connect/gmail?state=/settings"
+            connectedLabel="Connected"
+          />
         </div>
 
         <div className="thread-set-row">
@@ -114,11 +142,13 @@ export default function SettingsPage() {
           </span>
           <div className="thread-set-row-meta">
             <h4>Google Calendar</h4>
-            <p>Find slots and queue invites for approval.</p>
+            <p>Find slots and send invites through Corsair.</p>
           </div>
-          <a href="/api-auth/google?state=/settings" className="thread-btn-accent">
-            Connect
-          </a>
+          <ConnectionButton
+            connected={calendarStatus.data?.googlecalendar === "connected"}
+            connectHref="/api-connect/calendar?state=/settings"
+            connectedLabel="Connected"
+          />
         </div>
       </section>
 
