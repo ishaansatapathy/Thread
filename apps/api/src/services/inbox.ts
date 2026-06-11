@@ -1,9 +1,9 @@
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
 import type { InboxConnectionStatus, InboxService, InboxThread } from "@repo/services/inbox";
-import { generateOAuthUrl, processOAuthCallback } from "corsair/oauth";
 
 import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../corsair";
+import { getCorsairOAuthModule } from "../corsair-imports";
 
 async function ensureTenant(tenantId: string) {
   const corsair = getCorsair();
@@ -48,6 +48,7 @@ export class CorsairInboxService implements InboxService {
     await ensureTenant(tenantId);
     const corsair = getCorsair();
     const redirectUri = getCorsairGmailRedirectUri();
+    const { generateOAuthUrl } = getCorsairOAuthModule();
     const { url, state } = await generateOAuthUrl(corsair, "gmail", {
       tenantId,
       redirectUri,
@@ -59,6 +60,7 @@ export class CorsairInboxService implements InboxService {
   async completeGmailOAuth(input: { code: string; state: string }) {
     const corsair = getCorsair();
     const redirectUri = getCorsairGmailRedirectUri();
+    const { processOAuthCallback } = getCorsairOAuthModule();
     return processOAuthCallback(corsair, {
       code: input.code,
       state: input.state,

@@ -302,6 +302,119 @@
   color: var(--thread-dim);
 }
 
+.thread-gmail-connect {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.thread-gmail-connect--loading {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--thread-dim);
+}
+
+.thread-gmail-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  background: rgba(30, 58, 138, 0.42);
+  color: var(--thread-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.thread-gmail-connect-btn:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.48);
+}
+
+.thread-gmail-connect-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--thread-accent-bright);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22);
+  flex-shrink: 0;
+}
+
+.thread-gmail-connect-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+.thread-gmail-connect-chevron {
+  color: var(--thread-dim);
+  transition: transform 0.15s ease;
+}
+
+.thread-gmail-connect-chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.thread-gmail-connect-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(280px, calc(100vw - 32px));
+  background: #0a0a0a;
+  border: 1px solid var(--thread-line-strong);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+
+.thread-gmail-connect-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 2px;
+}
+
+.thread-gmail-connect-menu-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--thread-muted);
+}
+
+.thread-gmail-connect-menu-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(30, 58, 138, 0.55);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.thread-gmail-connect-menu-copy {
+  margin: 0;
+  padding: 4px 8px 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--thread-dim);
+}
+
+.thread-gmail-connect-menu-sep {
+  height: 1px;
+  margin: 4px 4px 6px;
+  background: var(--thread-line);
+}
+
 .thread-app-iconbtn {
   width: 34px;
   height: 34px;

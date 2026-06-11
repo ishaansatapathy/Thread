@@ -2,6 +2,7 @@ import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
 
 import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "./corsair";
+import { getCorsairSetupModule } from "./corsair-imports";
 export async function bootstrapCorsair() {
   if (!isCorsairConfigured()) {
     logger.warn("Corsair skipped — CORSAIR_KEK is not set");
@@ -16,7 +17,7 @@ export async function bootstrapCorsair() {
 
   try {
     const corsair = getCorsair();
-    const { setupCorsair } = await import("corsair");
+    const { setupCorsair } = getCorsairSetupModule();
     const output = await setupCorsair(corsair, {
       caller: "script",
       credentials: {
