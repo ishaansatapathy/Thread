@@ -6,11 +6,7 @@ import type {
   CalendarService,
 } from "@repo/services/calendar";
 
-import {
-  getCorsair,
-  getCorsairCalendarRedirectUri,
-  isCorsairConfigured,
-} from "../corsair";
+import { getCorsair, getCorsairCalendarRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
 import { ensureCorsairTenant } from "./corsair-tenant";
 

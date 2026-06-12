@@ -61,7 +61,10 @@
   color: var(--thread-muted);
   text-decoration: none;
   border: 1px solid transparent;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
   position: relative;
 }
 
@@ -132,7 +135,9 @@
   color: var(--thread-text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .thread-app-user-btn:hover {
@@ -208,7 +213,9 @@
   cursor: pointer;
   text-align: left;
   text-decoration: none;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .thread-app-menu-item:hover {
@@ -328,7 +335,9 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .thread-gmail-connect-btn:hover {
@@ -425,7 +434,9 @@
   background: transparent;
   color: var(--thread-muted);
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .thread-app-iconbtn:hover {
@@ -936,7 +947,9 @@
   color: inherit;
   cursor: pointer;
   font: inherit;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .thread-cal-event:hover,
@@ -1201,7 +1214,9 @@
   font-weight: 600;
   color: var(--thread-dim);
   text-decoration: none;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .thread-inbox-queue-link:hover {
@@ -1422,7 +1437,9 @@
   color: var(--thread-muted);
   font-size: 12.5px;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .thread-agent-suggest button:hover {
@@ -1619,8 +1636,12 @@
 }
 
 @keyframes thread-cmdk-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .thread-cmdk {
@@ -1634,8 +1655,14 @@
 }
 
 @keyframes thread-cmdk-rise {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .thread-cmdk-input {
@@ -1730,7 +1757,9 @@
 }
 
 @keyframes thread-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Responsive ── */

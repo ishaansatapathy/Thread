@@ -66,10 +66,7 @@ function formatMessageDate(value?: string) {
   });
 }
 
-function replyTargetForMessage(
-  message: { from?: string; to?: string },
-  userEmail?: string,
-) {
+function replyTargetForMessage(message: { from?: string; to?: string }, userEmail?: string) {
   const from = parseReplyTo(message.from);
   const me = userEmail?.trim().toLowerCase();
   if (from && me && from.toLowerCase() === me) {
@@ -87,7 +84,9 @@ export default function InboxPage() {
   const [replyBody, setReplyBody] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState("");
-  const [meetingStart, setMeetingStart] = useState(() => toLocalDateTimeInput(new Date(Date.now() + 86_400_000)));
+  const [meetingStart, setMeetingStart] = useState(() =>
+    toLocalDateTimeInput(new Date(Date.now() + 86_400_000)),
+  );
   const [meetingEnd, setMeetingEnd] = useState(() =>
     toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
   );
@@ -184,7 +183,9 @@ export default function InboxPage() {
         : selectedQuery.data.suggestedReplyTo?.trim() || parseReplyTo(selectedQuery.data.from),
     );
     setReplySubjectValue(replySubject(selectedQuery.data.subject));
-    setMeetingTitle(selectedQuery.data.subject?.trim() ? `Sync: ${selectedQuery.data.subject}` : "Meeting");
+    setMeetingTitle(
+      selectedQuery.data.subject?.trim() ? `Sync: ${selectedQuery.data.subject}` : "Meeting",
+    );
     setActiveMessageId(lastId);
     if (lastId) {
       setExpandedMessageIds(new Set([lastId]));
@@ -265,15 +266,26 @@ export default function InboxPage() {
           {statusQuery.isLoading ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Loader2 size={18} className="thread-spin" />
-              <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>Checking Gmail…</p>
+              <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
+                Checking Gmail…
+              </p>
             </div>
           ) : !isConnected ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
-              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
+              <p
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--thread-muted)",
+                }}
+              >
                 No threads yet
               </p>
-              <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
+              <p
+                style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}
+              >
                 Connect Gmail via Corsair to sync your inbox here.
               </p>
               <a
@@ -287,12 +299,21 @@ export default function InboxPage() {
           ) : threadsQuery.isLoading ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Loader2 size={18} className="thread-spin" />
-              <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>Loading threads…</p>
+              <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
+                Loading threads…
+              </p>
             </div>
           ) : threads.length === 0 ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
-              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
+              <p
+                style={{
+                  marginTop: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--thread-muted)",
+                }}
+              >
                 Inbox is empty
               </p>
             </div>
@@ -325,14 +346,20 @@ export default function InboxPage() {
               <h3>Your inbox is not connected</h3>
               <p>Connect Gmail through Corsair to pull mail into Thread.</p>
             </div>
-            <a href={connectHref} className="thread-btn-primary" style={{ fontSize: 13, padding: "10px 18px" }}>
+            <a
+              href={connectHref}
+              className="thread-btn-primary"
+              style={{ fontSize: 13, padding: "10px 18px" }}
+            >
               Connect Gmail
             </a>
           </div>
         ) : selectedQuery.isLoading ? (
           <div className="thread-app-empty">
             <Loader2 size={22} className="thread-spin" />
-            <p style={{ marginTop: 12, fontSize: 13, color: "var(--thread-dim)" }}>Opening thread…</p>
+            <p style={{ marginTop: 12, fontSize: 13, color: "var(--thread-dim)" }}>
+              Opening thread…
+            </p>
           </div>
         ) : selectedQuery.data ? (
           <div className="thread-inbox-message">
@@ -388,7 +415,9 @@ export default function InboxPage() {
                         <span className="thread-inbox-msg-summary">
                           <span className="thread-inbox-msg-top">
                             <strong>{displaySender(message.from)}</strong>
-                            <span className="thread-inbox-msg-date">{formatMessageDate(message.date)}</span>
+                            <span className="thread-inbox-msg-date">
+                              {formatMessageDate(message.date)}
+                            </span>
                           </span>
                           {!expanded ? (
                             <span className="thread-inbox-msg-snippet">
@@ -424,7 +453,10 @@ export default function InboxPage() {
               <label className="thread-set-label" htmlFor="reply-to">
                 To
                 {activeMessageId ? (
-                  <span className="thread-inbox-reply-hint"> — replying based on selected message</span>
+                  <span className="thread-inbox-reply-hint">
+                    {" "}
+                    — replying based on selected message
+                  </span>
                 ) : null}
               </label>
               <input
@@ -487,8 +519,8 @@ export default function InboxPage() {
                 </button>
               </div>
               <p className="thread-inbox-compose-note">
-                Approve queued actions from{" "}
-                <Link href="/queue">Queue</Link>. Nothing sends until you approve.
+                Approve queued actions from <Link href="/queue">Queue</Link>. Nothing sends until
+                you approve.
               </p>
             </div>
           </div>
@@ -510,7 +542,11 @@ export default function InboxPage() {
           <div className="thread-modal" onClick={(event) => event.stopPropagation()}>
             <div className="thread-modal-head">
               <h3>Schedule meeting from thread</h3>
-              <button type="button" className="thread-app-iconbtn" onClick={() => setShowSchedule(false)}>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                onClick={() => setShowSchedule(false)}
+              >
                 <X size={14} />
               </button>
             </div>
@@ -605,17 +641,25 @@ export default function InboxPage() {
               />
 
               <div className="thread-modal-actions">
-                <button type="button" className="thread-btn-ghost" onClick={() => setShowSchedule(false)}>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  onClick={() => setShowSchedule(false)}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="thread-btn-accent" disabled={queueMeeting.isPending}>
+                <button
+                  type="submit"
+                  className="thread-btn-accent"
+                  disabled={queueMeeting.isPending}
+                >
                   <ListChecks size={14} />
                   {queueMeeting.isPending ? "Queuing…" : "Queue invite + email"}
                 </button>
               </div>
               <p className="thread-inbox-compose-note" style={{ margin: 0 }}>
-                Goes to the approval queue first. After you approve, it appears on Calendar for the date you
-                picked.
+                Goes to the approval queue first. After you approve, it appears on Calendar for the
+                date you picked.
               </p>
             </form>
           </div>

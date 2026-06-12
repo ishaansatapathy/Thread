@@ -16,10 +16,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
-import {
-  isoToLocalDateTimeInput,
-  localDateTimeRangeToPayload,
-} from "~/lib/calendar-datetime";
+import { isoToLocalDateTimeInput, localDateTimeRangeToPayload } from "~/lib/calendar-datetime";
 
 const KIND_LABEL: Record<string, string> = {
   email_send: "Send email",
@@ -103,11 +100,15 @@ export default function QueuePage() {
         <div>
           <h2>Approval queue</h2>
           <p>
-            Replies, drafts, and calendar actions wait here. Nothing sends until you approve — human in
-            the loop, powered by Corsair.
+            Replies, drafts, and calendar actions wait here. Nothing sends until you approve — human
+            in the loop, powered by Corsair.
           </p>
         </div>
-        <Link href="/inbox" className="thread-btn-ghost" style={{ fontSize: 13, padding: "8px 14px" }}>
+        <Link
+          href="/inbox"
+          className="thread-btn-ghost"
+          style={{ fontSize: 13, padding: "8px 14px" }}
+        >
           Back to inbox
         </Link>
       </div>
@@ -145,7 +146,11 @@ export default function QueuePage() {
             <h3>Nothing waiting for approval</h3>
             <p>Queue a reply or meeting from Inbox — it will show up here before anything sends.</p>
           </div>
-          <Link href="/inbox" className="thread-btn-accent" style={{ fontSize: 13, padding: "10px 18px" }}>
+          <Link
+            href="/inbox"
+            className="thread-btn-accent"
+            style={{ fontSize: 13, padding: "10px 18px" }}
+          >
             Open inbox
           </Link>
         </div>
@@ -238,8 +243,8 @@ export default function QueuePage() {
             <div className="thread-cal-event-detail">
               <p className="thread-cal-confirm-title">{archiveConfirm.title}</p>
               <p className="thread-cal-event-detail-copy">
-                OK with these dates? Change them if needed, then proceed to archive this event on Google
-                Calendar.
+                OK with these dates? Change them if needed, then proceed to archive this event on
+                Google Calendar.
               </p>
               <div className="thread-modal-row">
                 <div>

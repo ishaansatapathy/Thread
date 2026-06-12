@@ -116,7 +116,9 @@ export default function CalendarPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [summary, setSummary] = useState("");
   const [attendee, setAttendee] = useState("");
-  const [startAt, setStartAt] = useState(() => toLocalDateTimeInput(new Date(Date.now() + 86_400_000)));
+  const [startAt, setStartAt] = useState(() =>
+    toLocalDateTimeInput(new Date(Date.now() + 86_400_000)),
+  );
   const [endAt, setEndAt] = useState(() =>
     toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
   );
@@ -252,7 +254,8 @@ export default function CalendarPage() {
           <div>
             <h3 className="thread-cal-toolbar-title">Your schedule</h3>
             <p className="thread-cal-toolbar-copy">
-              Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish.
+              Live events from Google Calendar. Dashed blocks are queued — approve in Queue to
+              publish.
             </p>
           </div>
           <button type="button" className="thread-btn-accent" onClick={() => setShowCreate(true)}>
@@ -263,7 +266,11 @@ export default function CalendarPage() {
       )}
 
       {banner ? (
-        <div className="thread-inbox-banner" data-variant={banner.type} style={{ margin: "12px 0 0" }}>
+        <div
+          className="thread-inbox-banner"
+          data-variant={banner.type}
+          style={{ margin: "12px 0 0" }}
+        >
           {banner.text}
         </div>
       ) : null}
@@ -373,7 +380,11 @@ export default function CalendarPage() {
           <div className="thread-modal" onClick={(event) => event.stopPropagation()}>
             <div className="thread-modal-head">
               <h3>Send calendar invite</h3>
-              <button type="button" className="thread-app-iconbtn" onClick={() => setShowCreate(false)}>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                onClick={() => setShowCreate(false)}
+              >
                 <X size={14} />
               </button>
             </div>
@@ -449,10 +460,18 @@ export default function CalendarPage() {
               </div>
 
               <div className="thread-modal-actions">
-                <button type="button" className="thread-btn-ghost" onClick={() => setShowCreate(false)}>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  onClick={() => setShowCreate(false)}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="thread-btn-accent" disabled={queueInvite.isPending}>
+                <button
+                  type="submit"
+                  className="thread-btn-accent"
+                  disabled={queueInvite.isPending}
+                >
                   <ListChecks size={14} />
                   {queueInvite.isPending ? "Queuing…" : "Queue invite"}
                 </button>
@@ -464,7 +483,10 @@ export default function CalendarPage() {
 
       {selectedEvent ? (
         <div className="thread-modal-backdrop" onClick={() => !eventBusy && setSelectedEvent(null)}>
-          <div className="thread-modal thread-cal-event-modal" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="thread-modal thread-cal-event-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="thread-modal-head">
               <h3>{selectedEvent.summary}</h3>
               <button
@@ -477,10 +499,12 @@ export default function CalendarPage() {
               </button>
             </div>
             <div className="thread-cal-event-detail">
-              <p className="thread-cal-event-when">{formatEventWhen(selectedEvent.start, selectedEvent.end)}</p>
+              <p className="thread-cal-event-when">
+                {formatEventWhen(selectedEvent.start, selectedEvent.end)}
+              </p>
               <p className="thread-cal-event-detail-copy">
-                Archive sends a request to the approval queue. Delete removes the event immediately from
-                Google Calendar.
+                Archive sends a request to the approval queue. Delete removes the event immediately
+                from Google Calendar.
               </p>
               {selectedEvent.htmlLink ? (
                 <a
