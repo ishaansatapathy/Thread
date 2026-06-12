@@ -554,8 +554,9 @@ export default function InboxPage() {
               className="thread-modal-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                const when = localDateTimeRangeToPayload(meetingStart, meetingEnd);
-                queueMeeting.mutate({
+                try {
+                  const when = localDateTimeRangeToPayload(meetingStart, meetingEnd);
+                  queueMeeting.mutate({
                   email: {
                     ...emailPayload,
                     body:
@@ -573,7 +574,10 @@ export default function InboxPage() {
                   },
                   sourceThreadId: selectedQuery.data?.id,
                   title: `Meeting with ${replyTo || "guest"}`,
-                });
+                  });
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Please review your dates");
+                }
               }}
             >
               <label className="thread-set-label" htmlFor="meeting-title">
