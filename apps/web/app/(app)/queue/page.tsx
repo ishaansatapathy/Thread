@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Archive,
@@ -16,7 +16,11 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
-import { isoToLocalDateTimeInput, localDateTimeRangeToPayload } from "~/lib/calendar-datetime";
+import {
+  isoToLocalDateTimeInput,
+  localDateTimeRangeToPayload,
+  validateLocalDateTimeRange,
+} from "~/lib/calendar-datetime";
 
 const KIND_LABEL: Record<string, string> = {
   email_send: "Send email",
@@ -70,7 +74,7 @@ export default function QueuePage() {
       setArchiveConfirm(null);
 
       if (data.kind === "calendar_archive") {
-        toast.success("Archive confirmed — event marked archived in Thread");
+        toast.success("Confirmed — event stays on your calendar");
       } else if (data.kind === "meeting_bundle" || data.kind === "calendar_invite") {
         toast.success("Approved — calendar invite sent");
       } else if (data.kind === "email_draft") {
@@ -130,6 +134,12 @@ export default function QueuePage() {
     }
     approve.mutate({ id: item.id });
   };
+
+  const archiveDateError = useMemo(() => {
+    if (!archiveConfirm) return null;
+    const check = validateLocalDateTimeRange(archiveConfirm.startAt, archiveConfirm.endAt);
+    return check.valid ? null : check.message;
+  }, [archiveConfirm]);
 
   return (
     <div className="thread-queue-page">
@@ -276,8 +286,8 @@ export default function QueuePage() {
             <div className="thread-cal-event-detail">
               <p className="thread-cal-confirm-title">{archiveConfirm.title}</p>
               <p className="thread-cal-event-detail-copy">
-                This archive is already queued. Confirm or edit the dates below, then proceed. Your
-                Google Calendar event will not be cancelled — Thread marks it as archived here.
+                Confirm or edit the dates below, then proceed. The event stays as a normal calendar
+                entry — this step only approves your queued request.
               </p>
               <div className="thread-modal-row">
                 <div>
@@ -313,6 +323,9 @@ export default function QueuePage() {
                   />
                 </div>
               </div>
+              {archiveDateError ? (
+                <p className="thread-cal-date-error">{archiveDateError}</p>
+              ) : null}
             </div>
             <div className="thread-modal-actions">
               <button
@@ -326,16 +339,24 @@ export default function QueuePage() {
               <button
                 type="button"
                 className="thread-btn-accent"
-                disabled={anyBusy}
+                disabled={anyBusy || Boolean(archiveDateError)}
                 onClick={() => {
-                  const archive = localDateTimeRangeToPayload(
-                    archiveConfirm.startAt,
-                    archiveConfirm.endAt,
-                  );
-                  approve.mutate({
-                    id: archiveConfirm.itemId,
-                    archive,
-                  });
+                  if (archiveDateError) {
+                    toast.error(archiveDateError);
+                    return;
+                  }
+                  try {
+                    const archive = localDateTimeRangeToPayload(
+                      archiveConfirm.startAt,
+                      archiveConfirm.endAt,
+                    );
+                    approve.mutate({
+                      id: archiveConfirm.itemId,
+                      archive,
+                    });
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Please review your dates");
+                  }
                 }}
               >
                 {activeItemId === archiveConfirm.itemId && activeAction === "approve"

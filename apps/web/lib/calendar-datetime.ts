@@ -43,7 +43,34 @@ export function localDateTimeInputToPayload(value: string) {
   };
 }
 
+export function validateLocalDateTimeRange(startValue: string, endValue: string) {
+  if (!startValue.trim() || !endValue.trim()) {
+    return { valid: false as const, message: "Start and end date/time are required." };
+  }
+
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { valid: false as const, message: "Invalid date/time — please review your dates." };
+  }
+
+  if (end.getTime() <= start.getTime()) {
+    return {
+      valid: false as const,
+      message: "End must be after start — please review your dates.",
+    };
+  }
+
+  return { valid: true as const };
+}
+
 export function localDateTimeRangeToPayload(startValue: string, endValue: string) {
+  const check = validateLocalDateTimeRange(startValue, endValue);
+  if (!check.valid) {
+    throw new Error(check.message);
+  }
+
   const start = localDateTimeInputToPayload(startValue);
   const end = localDateTimeInputToPayload(endValue);
   return {

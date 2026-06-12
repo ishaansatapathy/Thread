@@ -1116,6 +1116,17 @@
   gap: 12px;
 }
 
+.thread-cal-date-error {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.2);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 520px) {
   .thread-cal-confirm-modal .thread-modal-row {
     grid-template-columns: 1fr;
