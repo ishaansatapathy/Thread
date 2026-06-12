@@ -115,6 +115,30 @@ export function getHeader(headers: GmailHeader[], name: string) {
   return headers.find((entry) => entry.name?.toLowerCase() === name.toLowerCase())?.value;
 }
 
+type HeaderPart = { headers?: GmailHeader[]; parts?: HeaderPart[] };
+
+/** Walks MIME parts until we find headers (metadata responses often nest them). */
+export function collectMessageHeaders(part: HeaderPart | undefined): GmailHeader[] {
+  if (!part) return [];
+  if (part.headers?.length) return part.headers;
+  for (const child of part.parts ?? []) {
+    const nested = collectMessageHeaders(child);
+    if (nested.length) return nested;
+  }
+  return [];
+}
+
+export function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 export function parseGmailMessage(message: {
   id?: string;
   snippet?: string;

@@ -20,9 +20,11 @@ import {
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import {
+  decodeHtmlEntities,
   displaySender,
   formatListDate,
   formatMessageDate,
+  listThreadSubject,
   parseReplyTo,
   replySubject,
   replyTargetForMessage,
@@ -516,9 +518,9 @@ export default function InboxPage() {
                     <span className="thread-inbox-row-date">{formatListDate(thread.date)}</span>
                   </span>
                   <span className="thread-inbox-row-subject">
-                    {thread.subject?.trim() || thread.snippet?.trim() || "No subject"}
+                    {listThreadSubject(thread.subject, thread.snippet)}
                   </span>
-                  <span className="thread-inbox-row-snippet">{thread.snippet}</span>
+                  <span className="thread-inbox-row-snippet">{decodeHtmlEntities(thread.snippet)}</span>
                 </button>
               ))}
               {inbox.nextPageToken ? (
