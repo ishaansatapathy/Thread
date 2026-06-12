@@ -7,12 +7,14 @@ import { ServiceError, serviceError } from "@repo/services/errors";
 import { getInboxService } from "@repo/services/inbox";
 import {
   parseCalendarArchivePayload,
+  parseCalendarDeletePayload,
   parseCalendarQueuePayload,
   parseEmailQueuePayload,
   parseMeetingBundlePayload,
 } from "@repo/services/queue/schemas";
 import type {
   CalendarArchivePayload,
+  CalendarDeletePayload,
   CalendarQueuePayload,
   EmailQueuePayload,
   MeetingBundlePayload,
@@ -192,7 +194,7 @@ export class ThreadQueueService implements QueueService {
     },
   ) {
     const archive = parseCalendarArchivePayload(input.archive);
-    const title = input.title?.trim() || `Archive: ${archive.summary}`;
+    const title = input.title?.trim() || `Reschedule: ${archive.summary}`;
     const preview =
       input.preview?.trim() ||
       truncate(
@@ -212,6 +214,34 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue calendar archive");
+    return mapRow(row);
+  }
+
+  async enqueueCalendarDelete(
+    userId: string,
+    input: {
+      delete: CalendarDeletePayload;
+      title?: string;
+      preview?: string;
+    },
+  ) {
+    const payload = parseCalendarDeletePayload(input.delete);
+    const title = input.title?.trim() || `Delete: ${payload.summary}`;
+    const preview = input.preview?.trim() || truncate(payload.summary);
+
+    const [row] = await db
+      .insert(threadQueueItemsTable)
+      .values({
+        userId,
+        kind: "calendar_delete",
+        title,
+        preview,
+        payload,
+        status: "pending",
+      })
+      .returning();
+
+    if (!row) throw serviceError("INTERNAL", "Could not queue calendar delete");
     return mapRow(row);
   }
 
@@ -335,6 +365,11 @@ export class ThreadQueueService implements QueueService {
             });
           }
         }
+        return;
+      }
+      case "calendar_delete": {
+        const deletePayload = parseCalendarDeletePayload(payload);
+        await calendar.deleteEvent(userId, deletePayload.eventId);
         return;
       }
       default:

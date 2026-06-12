@@ -3,7 +3,8 @@ export type QueueItemKind =
   | "email_draft"
   | "calendar_invite"
   | "meeting_bundle"
-  | "calendar_archive";
+  | "calendar_archive"
+  | "calendar_delete";
 
 export type QueueItemStatus = "pending" | "approved" | "dismissed" | "failed";
 
@@ -35,6 +36,12 @@ export type CalendarArchivePayload = {
   startDateTime: string;
   endDateTime: string;
   timeZone?: string;
+  htmlLink?: string;
+};
+
+export type CalendarDeletePayload = {
+  eventId: string;
+  summary: string;
   htmlLink?: string;
 };
 
@@ -84,6 +91,14 @@ export interface QueueService {
     userId: string,
     input: {
       archive: CalendarArchivePayload;
+      title?: string;
+      preview?: string;
+    },
+  ): Promise<QueueItem>;
+  enqueueCalendarDelete(
+    userId: string,
+    input: {
+      delete: CalendarDeletePayload;
       title?: string;
       preview?: string;
     },

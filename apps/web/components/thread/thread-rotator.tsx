@@ -116,9 +116,9 @@ const ITEMS: RotatorItem[] = [
     ),
   },
   {
-    phrase: "Talk to an agent.",
-    label: "Corsair MCP",
-    desc: "Plain-English commands that turn into email and calendar actions.",
+    phrase: "Call the REST API.",
+    label: "OpenAPI",
+    desc: "Every inbox, queue and calendar action is documented at /docs for tools and agents.",
     icon: <Bot size={13} />,
     panel: (
       <div className="thread-rotator-stack">
@@ -135,7 +135,7 @@ const ITEMS: RotatorItem[] = [
   {
     phrase: "React in realtime.",
     label: "Webhooks",
-    desc: "Corsair webhooks push changes instantly — no polling loops.",
+    desc: "Webhook receiver refreshes the mail cache and calendar range when Google pushes updates.",
     icon: <Zap size={13} />,
     panel: (
       <div className="thread-rotator-stack thread-rotator-stack--log">

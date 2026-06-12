@@ -10,6 +10,7 @@ const QUEUE_OPENAPI_PATHS = [
   "/queue/enqueue/calendar",
   "/queue/enqueue/meeting",
   "/queue/enqueue/calendar-archive",
+  "/queue/enqueue/calendar-delete",
   "/queue/approve",
   "/queue/dismiss",
 ] as const;

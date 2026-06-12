@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getQueueService } from "@repo/services/queue";
 import {
   calendarArchivePayloadSchema,
+  calendarDeletePayloadSchema,
   calendarQueuePayloadSchema,
   emailQueuePayloadSchema,
 } from "@repo/services/queue/schemas";
@@ -15,7 +16,7 @@ const getPath = generatePath("/queue");
 
 const queueItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["email_send", "email_draft", "calendar_invite", "meeting_bundle", "calendar_archive"]),
+  kind: z.enum(["email_send", "email_draft", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
   title: z.string(),
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -138,6 +139,25 @@ export const queueRouter = router({
       try {
         const queue = getQueueService();
         return await queue.enqueueCalendarArchive(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  enqueueCalendarDelete: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/enqueue/calendar-delete"), tags: TAGS } })
+    .input(
+      z.object({
+        delete: calendarDeletePayloadSchema,
+        title: z.string().max(200).optional(),
+        preview: z.string().max(500).optional(),
+      }),
+    )
+    .output(queueItemSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueCalendarDelete(ctx.user.id, input);
       } catch (error) {
         mapServiceError(error);
       }

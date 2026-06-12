@@ -22,6 +22,8 @@ import {
   suggestReplyTo,
 } from "../utils/gmail-message";
 import { ensureCorsairTenant } from "./corsair-tenant";
+import type { SelectMailCacheRow } from "@repo/database/schema";
+
 import { mailCache, type CachedThreadMetadata } from "./mail-cache";
 
 const LIST_METADATA_HEADERS = ["Subject", "From", "Date"];
@@ -63,6 +65,33 @@ export function parseHeaderDate(value?: string): Date | undefined {
   if (!value) return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function isUsableCacheRow(row: SelectMailCacheRow | undefined): boolean {
+  if (!row) return false;
+  const subject = row.subject?.trim();
+  const hasSender = Boolean(row.fromName?.trim() || row.fromAddress?.trim());
+  return Boolean(subject && subject !== "No subject" && hasSender);
+}
+
+function threadFromCacheRow(
+  id: string,
+  detail: { snippet?: string; historyId?: string },
+  cached: SelectMailCacheRow,
+  messages: GmailMetadataMessage[],
+): InboxThread {
+  const labelIds = messages.flatMap((message) => message.labelIds ?? []);
+  return {
+    id,
+    snippet: decodeHtmlEntities(detail.snippet ?? cached.snippet ?? ""),
+    historyId: detail.historyId ?? cached.historyId ?? undefined,
+    subject: cached.subject ?? undefined,
+    from: cached.fromAddress ?? undefined,
+    fromName: cached.fromName ?? undefined,
+    date: cached.lastMessageAt?.toISOString(),
+    messageCount: cached.messageCount ?? messages.length,
+    unread: labelIds.includes("UNREAD"),
+  };
 }
 
 export class CorsairInboxService implements InboxService {
@@ -191,6 +220,17 @@ export class CorsairInboxService implements InboxService {
         });
 
         const messages = (detail.messages ?? []) as GmailMetadataMessage[];
+        const cachedRow = cache.get(id);
+
+        if (
+          isUsableCacheRow(cachedRow) &&
+          cachedRow!.historyId &&
+          detail.historyId &&
+          cachedRow!.historyId === detail.historyId
+        ) {
+          return threadFromCacheRow(id, detail, cachedRow!, messages);
+        }
+
         const { subject, fromRaw, dateHeader } = await this.resolveListMetadata(corsair, messages);
         const labelIds = messages.flatMap(
           (message: GmailMetadataMessage) => message.labelIds ?? [],
@@ -237,7 +277,7 @@ export class CorsairInboxService implements InboxService {
           id,
           snippet: cached?.snippet ?? "",
           historyId: cached?.historyId ?? undefined,
-          subject: cached?.subject,
+          subject: cached?.subject ?? undefined,
           from: cached?.fromAddress ?? undefined,
           fromName: cached?.fromName ?? undefined,
           date: cached?.lastMessageAt?.toISOString(),

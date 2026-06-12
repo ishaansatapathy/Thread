@@ -111,3 +111,11 @@ export function eventToArchivePayload(event: {
     htmlLink: event.htmlLink,
   };
 }
+
+export function eventToDeletePayload(event: { id: string; summary: string; htmlLink?: string }) {
+  return {
+    eventId: event.id,
+    summary: event.summary,
+    htmlLink: event.htmlLink,
+  };
+}

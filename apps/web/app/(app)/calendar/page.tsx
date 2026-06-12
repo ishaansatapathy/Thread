@@ -21,6 +21,7 @@ import { trpc } from "~/trpc/client";
 import {
   eventDayKey,
   eventToArchivePayload,
+  eventToDeletePayload,
   localDateTimeRangeToPayload,
   localDayKey,
   toLocalDateTimeInput,
@@ -91,6 +92,7 @@ type CalendarEventItem = {
   attendees?: Array<{ email?: string; displayName?: string; responseStatus?: string }>;
   pending?: boolean;
   pendingArchive?: boolean;
+  pendingDelete?: boolean;
 };
 
 function readQueuedCalendar(payload: Record<string, unknown>) {
@@ -177,12 +179,13 @@ export default function CalendarPage() {
     onError: (error) => toast.error(error.message),
   });
 
-  const deleteEvent = trpc.calendar.deleteEvent.useMutation({
+  const queueDelete = trpc.queue.enqueueCalendarDelete.useMutation({
     onSuccess: async () => {
-      await refreshEvents();
+      await utils.queue.pendingCount.invalidate();
+      await utils.queue.list.invalidate();
       setSelectedEvent(null);
       setShowDeleteConfirm(false);
-      toast.success("Event deleted from Google Calendar");
+      toast.success("Delete queued — approve in Queue to remove from Google Calendar");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -217,7 +220,7 @@ export default function CalendarPage() {
       if (item.kind === "calendar_archive") {
         const payload = item.payload;
         const eventId = String(payload.eventId ?? "");
-        const summary = String(payload.summary ?? item.title.replace(/^Archive:\s*/i, ""));
+        const summary = String(payload.summary ?? item.title.replace(/^Reschedule:\s*/i, ""));
         const start = String(payload.startDateTime ?? "");
         const end = String(payload.endDateTime ?? "");
         const key = eventDayKey(start);
@@ -234,6 +237,18 @@ export default function CalendarPage() {
             end,
             pendingArchive: true,
           });
+        }
+        continue;
+      }
+
+      if (item.kind === "calendar_delete") {
+        const payload = item.payload;
+        const eventId = String(payload.eventId ?? "");
+        for (const [, dayEvents] of map) {
+          const existing = dayEvents.find((entry) => entry.id === eventId);
+          if (existing) {
+            existing.pendingDelete = true;
+          }
         }
         continue;
       }
@@ -261,7 +276,7 @@ export default function CalendarPage() {
     return map;
   }, [eventsQuery.data?.events, pendingQueue.data?.items, week]);
 
-  const eventBusy = queueArchive.isPending || deleteEvent.isPending;
+  const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
   return (
     <div>
@@ -382,8 +397,9 @@ export default function CalendarPage() {
                         data-selected={selectedEvent?.id === event.id}
                         data-pending={event.pending ? "true" : undefined}
                         data-pending-archive={event.pendingArchive ? "true" : undefined}
+                        data-pending-delete={event.pendingDelete ? "true" : undefined}
                         onClick={() => {
-                          if (event.pending || event.pendingArchive) {
+                          if (event.pending || event.pendingArchive || event.pendingDelete) {
                             router.push("/queue");
                             return;
                           }
@@ -393,9 +409,11 @@ export default function CalendarPage() {
                         <span className="thread-cal-event-time">
                           {event.pendingArchive
                             ? "Review pending · "
-                            : event.pending
-                              ? "Queued · "
-                              : ""}
+                            : event.pendingDelete
+                              ? "Delete queued · "
+                              : event.pending
+                                ? "Queued · "
+                                : ""}
                           {formatEventTime(event.start)}
                         </span>
                         <span className="thread-cal-event-title">
@@ -574,8 +592,8 @@ export default function CalendarPage() {
                   <strong>Reschedule</strong> — queue new dates; nothing changes until you approve.
                 </li>
                 <li>
-                  <strong>Delete</strong> — permanently remove this event and notify guests. Cannot be
-                  undone.
+                  <strong>Delete</strong> — queue removal; nothing is deleted until you approve in
+                  Queue.
                 </li>
               </ul>
               {selectedEvent.htmlLink ? (
@@ -622,18 +640,18 @@ export default function CalendarPage() {
       {showDeleteConfirm && selectedEvent ? (
         <div
           className="thread-modal-backdrop thread-modal-backdrop--confirm"
-          onClick={() => !deleteEvent.isPending && setShowDeleteConfirm(false)}
+          onClick={() => !queueDelete.isPending && setShowDeleteConfirm(false)}
         >
           <div
             className="thread-modal thread-cal-delete-modal thread-cal-confirm-modal"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="thread-modal-head">
-              <h3>Delete event?</h3>
+              <h3>Queue delete?</h3>
               <button
                 type="button"
                 className="thread-app-iconbtn"
-                disabled={deleteEvent.isPending}
+                disabled={queueDelete.isPending}
                 onClick={() => setShowDeleteConfirm(false)}
               >
                 <X size={14} />
@@ -642,14 +660,15 @@ export default function CalendarPage() {
             <div className="thread-cal-event-detail">
               <p className="thread-cal-confirm-title">{selectedEvent.summary}</p>
               <p className="thread-cal-event-detail-copy">
-                This permanently removes the event from Google Calendar. This cannot be undone.
+                This adds a delete request to your approval queue. The event stays on Google Calendar
+                until you approve.
               </p>
             </div>
             <div className="thread-modal-actions">
               <button
                 type="button"
                 className="thread-btn-ghost"
-                disabled={deleteEvent.isPending}
+                disabled={queueDelete.isPending}
                 onClick={() => setShowDeleteConfirm(false)}
               >
                 Keep event
@@ -657,11 +676,16 @@ export default function CalendarPage() {
               <button
                 type="button"
                 className="thread-btn-accent thread-cal-event-delete-confirm"
-                disabled={deleteEvent.isPending}
-                onClick={() => deleteEvent.mutate({ eventId: selectedEvent.id })}
+                disabled={queueDelete.isPending}
+                onClick={() =>
+                  queueDelete.mutate({
+                    delete: eventToDeletePayload(selectedEvent),
+                    title: `Delete: ${selectedEvent.summary}`,
+                  })
+                }
               >
                 <Trash2 size={14} />
-                {deleteEvent.isPending ? "Deleting…" : "Delete permanently"}
+                {queueDelete.isPending ? "Queuing…" : "Add to queue"}
               </button>
             </div>
           </div>

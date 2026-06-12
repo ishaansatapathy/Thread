@@ -2,7 +2,7 @@
 
 **Thread** is a Gmail + Google Calendar workflow app with a human-in-the-loop **approval queue**. Nothing sends or schedules until you approve it in Queue.
 
-Built for the Corsair Hackathon using **Corsair MCP** (Gmail + Calendar), **tRPC**, **OpenAPI REST**, **Drizzle/Postgres**, and optional **OpenAI** for inbox priority ranking.
+Built for the Corsair Hackathon using the **Corsair SDK** (Gmail + Calendar), **tRPC**, **OpenAPI REST**, **Drizzle/Postgres**, and optional **OpenAI** for inbox priority ranking.
 
 ## Quick start
 
@@ -64,8 +64,8 @@ Direct send is **disabled by default** (`THREAD_ALLOW_DIRECT_SEND` must be `true
 - **Load more** — token-based pagination accumulates pages (no 25-thread cap).
 - **Rich list metadata** — each row is hydrated with sender, subject, date, message count and unread state via a cheap `threads.get(metadata)` enrichment pass.
 - **Drafts** — a Drafts tab lists Gmail drafts (subject/recipient/snippet).
-- **Local mail cache** — thread metadata is persisted in Postgres (`thread_mail_cache`). Loads reuse cached rows by `historyId`, search falls back to the cache when Gmail is unreachable, and webhooks update it.
-- **Webhooks** — `POST /webhooks/gmail` (Corsair/Google Pub/Sub push) verifies a shared secret and refreshes the affected tenant's cache. Set `CORSAIR_WEBHOOK_SECRET` to enable.
+- **Local mail cache** — thread metadata in Postgres (`thread_mail_cache`). Unchanged threads skip re-fetch when `historyId` matches; search falls back to cache when Gmail is unreachable.
+- **Webhooks** — `POST /webhooks/gmail` and `/webhooks/calendar` verify a shared secret, then refresh inbox cache / calendar range. Set `CORSAIR_WEBHOOK_SECRET` to enable.
 - **Keyboard** — `j`/`k` move selection, `/` focuses search, `⌘K` opens the command palette.
 
 ### OpenAPI + AI
@@ -130,9 +130,16 @@ The web app uses tRPC internally; OpenAPI is for tools, integrations, and AI fun
 4. Open a thread → write reply → **Add to queue**
 5. **Queue** → **Approve** → email sends via Gmail
 6. **Inbox** → **Schedule meeting** → Queue → Approve → event on **Calendar**
-7. **Calendar** → recurring events show a ↻ badge → **Reschedule** → Queue → confirm dates
+7. **Calendar** → recurring events show a ↻ badge → **Reschedule** or **Delete** (both queue-first) → approve in **Queue**
 8. (Optional) Set `OPENAI_API_KEY` → Inbox **Priority** tab ranks urgent threads
 9. Show judges **http://localhost:8000/docs** — live OpenAPI
+
+### Webhook wiring (optional, production)
+
+1. Set `CORSAIR_WEBHOOK_SECRET` in `.env` (min 16 chars).
+2. Point Google Pub/Sub (Gmail) or your push proxy at `POST https://<api-host>/webhooks/gmail` with header `x-corsair-webhook-secret: <secret>`.
+3. Calendar pushes can use `POST /webhooks/calendar` with the same secret (body may include `tenantId` or Pub/Sub `emailAddress`).
+4. Thread ACKs immediately and refreshes cache in the background — no slow handler required.
 
 ## Scripts
 
@@ -155,6 +162,7 @@ pnpm build            # production build
 - Migrations versioned in `packages/database/drizzle/` (queue, Corsair, `thread_mail_cache`); legacy form-builder tables dropped in `0022`
 - Webhook receiver verifies a shared secret with a constant-time comparison and ACKs fast (refresh runs detached)
 - Mail-cache writes are best-effort — cache failures never break the live inbox
+- Calendar **delete** and **reschedule** are queue-first (same human-in-the-loop as email)
 - E2E smoke tests in `apps/web/e2e` (Playwright) cover the public surface and the auth gate
 
 ## License

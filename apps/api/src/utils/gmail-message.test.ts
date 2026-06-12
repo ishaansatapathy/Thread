@@ -12,10 +12,8 @@ describe("collectMessageHeaders", () => {
 
   it("walks nested MIME parts for headers", () => {
     const headers = collectMessageHeaders({
-      mimeType: "multipart/alternative",
       parts: [
         {
-          mimeType: "text/plain",
           headers: [{ name: "From", value: "Ada <ada@example.com>" }],
         },
       ],

@@ -11,6 +11,7 @@ import {
   Loader2,
   Mail,
   Sparkles,
+  Trash2,
   X,
   XCircle,
 } from "lucide-react";
@@ -27,7 +28,8 @@ const KIND_LABEL: Record<string, string> = {
   email_draft: "Save draft",
   calendar_invite: "Calendar invite",
   meeting_bundle: "Meeting + email",
-  calendar_archive: "Archive event",
+  calendar_archive: "Reschedule event",
+  calendar_delete: "Delete event",
 };
 
 type ArchiveConfirmState = {
@@ -38,6 +40,7 @@ type ArchiveConfirmState = {
 };
 
 function kindIcon(kind: string) {
+  if (kind === "calendar_delete") return Trash2;
   if (kind === "calendar_archive") return Archive;
   if (kind.includes("calendar") || kind === "meeting_bundle") return Calendar;
   return Mail;
@@ -74,7 +77,9 @@ export default function QueuePage() {
       setArchiveConfirm(null);
 
       if (data.kind === "calendar_archive") {
-        toast.success("Confirmed — event stays on your calendar");
+        toast.success("Approved — event rescheduled on your calendar");
+      } else if (data.kind === "calendar_delete") {
+        toast.success("Approved — event deleted from Google Calendar");
       } else if (data.kind === "meeting_bundle" || data.kind === "calendar_invite") {
         toast.success("Approved — calendar invite sent");
       } else if (data.kind === "email_draft") {
@@ -118,6 +123,7 @@ export default function QueuePage() {
       return "Sending…";
     }
     if (item.kind === "calendar_archive") return "Review dates";
+    if (item.kind === "calendar_delete") return "Approve delete";
     return "Approve & send";
   };
 

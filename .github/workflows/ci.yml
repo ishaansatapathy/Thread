@@ -63,6 +63,11 @@ jobs:
 
       - run: pnpm build
 
+      - name: E2E smoke tests
+        run: |
+          pnpm --filter web test:e2e:install
+          pnpm --filter web test:e2e
+
       - name: API readiness gate
         run: |
           pnpm --filter @repo/api start &

@@ -94,6 +94,52 @@ function useInboxThreads(query: string, enabled: boolean) {
   };
 }
 
+function useDrafts(enabled: boolean) {
+  const [pageToken, setPageToken] = useState<string | undefined>(undefined);
+  const [pages, setPages] = useState<
+    { token: string | undefined; drafts: RouterOutputs["inbox"]["listDrafts"]["drafts"] }[]
+  >([]);
+
+  const result = trpc.inbox.listDrafts.useQuery(
+    { maxResults: PAGE_SIZE, pageToken },
+    { enabled, placeholderData: (prev) => prev },
+  );
+
+  useEffect(() => {
+    if (!result.data) return;
+    setPages((current) => {
+      if (current.some((page) => page.token === pageToken)) return current;
+      return [...current, { token: pageToken, drafts: result.data.drafts }];
+    });
+  }, [result.data, pageToken]);
+
+  const drafts = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: RouterOutputs["inbox"]["listDrafts"]["drafts"] = [];
+    for (const page of pages) {
+      for (const draft of page.drafts) {
+        if (seen.has(draft.id)) continue;
+        seen.add(draft.id);
+        merged.push(draft);
+      }
+    }
+    return merged;
+  }, [pages]);
+
+  const nextPageToken = result.data?.nextPageToken;
+  const loadMore = useCallback(() => {
+    if (nextPageToken) setPageToken(nextPageToken);
+  }, [nextPageToken]);
+
+  return {
+    drafts,
+    nextPageToken,
+    loadMore,
+    isLoading: result.isLoading && pages.length === 0,
+    isFetchingMore: result.isFetching && pageToken !== undefined,
+  };
+}
+
 export default function InboxPage() {
   const searchParams = useSearchParams();
   const [view, setView] = useState<InboxView>("inbox");
@@ -133,14 +179,17 @@ export default function InboxPage() {
     return () => window.clearTimeout(id);
   }, [searchInput]);
 
+  useEffect(() => {
+    if (searchParams.get("focus") === "search") {
+      setView("inbox");
+      window.setTimeout(() => searchRef.current?.focus(), 50);
+    }
+  }, [searchParams]);
+
   const inbox = useInboxThreads(appliedQuery, isConnected);
   const threads = inbox.threads;
 
-  const draftsQuery = trpc.inbox.listDrafts.useQuery(
-    { maxResults: PAGE_SIZE },
-    { enabled: isConnected && view === "drafts" },
-  );
-  const drafts = draftsQuery.data?.drafts ?? [];
+  const drafts = useDrafts(isConnected && view === "drafts");
 
   const selectedQuery = trpc.inbox.getThread.useQuery(
     { threadId: selectedId ?? "" },
@@ -433,14 +482,14 @@ export default function InboxPage() {
               </a>
             </div>
           ) : view === "drafts" ? (
-            draftsQuery.isLoading ? (
+            drafts.isLoading ? (
               <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
                 <Loader2 size={18} className="thread-spin" />
                 <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
                   Loading drafts…
                 </p>
               </div>
-            ) : drafts.length === 0 ? (
+            ) : drafts.drafts.length === 0 ? (
               <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
                 <FileText size={20} style={{ opacity: 0.35 }} />
                 <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
@@ -451,7 +500,8 @@ export default function InboxPage() {
                 </p>
               </div>
             ) : (
-              drafts.map((draft) => (
+              <>
+              {drafts.drafts.map((draft) => (
                 <button
                   key={draft.id}
                   type="button"
@@ -475,7 +525,24 @@ export default function InboxPage() {
                   </span>
                   <span className="thread-inbox-row-snippet">{draft.snippet}</span>
                 </button>
-              ))
+              ))}
+              {drafts.nextPageToken ? (
+                <button
+                  type="button"
+                  className="thread-inbox-loadmore"
+                  onClick={drafts.loadMore}
+                  disabled={drafts.isFetchingMore}
+                >
+                  {drafts.isFetchingMore ? (
+                    <>
+                      <Loader2 size={13} className="thread-spin" /> Loading…
+                    </>
+                  ) : (
+                    "Load more"
+                  )}
+                </button>
+              ) : null}
+              </>
             )
           ) : inbox.isLoading ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
