@@ -1,15 +1,9 @@
-# Hero headline fonts
+# Landing hero font
 
-Active font: **Epistolar** (`hero.ttf`)
+The marketing homepage loads **`hero.ttf`** (see `thread.css` → `ThreadHero`).
 
-## Your 3 DaFont trials
+- Keep `hero.ttf` in this folder locally — it is **gitignored** (font licenses / binaries are not committed).
+- After replacing the file, hard refresh the browser (`Ctrl+Shift+R`).
+- App pages (Inbox, Queue, Calendar) use Geist — they do not depend on this font.
 
-| Font | File | Switch to try |
-|------|------|----------------|
-| Epistolar | `epistolar.ttf` | `Copy-Item epistolar.ttf hero.ttf -Force` |
-| Minecraft | `minecraft.ttf` | `Copy-Item minecraft.ttf hero.ttf -Force` |
-| Sigokae | `sigokae.ttf` | `Copy-Item sigokae.ttf hero.ttf -Force` |
-
-From `apps/web/public/fonts` in PowerShell, then hard refresh browser (`Ctrl+Shift+R`).
-
-Also update `data-hero-font` on `<h1>` in `thread-hero.tsx` (`epistolar` | `minecraft` | `sigokae`) for CSS tweaks.
+If `hero.ttf` is missing, the hero headline falls back to system sans-serif.

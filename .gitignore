@@ -114,14 +114,13 @@ Recording*
 
 
 
-# Font source/zip files
-
-*.zip
-
+# Font files — local only (landing hero). Do not commit binaries.
+apps/web/public/fonts/*.ttf
+apps/web/public/fonts/*.woff2
 *.ttf
-
 *.otf
+Readme.txt
+*Sigokae*
+*Epistolar*
+*Minecraft*.ttf
 
-
-
-# Ref/scratch folders

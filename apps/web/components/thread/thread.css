@@ -270,12 +270,7 @@
   text-transform: none;
 }
 
-/* Active: epistolar — swap via public/fonts/hero.ttf */
-.thread-headline[data-hero-font="epistolar"] {
-  font-weight: 400;
-  letter-spacing: 0.02em;
-}
-
+/* Landing hero — local hero.ttf in public/fonts/ (gitignored) */
 .thread-headline[data-hero-font="minecraft"] {
   font-weight: 400;
   font-size: clamp(2.2rem, 5.5vw, 3.75rem);
