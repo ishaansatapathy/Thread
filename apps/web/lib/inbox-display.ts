@@ -57,6 +57,24 @@ export function formatListDate(value?: string) {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/** Subject line for list rows — skips placeholder values from older cache rows. */
+export function listThreadSubject(subject?: string, snippet?: string) {
+  const trimmed = subject?.trim();
+  if (trimmed && trimmed !== "No subject") return trimmed;
+  return snippet?.trim() || "No subject";
+}
+
 export function replyTargetForMessage(
   message: { from?: string; to?: string },
   userEmail?: string,

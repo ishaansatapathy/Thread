@@ -12,6 +12,8 @@ import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../
 import { getCorsairOAuthModule } from "../corsair-imports";
 import {
   buildRawEmail,
+  collectMessageHeaders,
+  decodeHtmlEntities,
   displaySender,
   getHeader,
   normalizeSubject,
@@ -166,8 +168,9 @@ export class CorsairInboxService implements InboxService {
 
   /**
    * Gmail's thread list lacks headers, so we hydrate each row with a cheap
-   * `metadata` get. Rows whose historyId is unchanged are served from the local
-   * cache, avoiding redundant Gmail calls.
+   * `metadata` get. Corsair passes `metadataHeaders` as a comma-separated query
+   * param, which Gmail ignores — so we fall back to `messages.get(format=full)`
+   * when Subject/From are missing.
    */
   private async enrichThreads(
     tenantId: string,
@@ -188,21 +191,20 @@ export class CorsairInboxService implements InboxService {
         });
 
         const messages = (detail.messages ?? []) as GmailMetadataMessage[];
-        const last = messages[messages.length - 1];
-        const headers = (last?.payload?.headers ?? []) as GmailHeader[];
-        const fromRaw = getHeader(headers, "From");
-        const subject = getHeader(headers, "Subject")?.trim();
+        const { subject, fromRaw, dateHeader } = await this.resolveListMetadata(corsair, messages);
         const labelIds = messages.flatMap(
           (message: GmailMetadataMessage) => message.labelIds ?? [],
         );
         const unread = labelIds.includes("UNREAD");
-        const lastMessageAt = parseHeaderDate(getHeader(headers, "Date"));
+        const lastMessageAt = parseHeaderDate(dateHeader);
+        const last = messages[messages.length - 1];
+        const rawSnippet = detail.snippet ?? last?.snippet ?? "";
 
         const thread: InboxThread = {
           id,
-          snippet: detail.snippet ?? last?.snippet ?? "",
+          snippet: decodeHtmlEntities(rawSnippet),
           historyId: detail.historyId,
-          subject: subject || "No subject",
+          subject,
           from: parseEmailAddress(fromRaw) || undefined,
           fromName: fromRaw ? displaySender(fromRaw) : undefined,
           date: lastMessageAt?.toISOString(),
@@ -235,7 +237,7 @@ export class CorsairInboxService implements InboxService {
           id,
           snippet: cached?.snippet ?? "",
           historyId: cached?.historyId ?? undefined,
-          subject: cached?.subject ?? "No subject",
+          subject: cached?.subject,
           from: cached?.fromAddress ?? undefined,
           fromName: cached?.fromName ?? undefined,
           date: cached?.lastMessageAt?.toISOString(),
@@ -248,6 +250,44 @@ export class CorsairInboxService implements InboxService {
     void mailCache.upsertMany(tenantId, toPersist);
 
     return threads;
+  }
+
+  /** Subject from the first message; sender/date from the latest. */
+  private async resolveListMetadata(
+    corsair: ReturnType<ReturnType<typeof getCorsair>["withTenant"]>,
+    messages: GmailMetadataMessage[],
+  ): Promise<{ subject?: string; fromRaw?: string; dateHeader?: string }> {
+    const first = messages[0];
+    const last = messages[messages.length - 1] ?? first;
+
+    let subjectHeaders = collectMessageHeaders(first?.payload);
+    let fromHeaders = collectMessageHeaders(last?.payload);
+
+    if (!getHeader(subjectHeaders, "Subject")?.trim() && first?.id) {
+      subjectHeaders = await this.loadMessageHeaders(corsair, first.id);
+    }
+    if (!getHeader(fromHeaders, "From")?.trim() && last?.id) {
+      fromHeaders =
+        last.id === first?.id ? subjectHeaders : await this.loadMessageHeaders(corsair, last.id);
+    }
+
+    const normalized = normalizeSubject(getHeader(subjectHeaders, "Subject"));
+    const subject = normalized === "No subject" ? undefined : normalized;
+    const fromRaw = getHeader(fromHeaders, "From");
+    const dateHeader = getHeader(fromHeaders, "Date") ?? getHeader(subjectHeaders, "Date");
+
+    return { subject, fromRaw, dateHeader };
+  }
+
+  private async loadMessageHeaders(
+    corsair: ReturnType<ReturnType<typeof getCorsair>["withTenant"]>,
+    messageId: string,
+  ) {
+    const detail = await corsair.gmail.api.messages.get({
+      id: messageId,
+      format: "full",
+    });
+    return collectMessageHeaders(detail.payload as GmailMetadataMessage["payload"]);
   }
 
   async listDrafts(
