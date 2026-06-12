@@ -945,6 +945,21 @@
   background: rgba(37, 99, 235, 0.42);
 }
 
+.thread-cal-event[data-pending="true"] {
+  border-style: dashed;
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(120, 53, 15, 0.28);
+}
+
+.thread-cal-event[data-pending="true"]:hover {
+  border-color: rgba(251, 191, 36, 0.75);
+  background: rgba(146, 64, 14, 0.38);
+}
+
+.thread-cal-event[data-pending="true"] .thread-cal-event-time {
+  color: #fcd34d;
+}
+
 .thread-cal-event-time {
   font-size: 10px;
   font-weight: 600;

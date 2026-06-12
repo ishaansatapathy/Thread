@@ -91,7 +91,7 @@ export class CorsairCalendarService implements CalendarService {
 
   async listEvents(
     tenantId: string,
-    opts: { timeMin: string; timeMax: string; maxResults?: number },
+    opts: { timeMin: string; timeMax: string; maxResults?: number; timeZone?: string },
   ) {
     if (!this.isConfigured()) return { events: [] };
 
@@ -105,6 +105,7 @@ export class CorsairCalendarService implements CalendarService {
       calendarId: "primary",
       timeMin: opts.timeMin,
       timeMax: opts.timeMax,
+      timeZone: opts.timeZone?.trim() || undefined,
       singleEvents: true,
       orderBy: "startTime",
       maxResults: opts.maxResults ?? 50,

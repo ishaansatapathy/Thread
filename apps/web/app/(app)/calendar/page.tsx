@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Archive,
@@ -27,6 +27,18 @@ import {
 } from "~/lib/calendar-datetime";
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function weekQueryBounds(week: Date[]) {
+  const start = new Date(week[0]!);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(week[6]!);
+  end.setHours(23, 59, 59, 999);
+  const pad = 24 * 60 * 60 * 1000;
+  return {
+    timeMin: new Date(start.getTime() - pad).toISOString(),
+    timeMax: new Date(end.getTime() + pad).toISOString(),
+  };
+}
 
 function startOfWeek(date: Date) {
   const copy = new Date(date);
@@ -74,9 +86,30 @@ type CalendarEventItem = {
   end?: string;
   htmlLink?: string;
   status?: string;
+  pending?: boolean;
 };
 
+function readQueuedCalendar(payload: Record<string, unknown>) {
+  const calendar = payload.calendar as Record<string, unknown> | undefined;
+  if (calendar?.startDateTime && calendar?.endDateTime) {
+    return {
+      summary: String(calendar.summary ?? "Meeting"),
+      startDateTime: String(calendar.startDateTime),
+      endDateTime: String(calendar.endDateTime),
+    };
+  }
+  if (payload.startDateTime && payload.endDateTime) {
+    return {
+      summary: String(payload.summary ?? "Meeting"),
+      startDateTime: String(payload.startDateTime),
+      endDateTime: String(payload.endDateTime),
+    };
+  }
+  return null;
+}
+
 export default function CalendarPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const utils = trpc.useUtils();
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
@@ -91,8 +124,11 @@ export default function CalendarPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
-  const timeMin = week[0]!.toISOString();
-  const timeMax = new Date(week[6]!.getTime() + 24 * 60 * 60 * 1000 - 1).toISOString();
+  const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const eventQuery = useMemo(() => {
+    const bounds = weekQueryBounds(week);
+    return { ...bounds, maxResults: 100, timeZone: browserTimeZone };
+  }, [week, browserTimeZone]);
   const todayKey = localDayKey(new Date());
   const monthLabel = week[0]!.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
@@ -100,15 +136,19 @@ export default function CalendarPage() {
   const isConnected = statusQuery.data?.googlecalendar === "connected";
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
-  const eventsQuery = trpc.calendar.listEvents.useQuery(
-    { timeMin, timeMax, maxResults: 100 },
-    { enabled: isConnected },
-  );
+  const eventsQuery = trpc.calendar.listEvents.useQuery(eventQuery, {
+    enabled: isConnected,
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
+  const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
 
   const queueInvite = trpc.queue.enqueueCalendar.useMutation({
     onSuccess: async () => {
       await utils.queue.pendingCount.invalidate();
-      toast.success("Invite queued — approve from Queue to send");
+      await utils.queue.list.invalidate();
+      toast.success("Invite queued — approve from Queue to add to Google Calendar");
       setShowCreate(false);
       setSummary("");
       setAttendee("");
@@ -117,7 +157,8 @@ export default function CalendarPage() {
   });
 
   const refreshEvents = async () => {
-    await utils.calendar.listEvents.invalidate({ timeMin, timeMax, maxResults: 100 });
+    await utils.calendar.listEvents.invalidate();
+    await eventsQuery.refetch();
   };
 
   const queueArchive = trpc.queue.enqueueCalendarArchive.useMutation({
@@ -165,8 +206,29 @@ export default function CalendarPage() {
       if (!key || !map.has(key)) continue;
       map.get(key)!.push(event);
     }
+    for (const item of pendingQueue.data?.items ?? []) {
+      if (item.kind !== "calendar_invite" && item.kind !== "meeting_bundle") continue;
+      const queued = readQueuedCalendar(item.payload);
+      if (!queued) continue;
+      const key = eventDayKey(queued.startDateTime);
+      if (!key || !map.has(key)) continue;
+      map.get(key)!.push({
+        id: `queue-${item.id}`,
+        summary: queued.summary,
+        start: queued.startDateTime,
+        end: queued.endDateTime,
+        pending: true,
+      });
+    }
+    for (const [, dayEvents] of map) {
+      dayEvents.sort((a, b) => {
+        const aTime = a.start ? new Date(a.start).getTime() : 0;
+        const bTime = b.start ? new Date(b.start).getTime() : 0;
+        return aTime - bTime;
+      });
+    }
     return map;
-  }, [eventsQuery.data?.events, week]);
+  }, [eventsQuery.data?.events, pendingQueue.data?.items, week]);
 
   const eventBusy = queueArchive.isPending || deleteEvent.isPending;
 
@@ -189,7 +251,9 @@ export default function CalendarPage() {
         <div className="thread-cal-toolbar">
           <div>
             <h3 className="thread-cal-toolbar-title">Your schedule</h3>
-            <p className="thread-cal-toolbar-copy">Live events from Google Calendar through Corsair.</p>
+            <p className="thread-cal-toolbar-copy">
+              Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish.
+            </p>
           </div>
           <button type="button" className="thread-btn-accent" onClick={() => setShowCreate(true)}>
             <Plus size={14} />
@@ -234,6 +298,15 @@ export default function CalendarPage() {
           type="button"
           className="thread-btn-ghost"
           style={{ marginLeft: "auto", fontSize: 12, padding: "6px 12px" }}
+          disabled={eventsQuery.isFetching}
+          onClick={() => void refreshEvents()}
+        >
+          {eventsQuery.isFetching ? "Refreshing…" : "Refresh"}
+        </button>
+        <button
+          type="button"
+          className="thread-btn-ghost"
+          style={{ fontSize: 12, padding: "6px 12px" }}
           onClick={() => setWeekAnchor(new Date())}
         >
           Today
@@ -271,9 +344,19 @@ export default function CalendarPage() {
                         type="button"
                         className="thread-cal-event"
                         data-selected={selectedEvent?.id === event.id}
-                        onClick={() => setSelectedEvent(event)}
+                        data-pending={event.pending ? "true" : undefined}
+                        onClick={() => {
+                          if (event.pending) {
+                            router.push("/queue");
+                            return;
+                          }
+                          setSelectedEvent(event);
+                        }}
                       >
-                        <span className="thread-cal-event-time">{formatEventTime(event.start)}</span>
+                        <span className="thread-cal-event-time">
+                          {event.pending ? "Queued · " : ""}
+                          {formatEventTime(event.start)}
+                        </span>
                         <span className="thread-cal-event-title">{event.summary}</span>
                       </button>
                     ))

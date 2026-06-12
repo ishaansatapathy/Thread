@@ -63,8 +63,9 @@ export default function QueuePage() {
       await utils.queue.pendingCount.invalidate();
       await utils.inbox.listThreads.invalidate();
       await utils.calendar.listEvents.invalidate();
+      await utils.calendar.listEvents.refetch();
       setArchiveConfirm(null);
-      toast.success("Approved and sent through Corsair");
+      toast.success("Approved — invite is on Google Calendar now");
     },
     onError: (error) => toast.error(error.message),
   });
