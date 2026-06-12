@@ -50,35 +50,72 @@ function readArchivePayload(payload: Record<string, unknown>) {
 export default function QueuePage() {
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [archiveConfirm, setArchiveConfirm] = useState<ArchiveConfirmState | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<"approve" | "dismiss" | null>(null);
   const utils = trpc.useUtils();
 
   const itemsQuery = trpc.queue.list.useQuery({ status: tab === "pending" ? "pending" : "all" });
 
   const approve = trpc.queue.approve.useMutation({
-    onSuccess: async () => {
+    onMutate: ({ id }) => {
+      setActiveItemId(id);
+      setActiveAction("approve");
+    },
+    onSuccess: async (data) => {
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
       await utils.inbox.listThreads.invalidate();
       await utils.calendar.listEvents.invalidate();
       await utils.calendar.listEvents.refetch();
       setArchiveConfirm(null);
-      toast.success("Approved — invite is on Google Calendar now");
+
+      if (data.kind === "calendar_archive") {
+        toast.success("Archive confirmed — event marked archived in Thread");
+      } else if (data.kind === "meeting_bundle" || data.kind === "calendar_invite") {
+        toast.success("Approved — calendar invite sent");
+      } else if (data.kind === "email_draft") {
+        toast.success("Draft saved to Gmail");
+      } else {
+        toast.success("Approved and sent");
+      }
     },
     onError: (error) => toast.error(error.message),
+    onSettled: () => {
+      setActiveItemId(null);
+      setActiveAction(null);
+    },
   });
 
   const dismiss = trpc.queue.dismiss.useMutation({
+    onMutate: ({ id }) => {
+      setActiveItemId(id);
+      setActiveAction("dismiss");
+    },
     onSuccess: async () => {
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
       toast.success("Removed from queue");
     },
     onError: (error) => toast.error(error.message),
+    onSettled: () => {
+      setActiveItemId(null);
+      setActiveAction(null);
+    },
   });
 
   const items = itemsQuery.data?.items ?? [];
   const pending = items.filter((item) => item.status === "pending");
-  const approveBusy = approve.isPending || dismiss.isPending;
+  const anyBusy = activeItemId !== null;
+
+  const approveLabel = (item: (typeof items)[number]) => {
+    if (activeItemId === item.id && activeAction === "approve") {
+      if (item.kind === "calendar_archive") return "Proceeding…";
+      if (item.kind === "email_draft") return "Saving…";
+      return "Sending…";
+    }
+    if (item.kind === "calendar_archive") return "Review dates";
+    return "Approve & send";
+  };
 
   const handleApproveClick = (item: (typeof items)[number]) => {
     if (item.kind === "calendar_archive") {
@@ -195,22 +232,18 @@ export default function QueuePage() {
                     <button
                       type="button"
                       className="thread-btn-ghost"
-                      disabled={approveBusy}
+                      disabled={anyBusy}
                       onClick={() => dismiss.mutate({ id: item.id })}
                     >
-                      Dismiss
+                      {activeItemId === item.id && activeAction === "dismiss" ? "Removing…" : "Dismiss"}
                     </button>
                     <button
                       type="button"
                       className="thread-btn-accent"
-                      disabled={approveBusy}
+                      disabled={anyBusy}
                       onClick={() => handleApproveClick(item)}
                     >
-                      {item.kind === "calendar_archive"
-                        ? "Review & proceed"
-                        : approve.isPending
-                          ? "Sending…"
-                          : "Approve & send"}
+                      {approveLabel(item)}
                     </button>
                   </div>
                 ) : null}
@@ -223,18 +256,18 @@ export default function QueuePage() {
       {archiveConfirm ? (
         <div
           className="thread-modal-backdrop thread-modal-backdrop--confirm"
-          onClick={() => !approveBusy && setArchiveConfirm(null)}
+          onClick={() => !anyBusy && setArchiveConfirm(null)}
         >
           <div
             className="thread-modal thread-cal-delete-modal thread-cal-confirm-modal"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="thread-modal-head">
-              <h3>Proceed with archive?</h3>
+              <h3>Confirm dates</h3>
               <button
                 type="button"
                 className="thread-app-iconbtn"
-                disabled={approveBusy}
+                disabled={anyBusy}
                 onClick={() => setArchiveConfirm(null)}
               >
                 <X size={14} />
@@ -243,8 +276,8 @@ export default function QueuePage() {
             <div className="thread-cal-event-detail">
               <p className="thread-cal-confirm-title">{archiveConfirm.title}</p>
               <p className="thread-cal-event-detail-copy">
-                OK with these dates? Change them if needed, then proceed to archive this event on
-                Google Calendar.
+                This archive is already queued. Confirm or edit the dates below, then proceed. Your
+                Google Calendar event will not be cancelled — Thread marks it as archived here.
               </p>
               <div className="thread-modal-row">
                 <div>
@@ -285,7 +318,7 @@ export default function QueuePage() {
               <button
                 type="button"
                 className="thread-btn-ghost"
-                disabled={approveBusy}
+                disabled={anyBusy}
                 onClick={() => setArchiveConfirm(null)}
               >
                 Cancel
@@ -293,7 +326,7 @@ export default function QueuePage() {
               <button
                 type="button"
                 className="thread-btn-accent"
-                disabled={approveBusy}
+                disabled={anyBusy}
                 onClick={() => {
                   const archive = localDateTimeRangeToPayload(
                     archiveConfirm.startAt,
@@ -305,8 +338,9 @@ export default function QueuePage() {
                   });
                 }}
               >
-                <Archive size={14} />
-                {approve.isPending ? "Archiving…" : "Proceed & archive"}
+                {activeItemId === archiveConfirm.itemId && activeAction === "approve"
+                  ? "Proceeding…"
+                  : "Proceed"}
               </button>
             </div>
           </div>

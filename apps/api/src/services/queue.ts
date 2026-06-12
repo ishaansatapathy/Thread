@@ -311,7 +311,7 @@ export class ThreadQueueService implements QueueService {
             });
           }
         }
-        await calendar.cancelEvent(userId, archive.eventId);
+        // Archive = human-approved in Thread only. Do not cancel/delete on Google Calendar.
         return;
       }
       default:

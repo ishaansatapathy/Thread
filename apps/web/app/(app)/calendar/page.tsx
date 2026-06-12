@@ -87,6 +87,8 @@ type CalendarEventItem = {
   htmlLink?: string;
   status?: string;
   pending?: boolean;
+  archived?: boolean;
+  pendingArchive?: boolean;
 };
 
 function readQueuedCalendar(payload: Record<string, unknown>) {
@@ -146,6 +148,18 @@ export default function CalendarPage() {
 
   const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
 
+  const queueHistory = trpc.queue.list.useQuery({ status: "all" }, { enabled: isConnected });
+
+  const archivedEventIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of queueHistory.data?.items ?? []) {
+      if (item.kind !== "calendar_archive" || item.status !== "approved") continue;
+      const eventId = String(item.payload.eventId ?? "");
+      if (eventId) ids.add(eventId);
+    }
+    return ids;
+  }, [queueHistory.data?.items]);
+
   const queueInvite = trpc.queue.enqueueCalendar.useMutation({
     onSuccess: async () => {
       await utils.queue.pendingCount.invalidate();
@@ -166,8 +180,9 @@ export default function CalendarPage() {
   const queueArchive = trpc.queue.enqueueCalendarArchive.useMutation({
     onSuccess: async () => {
       await utils.queue.pendingCount.invalidate();
+      await utils.queue.list.invalidate();
       setSelectedEvent(null);
-      toast.success("Archive request queued — approve from Queue");
+      toast.success("Archive request queued — confirm dates in Queue");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -203,12 +218,40 @@ export default function CalendarPage() {
       map.set(localDayKey(day), []);
     }
     for (const event of eventsQuery.data?.events ?? []) {
-      if (event.status === "cancelled") continue;
       const key = eventDayKey(event.start);
       if (!key || !map.has(key)) continue;
-      map.get(key)!.push(event);
+      const archived =
+        archivedEventIds.has(event.id) || event.status?.toLowerCase() === "cancelled";
+      map.get(key)!.push({
+        ...event,
+        archived,
+      });
     }
     for (const item of pendingQueue.data?.items ?? []) {
+      if (item.kind === "calendar_archive") {
+        const payload = item.payload;
+        const eventId = String(payload.eventId ?? "");
+        const summary = String(payload.summary ?? item.title.replace(/^Archive:\s*/i, ""));
+        const start = String(payload.startDateTime ?? "");
+        const end = String(payload.endDateTime ?? "");
+        const key = eventDayKey(start);
+        if (!key || !map.has(key)) continue;
+        const dayEvents = map.get(key)!;
+        const existing = dayEvents.find((entry) => entry.id === eventId);
+        if (existing) {
+          existing.pendingArchive = true;
+        } else {
+          dayEvents.push({
+            id: eventId || `queue-archive-${item.id}`,
+            summary,
+            start,
+            end,
+            pendingArchive: true,
+          });
+        }
+        continue;
+      }
+
       if (item.kind !== "calendar_invite" && item.kind !== "meeting_bundle") continue;
       const queued = readQueuedCalendar(item.payload);
       if (!queued) continue;
@@ -230,7 +273,7 @@ export default function CalendarPage() {
       });
     }
     return map;
-  }, [eventsQuery.data?.events, pendingQueue.data?.items, week]);
+  }, [eventsQuery.data?.events, pendingQueue.data?.items, archivedEventIds, week]);
 
   const eventBusy = queueArchive.isPending || deleteEvent.isPending;
 
@@ -352,8 +395,10 @@ export default function CalendarPage() {
                         className="thread-cal-event"
                         data-selected={selectedEvent?.id === event.id}
                         data-pending={event.pending ? "true" : undefined}
+                        data-archived={event.archived ? "true" : undefined}
+                        data-pending-archive={event.pendingArchive ? "true" : undefined}
                         onClick={() => {
-                          if (event.pending) {
+                          if (event.pending || event.pendingArchive) {
                             router.push("/queue");
                             return;
                           }
@@ -361,7 +406,13 @@ export default function CalendarPage() {
                         }}
                       >
                         <span className="thread-cal-event-time">
-                          {event.pending ? "Queued · " : ""}
+                          {event.pendingArchive
+                            ? "Archive pending · "
+                            : event.pending
+                              ? "Queued · "
+                              : event.archived
+                                ? "Archived · "
+                                : ""}
                           {formatEventTime(event.start)}
                         </span>
                         <span className="thread-cal-event-title">{event.summary}</span>
@@ -503,8 +554,9 @@ export default function CalendarPage() {
                 {formatEventWhen(selectedEvent.start, selectedEvent.end)}
               </p>
               <p className="thread-cal-event-detail-copy">
-                Archive sends a request to the approval queue. Delete removes the event immediately
-                from Google Calendar.
+                {selectedEvent.archived
+                  ? "Archived in Thread. The event is still on Google Calendar unless you delete it."
+                  : "Archive queues a request for approval. Delete permanently removes it from Google Calendar."}
               </p>
               {selectedEvent.htmlLink ? (
                 <a
@@ -519,29 +571,43 @@ export default function CalendarPage() {
               ) : null}
             </div>
             <div className="thread-modal-actions">
-              <button
-                type="button"
-                className="thread-btn-ghost"
-                disabled={eventBusy}
-                onClick={() =>
-                  queueArchive.mutate({
-                    archive: eventToArchivePayload(selectedEvent),
-                    title: `Archive: ${selectedEvent.summary}`,
-                  })
-                }
-              >
-                <Archive size={14} />
-                {queueArchive.isPending ? "Queuing…" : "Archive request"}
-              </button>
-              <button
-                type="button"
-                className="thread-btn-ghost thread-cal-event-delete"
-                disabled={eventBusy}
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 size={14} />
-                Delete
-              </button>
+              {!selectedEvent.archived ? (
+                <>
+                  <button
+                    type="button"
+                    className="thread-btn-ghost"
+                    disabled={eventBusy}
+                    onClick={() =>
+                      queueArchive.mutate({
+                        archive: eventToArchivePayload(selectedEvent),
+                        title: `Archive: ${selectedEvent.summary}`,
+                      })
+                    }
+                  >
+                    <Archive size={14} />
+                    {queueArchive.isPending ? "Queuing…" : "Archive request"}
+                  </button>
+                  <button
+                    type="button"
+                    className="thread-btn-ghost thread-cal-event-delete"
+                    disabled={eventBusy}
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="thread-btn-ghost thread-cal-event-delete"
+                  disabled={eventBusy}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 size={14} />
+                  Delete permanently
+                </button>
+              )}
             </div>
           </div>
         </div>

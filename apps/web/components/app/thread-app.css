@@ -973,6 +973,37 @@
   color: #fcd34d;
 }
 
+.thread-cal-event[data-archived="true"] {
+  border-style: solid;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(51, 65, 85, 0.35);
+  opacity: 0.82;
+}
+
+.thread-cal-event[data-archived="true"]:hover {
+  border-color: rgba(148, 163, 184, 0.55);
+  background: rgba(71, 85, 105, 0.42);
+}
+
+.thread-cal-event[data-archived="true"] .thread-cal-event-time {
+  color: #cbd5e1;
+}
+
+.thread-cal-event[data-archived="true"] .thread-cal-event-title {
+  color: var(--thread-muted);
+  text-decoration: line-through;
+}
+
+.thread-cal-event[data-pending-archive="true"] {
+  border-style: dashed;
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.thread-cal-event[data-pending-archive="true"] .thread-cal-event-time {
+  color: #fca5a5;
+}
+
 .thread-cal-event-time {
   font-size: 10px;
   font-weight: 600;
