@@ -88,11 +88,13 @@ export class CorsairInboxService implements InboxService {
       labelIds: ["INBOX"],
     });
 
-    const threads: InboxThread[] = (result.threads ?? []).map((thread: { id?: string; snippet?: string; historyId?: string }) => ({
-      id: thread.id ?? "",
-      snippet: thread.snippet ?? "",
-      historyId: thread.historyId,
-    }));
+    const threads: InboxThread[] = (result.threads ?? []).map(
+      (thread: { id?: string; snippet?: string; historyId?: string }) => ({
+        id: thread.id ?? "",
+        snippet: thread.snippet ?? "",
+        historyId: thread.historyId,
+      }),
+    );
 
     return {
       threads: threads.filter((thread) => thread.id),

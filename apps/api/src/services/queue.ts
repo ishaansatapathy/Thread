@@ -193,7 +193,9 @@ export class ThreadQueueService implements QueueService {
     const title = input.title?.trim() || `Archive: ${input.archive.summary}`;
     const preview =
       input.preview?.trim() ||
-      truncate(`${input.archive.summary} · ${input.archive.startDateTime} → ${input.archive.endDateTime}`);
+      truncate(
+        `${input.archive.summary} · ${input.archive.startDateTime} → ${input.archive.endDateTime}`,
+      );
 
     const [row] = await db
       .insert(threadQueueItemsTable)
