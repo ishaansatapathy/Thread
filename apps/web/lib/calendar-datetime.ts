@@ -9,8 +9,19 @@ export function localDayKey(date: Date) {
 export function eventDayKey(start?: string) {
   if (!start) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(start)) return start;
+
+  const datePrefix = start.match(/^(\d{4}-\d{2}-\d{2})/);
+  const hasOffset = /[+-]\d{2}:\d{2}$/.test(start) || start.endsWith("Z");
+
+  // Naive datetimes (no offset) — use the date the user picked, not UTC conversion.
+  if (datePrefix && !hasOffset) {
+    return datePrefix[1];
+  }
+
   const parsed = new Date(start);
-  if (Number.isNaN(parsed.getTime())) return start.slice(0, 10);
+  if (Number.isNaN(parsed.getTime())) {
+    return datePrefix?.[1] ?? start.slice(0, 10);
+  }
   return localDayKey(parsed);
 }
 

@@ -24,7 +24,7 @@ export interface CalendarService {
   getConnectionStatus(tenantId: string): Promise<CalendarConnectionStatus>;
   listEvents(
     tenantId: string,
-    opts: { timeMin: string; timeMax: string; maxResults?: number },
+    opts: { timeMin: string; timeMax: string; maxResults?: number; timeZone?: string },
   ): Promise<{ events: CalendarEvent[] }>;
   createEvent(
     tenantId: string,

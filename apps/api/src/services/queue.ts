@@ -30,6 +30,20 @@ function mapRow(row: SelectQueueItem): QueueItem {
   };
 }
 
+function normalizeMeetingBundle(payload: Record<string, unknown>): MeetingBundlePayload {
+  const email = payload.email as EmailQueuePayload | undefined;
+  const calendarPayload = payload.calendar as CalendarQueuePayload | undefined;
+
+  if (!email?.to || !email.subject || !email.body) {
+    throw new Error("Meeting queue item is missing email details");
+  }
+  if (!calendarPayload?.summary || !calendarPayload.startDateTime || !calendarPayload.endDateTime) {
+    throw new Error("Meeting queue item is missing calendar start or end time");
+  }
+
+  return { email, calendar: calendarPayload };
+}
+
 function truncate(value: string, max = 240) {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
@@ -275,7 +289,7 @@ export class ThreadQueueService implements QueueService {
         return;
       }
       case "meeting_bundle": {
-        const bundle = payload as MeetingBundlePayload;
+        const bundle = normalizeMeetingBundle(payload);
         await calendar.createEvent(userId, bundle.calendar);
         await inbox.sendMessage(userId, bundle.email);
         return;

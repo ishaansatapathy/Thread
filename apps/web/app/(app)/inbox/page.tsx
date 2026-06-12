@@ -132,8 +132,16 @@ export default function InboxPage() {
   const queueMeeting = trpc.queue.enqueueMeeting.useMutation({
     onSuccess: async () => {
       await utils.queue.pendingCount.invalidate();
-      toast.success("Meeting queued — approve from Queue to send invite + email");
+      await utils.queue.list.invalidate();
       setShowSchedule(false);
+      toast.success("Meeting queued — approve from Queue to add it to Google Calendar", {
+        action: {
+          label: "Open Queue",
+          onClick: () => {
+            window.location.href = "/queue";
+          },
+        },
+      });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -605,6 +613,10 @@ export default function InboxPage() {
                   {queueMeeting.isPending ? "Queuing…" : "Queue invite + email"}
                 </button>
               </div>
+              <p className="thread-inbox-compose-note" style={{ margin: 0 }}>
+                Goes to the approval queue first. After you approve, it appears on Calendar for the date you
+                picked.
+              </p>
             </form>
           </div>
         </div>

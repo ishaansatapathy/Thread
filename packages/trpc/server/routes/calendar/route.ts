@@ -47,6 +47,7 @@ export const calendarRouter = router({
         timeMin: z.string().min(1),
         timeMax: z.string().min(1),
         maxResults: z.number().int().min(1).max(100).optional(),
+        timeZone: z.string().max(64).optional(),
       }),
     )
     .output(
