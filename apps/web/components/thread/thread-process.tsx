@@ -178,8 +178,8 @@ export function ThreadProcess() {
                 }}
               />
               Every step runs through{" "}
-              <strong style={{ color: "var(--thread-text)", fontWeight: 600 }}>Corsair MCP</strong> — so an
-              agent can drive the same flow in plain English.
+              <strong style={{ color: "var(--thread-text)", fontWeight: 600 }}>Corsair + OpenAPI</strong> — the
+              same queue endpoints external tools can call.
             </span>
           </div>
         </div>

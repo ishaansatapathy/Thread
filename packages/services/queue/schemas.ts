@@ -32,6 +32,12 @@ export const calendarArchivePayloadSchema = z.object({
   htmlLink: z.string().optional(),
 });
 
+export const calendarDeletePayloadSchema = z.object({
+  eventId: z.string().min(1),
+  summary: z.string().min(1).max(200),
+  htmlLink: z.string().optional(),
+});
+
 export const meetingBundlePayloadSchema = z.object({
   email: emailQueuePayloadSchema,
   calendar: calendarQueuePayloadSchema,
@@ -47,6 +53,10 @@ export function parseCalendarQueuePayload(payload: Record<string, unknown>) {
 
 export function parseCalendarArchivePayload(payload: Record<string, unknown>) {
   return calendarArchivePayloadSchema.parse(payload);
+}
+
+export function parseCalendarDeletePayload(payload: Record<string, unknown>) {
+  return calendarDeletePayloadSchema.parse(payload);
 }
 
 export function parseMeetingBundlePayload(payload: Record<string, unknown>) {

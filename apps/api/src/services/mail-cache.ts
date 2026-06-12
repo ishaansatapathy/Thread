@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from "@repo/database";
+import { and, desc, eq, ilike, inArray, or, sql } from "@repo/database";
 import db from "@repo/database";
 import { threadMailCacheTable, type SelectMailCacheRow } from "@repo/database/schema";
 import { logger } from "@repo/logger";
@@ -87,7 +87,7 @@ export const mailCache = {
     }
   },
 
-  /** Returns the cached historyId per thread so callers can skip unchanged gets. */
+  /** Returns cached rows keyed by threadId for historyId short-circuit checks. */
   async getHistoryMap(userId: string, threadIds: string[]): Promise<Map<string, SelectMailCacheRow>> {
     const map = new Map<string, SelectMailCacheRow>();
     if (threadIds.length === 0) return map;
@@ -95,9 +95,14 @@ export const mailCache = {
       const rows = await db
         .select()
         .from(threadMailCacheTable)
-        .where(eq(threadMailCacheTable.userId, userId));
+        .where(
+          and(
+            eq(threadMailCacheTable.userId, userId),
+            inArray(threadMailCacheTable.threadId, threadIds),
+          ),
+        );
       for (const row of rows) {
-        if (threadIds.includes(row.threadId)) map.set(row.threadId, row);
+        map.set(row.threadId, row);
       }
     } catch (error) {
       logger.warn("Mail cache read failed", {

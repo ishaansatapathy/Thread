@@ -15,7 +15,7 @@ import { ThreadLogoMark, ThreadWordmark } from "./thread-logo";
 import { Reveal } from "./thread-reveal";
 import { ThreadAgentDemo } from "./thread-agent-demo";
 
-const MARQUEE = ["Gmail", "Google Calendar", "Corsair", "Corsair MCP", "Webhooks", "Postgres", "Next.js", "OpenAI"];
+const MARQUEE = ["Gmail", "Google Calendar", "Corsair", "OpenAPI", "Webhooks", "Postgres", "Next.js", "OpenAI"];
 
 const BENTO = [
   {
@@ -25,12 +25,12 @@ const BENTO = [
   },
   {
     title: "AI priority inbox",
-    desc: "LLM scores subject + body so urgent mail surfaces first.",
+    desc: "OpenAI ranks subject + snippet so urgent mail surfaces first.",
     visual: <Sparkles size={18} color="var(--thread-accent-bright)" />,
   },
   {
     title: "Command palette",
-    desc: "⌘K to compose, search, schedule — keyboard-first like Superhuman.",
+    desc: "⌘K to jump anywhere — inbox search, queue, calendar, settings.",
     visual: (
       <div style={{ display: "flex", gap: 4 }}>
         <kbd style={{ padding: "2px 6px", borderRadius: 4, border: "1px solid var(--thread-line)", fontSize: 10 }}>⌘</kbd>
@@ -50,7 +50,7 @@ const BENTO = [
   },
   {
     title: "Local mail cache",
-    desc: "Thread metadata cached in Postgres for instant loads and offline search.",
+    desc: "Thread metadata in Postgres — faster reloads and fallback when Gmail is down.",
     visual: <Search size={18} color="var(--thread-accent-bright)" />,
   },
   {
@@ -66,10 +66,10 @@ const BENTO = [
 ];
 
 const CAPABILITIES = [
-  { title: "Read & search mail", desc: "Pull threads from Gmail and search locally in Postgres." },
-  { title: "Draft replies", desc: "Generate a reply from context — you approve before anything sends." },
-  { title: "Schedule from inbox", desc: "Pick a slot and send a calendar invite without switching tabs." },
-  { title: "Approve before send", desc: "Drafts, replies and invites wait in a queue — you approve, then Thread acts." },
+  { title: "Read & search mail", desc: "Gmail query syntax with load-more paging; Postgres cache for reload speed." },
+  { title: "Draft replies", desc: "Compose in Thread — every send and draft goes through the approval queue first." },
+  { title: "Schedule from inbox", desc: "Pick a slot and queue a calendar invite without switching tabs." },
+  { title: "Approve before send", desc: "Replies, drafts, invites, reschedules and deletes wait in Queue until you approve." },
 ];
 
 const FAQS = [
@@ -83,7 +83,7 @@ const FAQS = [
   },
   {
     q: "Is this just a Gmail clone?",
-    a: "No. Thread adds meaningful workflow improvements: one-step invites, AI priority, keyboard shortcuts, a human-approval queue, and instant local search.",
+    a: "No. Thread adds workflow improvements: one-step invites, AI priority, keyboard shortcuts, a human-approval queue, and a local metadata cache.",
   },
   {
     q: "What stack is Thread built on?",
@@ -119,7 +119,7 @@ export function ThreadIntegrations() {
             Plug Gmail &amp; Calendar into Thread
           </h2>
           <p className="thread-lede" style={{ maxWidth: 480, marginInline: "auto" }}>
-            Corsair sits in the middle — caching, webhooks, and MCP for your agent.
+            Corsair sits in the middle — OAuth, Gmail/Calendar APIs, webhooks, and OpenAPI for tools.
           </p>
         </Reveal>
 

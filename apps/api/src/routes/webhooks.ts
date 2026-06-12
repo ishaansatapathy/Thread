@@ -8,8 +8,10 @@ import { logger } from "@repo/logger";
 
 import { env } from "../env";
 import { CorsairInboxService } from "../services/inbox";
+import { CorsairCalendarService } from "../services/calendar";
 
 const inboxService = new CorsairInboxService();
+const calendarService = new CorsairCalendarService();
 
 export const webhooksRouter = Router();
 
@@ -70,9 +72,26 @@ async function resolveTenantId(body: unknown): Promise<string | null> {
  */
 function refreshTenantInbox(tenantId: string) {
   void inboxService
-    .listThreads(tenantId, { maxResults: 25 })
+    .listThreads(tenantId, { maxResults: 50 })
     .catch((error: unknown) => {
       logger.warn("Webhook inbox refresh failed", {
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+}
+
+function refreshTenantCalendar(tenantId: string) {
+  const now = new Date();
+  const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  void calendarService
+    .listEvents(tenantId, {
+      timeMin: now.toISOString(),
+      timeMax: weekAhead.toISOString(),
+      maxResults: 100,
+    })
+    .catch((error: unknown) => {
+      logger.warn("Webhook calendar refresh failed", {
         tenantId,
         message: error instanceof Error ? error.message : String(error),
       });
@@ -110,6 +129,12 @@ webhooksRouter.post("/calendar", async (req, res) => {
     });
   }
 
-  // Calendar pushes only signal "something changed"; clients re-pull the range.
+  const tenantId = await resolveTenantId(req.body);
+  if (tenantId) {
+    refreshTenantCalendar(tenantId);
+  } else {
+    logger.warn("Calendar webhook received without a resolvable tenant");
+  }
+
   return res.status(200).json({ ok: true });
 });

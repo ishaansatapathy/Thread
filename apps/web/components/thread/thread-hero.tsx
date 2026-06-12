@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Inbox, Mail, Calendar, Bot, Command, Send, Search, PenLine } from "lucide-react";
+import { Inbox, Mail, Calendar, ListChecks, Command, Send, Search, PenLine } from "lucide-react";
 import { ThreadWordmark } from "./thread-logo";
 import { InViewAnnotation } from "./thread-reveal";
 
@@ -15,9 +15,9 @@ type DockTab = {
 
 const DOCK: DockTab[] = [
   { id: "inbox", label: "Inbox", path: "/inbox", icon: Inbox },
-  { id: "command", label: "Command", path: "/command", icon: Command },
+  { id: "queue", label: "Queue", path: "/queue", icon: ListChecks },
   { id: "calendar", label: "Calendar", path: "/calendar", icon: Calendar },
-  { id: "agent", label: "Agent", path: "/agent", icon: Bot },
+  { id: "command", label: "Search", path: "/inbox?focus=search", icon: Command },
 ];
 
 function InboxState() {
@@ -79,10 +79,10 @@ function InboxState() {
 }
 
 const COMMANDS = [
-  { icon: PenLine, label: "Compose reply", hint: "Draft from thread context" },
-  { icon: Send, label: "Send invite", hint: "One-step calendar invite" },
-  { icon: Search, label: "Search mail", hint: "Local Postgres cache" },
-  { icon: Bot, label: "Ask agent", hint: "Corsair MCP" },
+  { icon: PenLine, label: "Compose reply", hint: "Open inbox to reply" },
+  { icon: Send, label: "Send invite", hint: "Queue a calendar invite" },
+  { icon: Search, label: "Search mail", hint: "Gmail query syntax" },
+  { icon: ListChecks, label: "Approval queue", hint: "Review pending actions" },
 ];
 
 function CommandState() {
@@ -146,37 +146,11 @@ function CalendarState() {
   );
 }
 
-function AgentState() {
-  return (
-    <div style={{ minHeight: 380, padding: "26px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="thread-mono-tag">Example prompt</div>
-      <div className="thread-rotator-bubble thread-rotator-bubble--user" style={{ fontSize: 13 }}>
-        &ldquo;Draft a reply to this thread and find a 30-minute slot next week.&rdquo;
-      </div>
-      <div className="thread-rotator-bubble" style={{ fontSize: 13 }}>
-        <Bot size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
-        <span>Agent idle — connect Gmail to run commands like this for real.</span>
-      </div>
-
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div className="thread-rotator-log" style={{ fontFamily: "var(--thread-mono)", fontSize: 11 }}>
-          <span>mcp.gmail.draft</span>
-          <span style={{ opacity: 0.5 }}>waiting</span>
-        </div>
-        <div className="thread-rotator-log" style={{ fontFamily: "var(--thread-mono)", fontSize: 11 }}>
-          <span>mcp.calendar.findSlot</span>
-          <span style={{ opacity: 0.5 }}>waiting</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const STATES: Record<string, () => React.ReactNode> = {
   inbox: InboxState,
   command: CommandState,
   calendar: CalendarState,
-  agent: AgentState,
+  queue: CommandState,
 };
 
 export function ThreadHero() {
