@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { getCalendarService } from "@repo/services/calendar";
 
-import { protectedProcedure, router } from "../../trpc";
+import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
 
 const TAGS = ["Calendar"];
@@ -26,6 +26,13 @@ const calendarEventSchema = z.object({
   status: z.string().optional(),
 });
 
+const isoDateTimeSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "Invalid ISO date/time",
+  });
+
 export const calendarRouter = router({
   connectionStatus: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/connection-status"), tags: TAGS } })
@@ -44,8 +51,8 @@ export const calendarRouter = router({
     .meta({ openapi: { method: "GET", path: getPath("/events"), tags: TAGS } })
     .input(
       z.object({
-        timeMin: z.string().min(1),
-        timeMax: z.string().min(1),
+        timeMin: isoDateTimeSchema,
+        timeMax: isoDateTimeSchema,
         maxResults: z.number().int().min(1).max(100).optional(),
         timeZone: z.string().max(64).optional(),
       }),
@@ -56,8 +63,12 @@ export const calendarRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const calendar = getCalendarService();
-      return calendar.listEvents(ctx.user.id, input);
+      try {
+        const calendar = getCalendarService();
+        return await calendar.listEvents(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   createEvent: protectedProcedure
@@ -67,16 +78,20 @@ export const calendarRouter = router({
         summary: z.string().min(1).max(200),
         description: z.string().max(5000).optional(),
         location: z.string().max(500).optional(),
-        startDateTime: z.string().min(1),
-        endDateTime: z.string().min(1),
+        startDateTime: isoDateTimeSchema,
+        endDateTime: isoDateTimeSchema,
         timeZone: z.string().max(64).optional(),
         attendeeEmails: z.array(z.string().email()).max(20).optional(),
       }),
     )
     .output(calendarEventSchema)
     .mutation(async ({ ctx, input }) => {
-      const calendar = getCalendarService();
-      return calendar.createEvent(ctx.user.id, input);
+      try {
+        const calendar = getCalendarService();
+        return await calendar.createEvent(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   cancelEvent: protectedProcedure
@@ -84,8 +99,12 @@ export const calendarRouter = router({
     .input(z.object({ eventId: z.string().min(1) }))
     .output(z.object({ success: z.literal(true) }))
     .mutation(async ({ ctx, input }) => {
-      const calendar = getCalendarService();
-      return calendar.cancelEvent(ctx.user.id, input.eventId);
+      try {
+        const calendar = getCalendarService();
+        return await calendar.cancelEvent(ctx.user.id, input.eventId);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   deleteEvent: protectedProcedure
@@ -93,7 +112,11 @@ export const calendarRouter = router({
     .input(z.object({ eventId: z.string().min(1) }))
     .output(z.object({ success: z.literal(true) }))
     .mutation(async ({ ctx, input }) => {
-      const calendar = getCalendarService();
-      return calendar.deleteEvent(ctx.user.id, input.eventId);
+      try {
+        const calendar = getCalendarService();
+        return await calendar.deleteEvent(ctx.user.id, input.eventId);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 });

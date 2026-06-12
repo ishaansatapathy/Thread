@@ -195,11 +195,20 @@ export class CorsairCalendarService implements CalendarService {
 
     const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
+    const existing = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+
     const updated = await corsair.googlecalendar.api.events.update({
       calendarId: "primary",
       id: eventId,
       sendUpdates: "all",
       event: {
+        summary: existing.summary,
+        description: existing.description,
+        location: existing.location,
+        attendees: existing.attendees,
         start: { dateTime: input.startDateTime, timeZone },
         end: { dateTime: input.endDateTime, timeZone },
       },

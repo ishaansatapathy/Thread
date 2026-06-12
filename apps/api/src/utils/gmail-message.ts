@@ -1,3 +1,5 @@
+import { sanitizeEmailHeader } from "@repo/services/validation/email";
+
 type MessagePart = {
   mimeType?: string;
   body?: { data?: string };
@@ -71,18 +73,21 @@ export function buildRawEmail(input: {
   inReplyTo?: string;
   references?: string;
 }) {
+  const to = sanitizeEmailHeader(input.to);
+  const subject = sanitizeEmailHeader(input.subject);
+
   const lines = [
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
   ];
 
   if (input.inReplyTo) {
-    lines.push(`In-Reply-To: ${input.inReplyTo}`);
+    lines.push(`In-Reply-To: ${sanitizeEmailHeader(input.inReplyTo)}`);
   }
   if (input.references) {
-    lines.push(`References: ${input.references}`);
+    lines.push(`References: ${sanitizeEmailHeader(input.references)}`);
   }
 
   lines.push("", input.body);

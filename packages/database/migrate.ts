@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import pg from "pg";
+
+import { createPgClient, getMigrationDatabaseUrl } from "./pg";
 
 function resolveMigrationsFolder(): string {
   const candidates = [
@@ -23,13 +24,12 @@ function resolveMigrationsFolder(): string {
 
 /** Applies pending journal migrations from packages/database/drizzle. */
 export async function runJournalMigrations(connectionString?: string) {
-  const databaseUrl = connectionString ?? process.env.DATABASE_URL;
+  const databaseUrl = connectionString ?? getMigrationDatabaseUrl();
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to run journal migrations");
   }
 
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  const client = await createPgClient(databaseUrl);
 
   try {
     const db = drizzle(client);

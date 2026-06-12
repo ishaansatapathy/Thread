@@ -1,6 +1,5 @@
-import pg from "pg";
-
 import { runJournalMigrations } from "@repo/database/migrate";
+import { createPgClient, getMigrationDatabaseUrl } from "@repo/database/pg";
 
 /** Idempotent schema patches for legacy DBs + Corsair tables. */
 const ENSURE_SCHEMA_SQL = `
@@ -104,98 +103,19 @@ CREATE INDEX IF NOT EXISTS "submission_audit_events_submission_idx"
 
 ALTER TABLE "users" ALTER COLUMN "reset_password_otp" TYPE varchar(64);
 ALTER TABLE "users" ALTER COLUMN "two_factor_otp" TYPE varchar(64);
-
-CREATE TABLE IF NOT EXISTS corsair_integrations (
-  id TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  name TEXT NOT NULL,
-  config JSONB NOT NULL DEFAULT '{}',
-  dek TEXT NULL
-);
-
-CREATE TABLE IF NOT EXISTS corsair_accounts (
-  id TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  tenant_id TEXT NOT NULL,
-  integration_id TEXT NOT NULL REFERENCES corsair_integrations(id),
-  config JSONB NOT NULL DEFAULT '{}',
-  dek TEXT NULL
-);
-
-CREATE TABLE IF NOT EXISTS corsair_entities (
-  id TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  account_id TEXT NOT NULL REFERENCES corsair_accounts(id),
-  entity_id TEXT NOT NULL,
-  entity_type TEXT NOT NULL,
-  version TEXT NOT NULL,
-  data JSONB NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE IF NOT EXISTS corsair_events (
-  id TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  account_id TEXT NOT NULL REFERENCES corsair_accounts(id),
-  event_type TEXT NOT NULL,
-  payload JSONB NOT NULL DEFAULT '{}',
-  status TEXT
-);
-
-CREATE TABLE IF NOT EXISTS corsair_permissions (
-  id TEXT PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  token TEXT NOT NULL,
-  plugin TEXT NOT NULL,
-  endpoint TEXT NOT NULL,
-  args TEXT NOT NULL,
-  tenant_id TEXT NOT NULL DEFAULT 'default',
-  status TEXT NOT NULL DEFAULT 'pending',
-  expires_at TEXT NOT NULL,
-  error TEXT NULL
-);
-
-CREATE TABLE IF NOT EXISTS thread_queue_items (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  kind varchar(32) NOT NULL,
-  title varchar(200) NOT NULL,
-  preview text,
-  payload jsonb NOT NULL DEFAULT '{}',
-  source_thread_id varchar(128),
-  status varchar(20) NOT NULL DEFAULT 'pending',
-  error_message text,
-  created_at timestamp DEFAULT now(),
-  resolved_at timestamp,
-  CONSTRAINT thread_queue_items_kind_check CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive')),
-  CONSTRAINT thread_queue_items_status_check CHECK (status IN ('pending', 'approved', 'dismissed', 'failed'))
-);
-
-CREATE INDEX IF NOT EXISTS thread_queue_user_status_idx
-  ON thread_queue_items (user_id, status, created_at DESC);
 `;
 
 export async function runMigrations() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = getMigrationDatabaseUrl();
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to run migrations");
   }
 
   await runJournalMigrations(databaseUrl);
 
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
+  const client = await createPgClient(databaseUrl);
   try {
     await client.query(ENSURE_SCHEMA_SQL);
-    await client.query(`
-      ALTER TABLE thread_queue_items DROP CONSTRAINT IF EXISTS thread_queue_items_kind_check;
-      ALTER TABLE thread_queue_items ADD CONSTRAINT thread_queue_items_kind_check
-        CHECK (kind IN ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive'));
-    `);
   } finally {
     await client.end();
   }
