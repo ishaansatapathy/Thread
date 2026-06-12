@@ -30,6 +30,7 @@ const inboxThreadSchema = z.object({
   historyId: z.string().optional(),
   subject: z.string().optional(),
   from: z.string().optional(),
+  fromName: z.string().optional(),
   to: z.string().optional(),
   date: z.string().optional(),
   body: z.string().optional(),
@@ -37,6 +38,17 @@ const inboxThreadSchema = z.object({
   messages: z.array(inboxMessageSchema).optional(),
   suggestedReplyTo: z.string().optional(),
   messageCount: z.number().optional(),
+  unread: z.boolean().optional(),
+});
+
+const inboxDraftSchema = z.object({
+  id: z.string(),
+  messageId: z.string().optional(),
+  threadId: z.string().optional(),
+  subject: z.string().optional(),
+  to: z.string().optional(),
+  snippet: z.string(),
+  updatedAt: z.string().optional(),
 });
 
 const connectionStatusSchema = z.object({
@@ -73,8 +85,9 @@ export const inboxRouter = router({
     .meta({ openapi: { method: "GET", path: getPath("/threads"), tags: TAGS } })
     .input(
       z.object({
-        maxResults: z.number().int().min(1).max(50).optional(),
+        maxResults: z.number().int().min(1).max(100).optional(),
         pageToken: z.string().optional(),
+        query: z.string().trim().max(512).optional(),
       }),
     )
     .output(
@@ -87,6 +100,29 @@ export const inboxRouter = router({
       try {
         const inbox = getInboxService();
         return await inbox.listThreads(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  listDrafts: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/drafts"), tags: TAGS } })
+    .input(
+      z.object({
+        maxResults: z.number().int().min(1).max(100).optional(),
+        pageToken: z.string().optional(),
+      }),
+    )
+    .output(
+      z.object({
+        drafts: z.array(inboxDraftSchema),
+        nextPageToken: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        return await inbox.listDrafts(ctx.user.id, input);
       } catch (error) {
         mapServiceError(error);
       }

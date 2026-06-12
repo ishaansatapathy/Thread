@@ -43,6 +43,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       isConfigured: () => true,
       getConnectionStatus: async () => ({ gmail: "connected" }),
       listThreads: async () => ({ threads: [] }),
+      listDrafts: async () => ({ drafts: [] }),
       getThread: async () => null,
       sendMessage,
       createDraft,
@@ -52,8 +53,6 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     registerCalendarService({
       isConfigured: () => true,
       getConnectionStatus: async () => ({ googlecalendar: "connected" }),
-      getCalendarConnectUrl: async () => ({ url: "", state: "", redirectUri: "" }),
-      completeCalendarOAuth: async () => ({ tenantId: userId }),
       listEvents: async () => ({ events: [] }),
       createEvent,
       cancelEvent: async () => ({ success: true as const }),

@@ -817,6 +817,123 @@
   text-overflow: ellipsis;
 }
 
+.thread-inbox-row-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.thread-inbox-row-sender {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--thread-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.thread-inbox-row[data-unread="true"] .thread-inbox-row-sender,
+.thread-inbox-row[data-unread="true"] .thread-inbox-row-subject {
+  color: var(--thread-text);
+  font-weight: 700;
+}
+
+.thread-inbox-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--thread-accent, #6ea8fe);
+  flex-shrink: 0;
+}
+
+.thread-inbox-row-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--thread-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.thread-inbox-row-date {
+  font-size: 11px;
+  color: var(--thread-dim);
+  flex-shrink: 0;
+}
+
+.thread-inbox-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--thread-line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--thread-dim);
+}
+
+.thread-inbox-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--thread-text);
+  font-size: 12.5px;
+}
+
+.thread-inbox-search input::placeholder {
+  color: var(--thread-dim);
+}
+
+.thread-inbox-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--thread-dim);
+  cursor: pointer;
+  padding: 0;
+}
+
+.thread-inbox-search-clear:hover {
+  color: var(--thread-text);
+}
+
+.thread-inbox-loadmore {
+  width: calc(100% - 4px);
+  margin: 6px 2px 4px;
+  padding: 8px 12px;
+  border: 1px dashed var(--thread-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--thread-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.thread-inbox-loadmore:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--thread-text);
+}
+
+.thread-inbox-loadmore:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .thread-inbox-banner {
   font-size: 12px;
   line-height: 1.45;
@@ -1051,6 +1168,52 @@
   font-size: 13px;
   line-height: 1.65;
   color: var(--thread-dim);
+}
+
+.thread-cal-event-recur {
+  margin-right: 4px;
+  opacity: 0.8;
+  flex-shrink: 0;
+  vertical-align: -1px;
+}
+
+.thread-cal-event-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.thread-cal-event-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--thread-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--thread-line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.thread-cal-event-actions-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thread-cal-event-actions-legend li {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--thread-dim);
+}
+
+.thread-cal-event-actions-legend strong {
+  color: var(--thread-text);
+  font-weight: 600;
 }
 
 .thread-cal-confirm-title {

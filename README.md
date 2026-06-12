@@ -58,10 +58,22 @@ Copy `.env.example` → `.env` and fill in secrets (see [Environment](#environme
 
 Direct send is **disabled by default** (`THREAD_ALLOW_DIRECT_SEND` must be `true` to bypass queue).
 
+### Gmail workflow
+
+- **Search** — full Gmail query syntax (`from:`, `subject:`, `has:attachment`) via the `query` param; press `/` to focus the box.
+- **Load more** — token-based pagination accumulates pages (no 25-thread cap).
+- **Rich list metadata** — each row is hydrated with sender, subject, date, message count and unread state via a cheap `threads.get(metadata)` enrichment pass.
+- **Drafts** — a Drafts tab lists Gmail drafts (subject/recipient/snippet).
+- **Local mail cache** — thread metadata is persisted in Postgres (`thread_mail_cache`). Loads reuse cached rows by `historyId`, search falls back to the cache when Gmail is unreachable, and webhooks update it.
+- **Webhooks** — `POST /webhooks/gmail` (Corsair/Google Pub/Sub push) verifies a shared secret and refreshes the affected tenant's cache. Set `CORSAIR_WEBHOOK_SECRET` to enable.
+- **Keyboard** — `j`/`k` move selection, `/` focuses search, `⌘K` opens the command palette.
+
 ### OpenAPI + AI
 
 Every tRPC procedure exposes a REST path via `trpc-to-openapi`. External agents (or future Thread Agent) can read `/openapi.json` and call:
 
+- `GET /api/inbox/threads?query=from:boss` — search + paginate the inbox
+- `GET /api/inbox/drafts` — list Gmail drafts
 - `POST /api/queue/enqueue/email` — queue a send
 - `POST /api/queue/approve` — approve after human review
 - `POST /api/ai/inbox/rank` — rank threads by urgency (requires `OPENAI_API_KEY`)
@@ -104,16 +116,23 @@ The web app uses tRPC internally; OpenAPI is for tools, integrations, and AI fun
 | `OPENAI_API_KEY` | Enables **Priority** ranking in Inbox |
 | `OPENAI_MODEL` | Optional, default `gpt-4o-mini` |
 
+### Webhooks (optional)
+
+| Variable | Description |
+|----------|-------------|
+| `CORSAIR_WEBHOOK_SECRET` | Min 16 chars. Enables `POST /webhooks/gmail` + `/webhooks/calendar`. Unset = receiver returns 503 and Thread uses on-demand sync. |
+
 ## Demo script (~2 min)
 
 1. Sign up / sign in at http://localhost:3000
 2. **Settings** → connect Gmail + Google Calendar
-3. **Inbox** → open a thread → write reply → **Add to queue**
-4. **Queue** → **Approve** → email sends via Gmail
-5. **Inbox** → **Schedule meeting** → Queue → Approve → event on **Calendar**
-6. **Calendar** → **Archive request** → **Queue** → confirm dates → **Proceed**
-7. (Optional) Set `OPENAI_API_KEY` → Inbox **Priority** tab ranks urgent threads
-8. Show judges **http://localhost:8000/docs** — live OpenAPI
+3. **Inbox** → search (`/`), `j`/`k` to navigate, **Load more** to page
+4. Open a thread → write reply → **Add to queue**
+5. **Queue** → **Approve** → email sends via Gmail
+6. **Inbox** → **Schedule meeting** → Queue → Approve → event on **Calendar**
+7. **Calendar** → recurring events show a ↻ badge → **Reschedule** → Queue → confirm dates
+8. (Optional) Set `OPENAI_API_KEY` → Inbox **Priority** tab ranks urgent threads
+9. Show judges **http://localhost:8000/docs** — live OpenAPI
 
 ## Scripts
 
@@ -122,6 +141,8 @@ pnpm dev              # web :3000 + api :8000
 pnpm db:migrate       # Drizzle migrations
 pnpm db:check         # test DB connection
 pnpm test             # unit + integration tests
+pnpm --filter web test:e2e:install   # one-time: install Playwright chromium
+pnpm --filter web test:e2e           # Playwright smoke E2E (landing, auth gate)
 pnpm build            # production build
 ```
 
@@ -131,7 +152,10 @@ pnpm build            # production build
 - Payloads re-validated with Zod at execute time
 - Email headers sanitized against CRLF injection
 - OpenAPI docs **off by default** in production (`PUBLIC_OPENAPI_DOCS=false`)
-- Migrations versioned in `packages/database/drizzle/` (including `thread_queue_items` + Corsair tables)
+- Migrations versioned in `packages/database/drizzle/` (queue, Corsair, `thread_mail_cache`); legacy form-builder tables dropped in `0022`
+- Webhook receiver verifies a shared secret with a constant-time comparison and ACKs fast (refresh runs detached)
+- Mail-cache writes are best-effort — cache failures never break the live inbox
+- E2E smoke tests in `apps/web/e2e` (Playwright) cover the public surface and the auth gate
 
 ## License
 

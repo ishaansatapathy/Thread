@@ -17,6 +17,7 @@ const envSchema = z.object({
   CLIENT_URL: z.string().default("http://localhost:3000"),
   OPENAPI_DOCS_SECRET: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
   PUBLIC_OPENAPI_DOCS: z.enum(["true", "false"]).optional(),
+  CORSAIR_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().min(16).optional()),
 });
 
 function defaultPublicOpenApiDocs(nodeEnv: string) {

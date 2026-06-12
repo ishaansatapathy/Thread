@@ -16,11 +16,21 @@ function mapEvent(event: {
   description?: string;
   location?: string;
   htmlLink?: string;
+  hangoutLink?: string;
   status?: string;
+  recurringEventId?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
+  attendees?: Array<{
+    email?: string;
+    displayName?: string;
+    responseStatus?: string;
+    organizer?: boolean;
+    optional?: boolean;
+  }>;
 }): CalendarEvent | null {
   if (!event.id) return null;
+  const allDay = Boolean(event.start?.date && !event.start?.dateTime);
   return {
     id: event.id,
     summary: event.summary?.trim() || "Untitled event",
@@ -28,8 +38,19 @@ function mapEvent(event: {
     location: event.location,
     start: event.start?.dateTime ?? event.start?.date,
     end: event.end?.dateTime ?? event.end?.date,
+    allDay,
     htmlLink: event.htmlLink,
+    hangoutLink: event.hangoutLink,
     status: event.status,
+    recurringEventId: event.recurringEventId,
+    isRecurring: Boolean(event.recurringEventId),
+    attendees: event.attendees?.map((attendee) => ({
+      email: attendee.email,
+      displayName: attendee.displayName,
+      responseStatus: attendee.responseStatus,
+      organizer: attendee.organizer,
+      optional: attendee.optional,
+    })),
   };
 }
 
@@ -87,7 +108,13 @@ export class CorsairCalendarService implements CalendarService {
 
   async listEvents(
     tenantId: string,
-    opts: { timeMin: string; timeMax: string; maxResults?: number; timeZone?: string },
+    opts: {
+      timeMin: string;
+      timeMax: string;
+      maxResults?: number;
+      timeZone?: string;
+      pageToken?: string;
+    },
   ) {
     if (!this.isConfigured()) return { events: [] };
 
@@ -97,6 +124,8 @@ export class CorsairCalendarService implements CalendarService {
     }
 
     const corsair = getCorsair().withTenant(tenantId);
+    // singleEvents expands recurring series into individual instances and
+    // annotates each with recurringEventId, which we surface as a badge.
     const result = await corsair.googlecalendar.api.events.getMany({
       calendarId: "primary",
       timeMin: opts.timeMin,
@@ -104,14 +133,15 @@ export class CorsairCalendarService implements CalendarService {
       timeZone: opts.timeZone?.trim() || undefined,
       singleEvents: true,
       orderBy: "startTime",
-      maxResults: opts.maxResults ?? 50,
+      maxResults: Math.min(Math.max(opts.maxResults ?? 50, 1), 250),
+      pageToken: opts.pageToken,
     });
 
     const events = (result.items ?? [])
       .map(mapEvent)
       .filter((event: CalendarEvent | null): event is CalendarEvent => Boolean(event));
 
-    return { events };
+    return { events, nextPageToken: result.nextPageToken };
   }
 
   async createEvent(

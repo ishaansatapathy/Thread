@@ -22,6 +22,7 @@ import { createTrpcRateLimitMiddleware } from "./middleware/rate-limiters";
 
 import { googleAuthRouter } from "./routes/google-auth";
 import { corsairAuthRouter } from "./routes/corsair-auth";
+import { webhooksRouter } from "./routes/webhooks";
 
 export const app = express();
 
@@ -234,6 +235,7 @@ import("@scalar/express-api-reference")
 
 app.use("/auth", googleAuthRouter);
 app.use("/auth/corsair", corsairAuthRouter);
+app.use("/webhooks", webhooksRouter);
 
 const trpcRateLimit = createTrpcRateLimitMiddleware();
 

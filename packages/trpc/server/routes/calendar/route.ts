@@ -15,6 +15,14 @@ const connectionStateSchema = z.enum([
   "not_configured",
 ]);
 
+const calendarAttendeeSchema = z.object({
+  email: z.string().optional(),
+  displayName: z.string().optional(),
+  responseStatus: z.string().optional(),
+  organizer: z.boolean().optional(),
+  optional: z.boolean().optional(),
+});
+
 const calendarEventSchema = z.object({
   id: z.string(),
   summary: z.string(),
@@ -22,8 +30,13 @@ const calendarEventSchema = z.object({
   location: z.string().optional(),
   start: z.string().optional(),
   end: z.string().optional(),
+  allDay: z.boolean().optional(),
   htmlLink: z.string().optional(),
+  hangoutLink: z.string().optional(),
   status: z.string().optional(),
+  recurringEventId: z.string().optional(),
+  isRecurring: z.boolean().optional(),
+  attendees: z.array(calendarAttendeeSchema).optional(),
 });
 
 const isoDateTimeSchema = z
@@ -53,13 +66,15 @@ export const calendarRouter = router({
       z.object({
         timeMin: isoDateTimeSchema,
         timeMax: isoDateTimeSchema,
-        maxResults: z.number().int().min(1).max(100).optional(),
+        maxResults: z.number().int().min(1).max(250).optional(),
         timeZone: z.string().max(64).optional(),
+        pageToken: z.string().optional(),
       }),
     )
     .output(
       z.object({
         events: z.array(calendarEventSchema),
+        nextPageToken: z.string().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {

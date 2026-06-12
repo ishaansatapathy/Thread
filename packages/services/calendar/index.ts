@@ -8,6 +8,14 @@ export type CalendarConnectionStatus = {
   googlecalendar: CalendarConnectionState;
 };
 
+export type CalendarEventAttendee = {
+  email?: string;
+  displayName?: string;
+  responseStatus?: string;
+  organizer?: boolean;
+  optional?: boolean;
+};
+
 export type CalendarEvent = {
   id: string;
   summary: string;
@@ -15,8 +23,14 @@ export type CalendarEvent = {
   location?: string;
   start?: string;
   end?: string;
+  allDay?: boolean;
   htmlLink?: string;
   status?: string;
+  /** Set by Google when this instance belongs to a recurring series. */
+  recurringEventId?: string;
+  isRecurring?: boolean;
+  attendees?: CalendarEventAttendee[];
+  hangoutLink?: string;
 };
 
 export interface CalendarService {
@@ -24,8 +38,14 @@ export interface CalendarService {
   getConnectionStatus(tenantId: string): Promise<CalendarConnectionStatus>;
   listEvents(
     tenantId: string,
-    opts: { timeMin: string; timeMax: string; maxResults?: number; timeZone?: string },
-  ): Promise<{ events: CalendarEvent[] }>;
+    opts: {
+      timeMin: string;
+      timeMax: string;
+      maxResults?: number;
+      timeZone?: string;
+      pageToken?: string;
+    },
+  ): Promise<{ events: CalendarEvent[]; nextPageToken?: string }>;
   createEvent(
     tenantId: string,
     input: {

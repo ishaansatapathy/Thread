@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Archive,
   Calendar as CalIcon,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +11,9 @@ import {
   ListChecks,
   Loader2,
   Plus,
+  Repeat,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
@@ -20,7 +21,6 @@ import { trpc } from "~/trpc/client";
 import {
   eventDayKey,
   eventToArchivePayload,
-  localDateTimeInputToPayload,
   localDateTimeRangeToPayload,
   localDayKey,
   toLocalDateTimeInput,
@@ -84,8 +84,11 @@ type CalendarEventItem = {
   summary: string;
   start?: string;
   end?: string;
+  location?: string;
   htmlLink?: string;
   status?: string;
+  isRecurring?: boolean;
+  attendees?: Array<{ email?: string; displayName?: string; responseStatus?: string }>;
   pending?: boolean;
   pendingArchive?: boolean;
 };
@@ -169,7 +172,7 @@ export default function CalendarPage() {
       await utils.queue.pendingCount.invalidate();
       await utils.queue.list.invalidate();
       setSelectedEvent(null);
-      toast.success("Archive request queued — confirm dates in Queue");
+      toast.success("Reschedule queued — confirm the new date in Queue to apply it");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -395,7 +398,12 @@ export default function CalendarPage() {
                               : ""}
                           {formatEventTime(event.start)}
                         </span>
-                        <span className="thread-cal-event-title">{event.summary}</span>
+                        <span className="thread-cal-event-title">
+                          {event.isRecurring ? (
+                            <Repeat size={10} className="thread-cal-event-recur" aria-label="Recurring" />
+                          ) : null}
+                          {event.summary}
+                        </span>
                       </button>
                     ))
                   )}
@@ -537,10 +545,39 @@ export default function CalendarPage() {
               <p className="thread-cal-event-when">
                 {formatEventWhen(selectedEvent.start, selectedEvent.end)}
               </p>
-              <p className="thread-cal-event-detail-copy">
-                Archive request sends this to the approval queue so you can confirm dates before
-                anything changes. Delete permanently removes it from Google Calendar.
-              </p>
+              <div className="thread-cal-event-tags">
+                {selectedEvent.isRecurring ? (
+                  <span className="thread-cal-event-tag">
+                    <Repeat size={12} />
+                    Recurring series
+                  </span>
+                ) : null}
+                {selectedEvent.attendees?.length ? (
+                  <span className="thread-cal-event-tag">
+                    <Users size={12} />
+                    {selectedEvent.attendees.length} guest
+                    {selectedEvent.attendees.length === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {selectedEvent.location ? (
+                  <span className="thread-cal-event-tag">{selectedEvent.location}</span>
+                ) : null}
+              </div>
+              {selectedEvent.isRecurring ? (
+                <p className="thread-cal-event-detail-copy">
+                  This is one occurrence of a recurring series. Reschedule or delete affects only
+                  this occurrence in Google Calendar.
+                </p>
+              ) : null}
+              <ul className="thread-cal-event-actions-legend">
+                <li>
+                  <strong>Reschedule</strong> — queue new dates; nothing changes until you approve.
+                </li>
+                <li>
+                  <strong>Delete</strong> — permanently remove this event and notify guests. Cannot be
+                  undone.
+                </li>
+              </ul>
               {selectedEvent.htmlLink ? (
                 <a
                   href={selectedEvent.htmlLink}
@@ -561,12 +598,12 @@ export default function CalendarPage() {
                 onClick={() =>
                   queueArchive.mutate({
                     archive: eventToArchivePayload(selectedEvent),
-                    title: `Archive: ${selectedEvent.summary}`,
+                    title: `Reschedule: ${selectedEvent.summary}`,
                   })
                 }
               >
-                <Archive size={14} />
-                {queueArchive.isPending ? "Queuing…" : "Archive request"}
+                <ListChecks size={14} />
+                {queueArchive.isPending ? "Queuing…" : "Reschedule"}
               </button>
               <button
                 type="button"

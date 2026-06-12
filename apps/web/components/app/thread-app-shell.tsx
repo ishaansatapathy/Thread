@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Inbox,
   Calendar,
-  Bot,
   Settings,
   Search,
   LogOut,
@@ -27,14 +26,12 @@ const NAV = [
   { label: "Inbox", href: "/inbox", icon: Inbox },
   { label: "Queue", href: "/queue", icon: ListChecks },
   { label: "Calendar", href: "/calendar", icon: Calendar },
-  { label: "Agent", href: "/agent", icon: Bot },
 ];
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/inbox": { title: "Inbox", sub: "Triage what matters" },
   "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
-  "/agent": { title: "Agent", sub: "Corsair MCP commands" },
   "/settings": { title: "Settings", sub: "Account & connections" },
 };
 
@@ -114,7 +111,6 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
                 {item.href === "/queue" && queueCount > 0 && (
                   <span className="thread-app-nav-count">{queueCount}</span>
                 )}
-                {item.href === "/agent" && <span className="thread-app-nav-pill">MCP</span>}
               </Link>
             );
           })}
@@ -155,6 +151,8 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
           <button type="button" className="thread-app-user-btn" onClick={() => setMenuOpen((v) => !v)}>
             <span className="thread-app-avatar">
               {user.profileImageUrl ? (
+                // Remote Google avatar; next/image remote config is overkill for a 28px chip.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={user.profileImageUrl} alt="" />
               ) : (
                 initials(user.displayName ?? user.fullName, user.email)

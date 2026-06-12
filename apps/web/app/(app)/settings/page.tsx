@@ -79,7 +79,13 @@ export default function SettingsPage() {
         <div className="thread-set-row" style={{ alignItems: "flex-start", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, width: "100%" }}>
             <span className="thread-app-avatar" style={{ width: 44, height: 44, borderRadius: 10, fontSize: 16 }}>
-              {user.profileImageUrl ? <img src={user.profileImageUrl} alt="" /> : initials(user.displayName ?? user.fullName, user.email)}
+              {user.profileImageUrl ? (
+                // Remote Google avatar; next/image remote config is overkill for a 44px chip.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.profileImageUrl} alt="" />
+              ) : (
+                initials(user.displayName ?? user.fullName, user.email)
+              )}
             </span>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{user.fullName || "Thread user"}</div>
