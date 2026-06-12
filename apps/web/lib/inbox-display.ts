@@ -1,0 +1,59 @@
+export function parseReplyTo(from?: string) {
+  if (!from) return "";
+  const bracket = from.match(/<([^>]+)>/);
+  if (bracket?.[1]) return bracket[1];
+  const plain = from.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
+  return plain?.[0] ?? from;
+}
+
+export function replySubject(subject?: string) {
+  const trimmed = subject?.trim() || "No subject";
+  let base = trimmed;
+  while (/^(re|fwd):\s*/i.test(base)) {
+    base = base.replace(/^(re|fwd):\s*/i, "").trim();
+  }
+  return `Re: ${base || "No subject"}`;
+}
+
+export function displaySender(from?: string) {
+  if (!from) return "Unknown";
+  const nameMatch = from.match(/^([^<]+)</);
+  if (nameMatch?.[1]) {
+    return nameMatch[1].trim().replace(/^"|"$/g, "");
+  }
+  return parseReplyTo(from);
+}
+
+export function formatMessageDate(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export function replyTargetForMessage(
+  message: { from?: string; to?: string },
+  userEmail?: string,
+) {
+  const from = parseReplyTo(message.from);
+  const me = userEmail?.trim().toLowerCase();
+  if (from && me && from.toLowerCase() === me) {
+    return parseReplyTo(message.to) || from;
+  }
+  return from;
+}
+
+export function sortThreadsByRank<T extends { id: string }>(threads: T[], rankedIds: string[]) {
+  const order = new Map(rankedIds.map((id, index) => [id, index]));
+  return [...threads].sort((left, right) => {
+    const leftIndex = order.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = order.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex;
+  });
+}

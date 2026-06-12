@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth/route";
 import { inboxRouter } from "./routes/inbox/route";
 import { calendarRouter } from "./routes/calendar/route";
 import { queueRouter } from "./routes/queue/route";
+import { aiRouter } from "./routes/ai/route";
 
 export const serverRouter = router({
   health: healthRouter,
@@ -12,6 +13,7 @@ export const serverRouter = router({
   inbox: inboxRouter,
   calendar: calendarRouter,
   queue: queueRouter,
+  ai: aiRouter,
 });
 
 export const openApiRouter = serverRouter;

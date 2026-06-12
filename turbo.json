@@ -4,6 +4,9 @@
   "globalEnv": [
     "DATABASE_URL",
     "DATABASE_URL_UNPOOLED",
+    "OPENAI_API_KEY",
+    "OPENAI_MODEL",
+    "THREAD_ALLOW_DIRECT_SEND",
     "JWT_SECRET",
     "JWT_REFRESH_SECRET",
     "CLIENT_URL",

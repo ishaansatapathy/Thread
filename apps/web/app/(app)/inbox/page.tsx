@@ -7,76 +7,32 @@ import { toast } from "sonner";
 import {
   Inbox,
   Mail,
-  Filter,
   Loader2,
   FilePenLine,
   CalendarPlus,
   ListChecks,
   X,
+  Sparkles,
 } from "lucide-react";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
+import {
+  displaySender,
+  formatMessageDate,
+  parseReplyTo,
+  replySubject,
+  replyTargetForMessage,
+  sortThreadsByRank,
+} from "~/lib/inbox-display";
 import { trpc } from "~/trpc/client";
 
-const TABS = [
-  { id: "priority", label: "Priority" },
-  { id: "all", label: "All" },
-  { id: "drafts", label: "Drafts" },
-];
-
-function parseReplyTo(from?: string) {
-  if (!from) return "";
-  const bracket = from.match(/<([^>]+)>/);
-  if (bracket?.[1]) return bracket[1];
-  const plain = from.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
-  return plain?.[0] ?? from;
-}
-
-function replySubject(subject?: string) {
-  const trimmed = subject?.trim() || "No subject";
-  let base = trimmed;
-  while (/^(re|fwd):\s*/i.test(base)) {
-    base = base.replace(/^(re|fwd):\s*/i, "").trim();
-  }
-  return `Re: ${base || "No subject"}`;
-}
-
-function displaySender(from?: string) {
-  if (!from) return "Unknown";
-  const nameMatch = from.match(/^([^<]+)</);
-  if (nameMatch?.[1]) {
-    return nameMatch[1].trim().replace(/^"|"$/g, "");
-  }
-  const bracket = from.match(/<([^>]+)>/);
-  return (bracket?.[1] ?? from).trim();
-}
-
-function formatMessageDate(value?: string) {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function replyTargetForMessage(message: { from?: string; to?: string }, userEmail?: string) {
-  const from = parseReplyTo(message.from);
-  const me = userEmail?.trim().toLowerCase();
-  if (from && me && from.toLowerCase() === me) {
-    return parseReplyTo(message.to) || from;
-  }
-  return from;
-}
+type InboxView = "inbox" | "priority";
 
 export default function InboxPage() {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState("all");
+  const [view, setView] = useState<InboxView>("inbox");
+  const [priorityRankedIds, setPriorityRankedIds] = useState<string[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
@@ -99,6 +55,7 @@ export default function InboxPage() {
   const statusQuery = trpc.inbox.connectionStatus.useQuery({});
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
   const pendingCount = trpc.queue.pendingCount.useQuery({});
+  const aiStatus = trpc.ai.status.useQuery({});
   const threadsQuery = trpc.inbox.listThreads.useQuery(
     { maxResults: 25 },
     { enabled: statusQuery.data?.gmail === "connected" },
@@ -113,6 +70,13 @@ export default function InboxPage() {
       await utils.queue.pendingCount.invalidate();
       toast.success("Added to approval queue");
       setReplyBody("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const rankThreads = trpc.ai.rankInboxThreads.useMutation({
+    onSuccess: (result) => {
+      setPriorityRankedIds(result.rankedIds);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -138,6 +102,33 @@ export default function InboxPage() {
   const isConnected = gmailStatus === "connected";
   const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
   const threads = threadsQuery.data?.threads ?? [];
+  const aiReady = aiStatus.data?.openai === true;
+  const visibleThreads = useMemo(() => {
+    if (view !== "priority" || !priorityRankedIds?.length) return threads;
+    return sortThreadsByRank(threads, priorityRankedIds);
+  }, [threads, view, priorityRankedIds]);
+
+  useEffect(() => {
+    setPriorityRankedIds(null);
+  }, [threadsQuery.dataUpdatedAt]);
+
+  const handleViewChange = (nextView: InboxView) => {
+    setView(nextView);
+    if (nextView !== "priority") return;
+    if (!aiReady) {
+      toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
+      return;
+    }
+    if (threads.length === 0) return;
+    rankThreads.mutate({
+      threads: threads.map((thread) => ({
+        id: thread.id,
+        snippet: thread.snippet,
+        subject: thread.subject,
+        from: thread.from,
+      })),
+    });
+  };
 
   const banner = useMemo(() => {
     const gmailConnected = searchParams.get("gmail") === "connected";
@@ -211,17 +202,25 @@ export default function InboxPage() {
     <div className="thread-inbox">
       <div className="thread-inbox-list">
         <div className="thread-inbox-list-head">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="thread-inbox-tab"
-              data-active={tab === t.id}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+          <button
+            type="button"
+            className="thread-inbox-tab"
+            data-active={view === "inbox"}
+            onClick={() => setView("inbox")}
+          >
+            Inbox
+          </button>
+          <button
+            type="button"
+            className="thread-inbox-tab"
+            data-active={view === "priority"}
+            data-disabled={!aiReady ? "true" : undefined}
+            onClick={() => handleViewChange("priority")}
+            title={aiReady ? "Rank by urgency with OpenAI" : "Set OPENAI_API_KEY to enable"}
+          >
+            <Sparkles size={12} />
+            Priority
+          </button>
           <Link
             href="/queue"
             className="thread-inbox-queue-link"
@@ -231,15 +230,22 @@ export default function InboxPage() {
             Queue
             {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
           </Link>
-          <button
-            type="button"
-            className="thread-app-iconbtn"
-            style={{ width: 30, height: 30 }}
-            aria-label="Filter"
-          >
-            <Filter size={14} />
-          </button>
         </div>
+
+        {view === "priority" && isConnected ? (
+          <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
+            {rankThreads.isPending ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Loader2 size={14} className="thread-spin" />
+                Ranking threads by urgency…
+              </span>
+            ) : aiReady ? (
+              "Sorted by AI urgency — approve replies from Queue."
+            ) : (
+              "Priority ranking needs OPENAI_API_KEY in server env."
+            )}
+          </div>
+        ) : null}
 
         {banner ? (
           <div
@@ -307,7 +313,7 @@ export default function InboxPage() {
               </p>
             </div>
           ) : (
-            threads.map((thread) => (
+            visibleThreads.map((thread) => (
               <button
                 key={thread.id}
                 type="button"
