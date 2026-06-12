@@ -1,38 +1,17 @@
 import { z } from "zod";
 
 import { getQueueService } from "@repo/services/queue";
+import {
+  calendarArchivePayloadSchema,
+  calendarQueuePayloadSchema,
+  emailQueuePayloadSchema,
+} from "@repo/services/queue/schemas";
 
-import { protectedProcedure, router } from "../../trpc";
+import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
 
 const TAGS = ["Queue"];
 const getPath = generatePath("/queue");
-
-const emailPayloadSchema = z.object({
-  to: z.string().min(3).max(320),
-  subject: z.string().min(1).max(998),
-  body: z.string().min(1).max(100_000),
-  threadId: z.string().optional(),
-});
-
-const calendarPayloadSchema = z.object({
-  summary: z.string().min(1).max(200),
-  description: z.string().max(5000).optional(),
-  location: z.string().max(500).optional(),
-  startDateTime: z.string().min(1),
-  endDateTime: z.string().min(1),
-  timeZone: z.string().max(64).optional(),
-  attendeeEmails: z.array(z.string().email()).max(20).optional(),
-});
-
-const calendarArchivePayloadSchema = z.object({
-  eventId: z.string().min(1),
-  summary: z.string().min(1).max(200),
-  startDateTime: z.string().min(1),
-  endDateTime: z.string().min(1),
-  timeZone: z.string().max(64).optional(),
-  htmlLink: z.string().optional(),
-});
 
 const queueItemSchema = z.object({
   id: z.string().uuid(),
@@ -53,9 +32,13 @@ export const queueRouter = router({
     .input(z.object({}))
     .output(z.object({ count: z.number().int() }))
     .query(async ({ ctx }) => {
-      const queue = getQueueService();
-      const count = await queue.pendingCount(ctx.user.id);
-      return { count };
+      try {
+        const queue = getQueueService();
+        const count = await queue.pendingCount(ctx.user.id);
+        return { count };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   list: protectedProcedure
@@ -67,9 +50,13 @@ export const queueRouter = router({
     )
     .output(z.object({ items: z.array(queueItemSchema) }))
     .query(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      const items = await queue.listItems(ctx.user.id, { status: input.status ?? "pending" });
-      return { items };
+      try {
+        const queue = getQueueService();
+        const items = await queue.listItems(ctx.user.id, { status: input.status ?? "pending" });
+        return { items };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   enqueueEmail: protectedProcedure
@@ -77,38 +64,46 @@ export const queueRouter = router({
     .input(
       z.object({
         mode: z.enum(["send", "draft"]),
-        email: emailPayloadSchema,
+        email: emailQueuePayloadSchema,
         title: z.string().max(200).optional(),
         preview: z.string().max(500).optional(),
       }),
     )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.enqueueEmail(ctx.user.id, input);
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueEmail(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   enqueueCalendar: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/enqueue/calendar"), tags: TAGS } })
     .input(
       z.object({
-        calendar: calendarPayloadSchema,
+        calendar: calendarQueuePayloadSchema,
         title: z.string().max(200).optional(),
         preview: z.string().max(500).optional(),
       }),
     )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.enqueueCalendarInvite(ctx.user.id, input);
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueCalendarInvite(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   enqueueMeeting: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/enqueue/meeting"), tags: TAGS } })
     .input(
       z.object({
-        email: emailPayloadSchema,
-        calendar: calendarPayloadSchema,
+        email: emailQueuePayloadSchema,
+        calendar: calendarQueuePayloadSchema,
         title: z.string().max(200).optional(),
         preview: z.string().max(500).optional(),
         sourceThreadId: z.string().optional(),
@@ -116,13 +111,17 @@ export const queueRouter = router({
     )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.enqueueMeetingBundle(ctx.user.id, {
-        bundle: { email: input.email, calendar: input.calendar },
-        title: input.title,
-        preview: input.preview,
-        sourceThreadId: input.sourceThreadId,
-      });
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueMeetingBundle(ctx.user.id, {
+          bundle: { email: input.email, calendar: input.calendar },
+          title: input.title,
+          preview: input.preview,
+          sourceThreadId: input.sourceThreadId,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   enqueueCalendarArchive: protectedProcedure
@@ -136,8 +135,12 @@ export const queueRouter = router({
     )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.enqueueCalendarArchive(ctx.user.id, input);
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueCalendarArchive(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   approve: protectedProcedure
@@ -156,8 +159,12 @@ export const queueRouter = router({
     )
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.approve(ctx.user.id, input.id, { archive: input.archive });
+      try {
+        const queue = getQueueService();
+        return await queue.approve(ctx.user.id, input.id, { archive: input.archive });
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   dismiss: protectedProcedure
@@ -165,7 +172,11 @@ export const queueRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
-      const queue = getQueueService();
-      return queue.dismiss(ctx.user.id, input.id);
+      try {
+        const queue = getQueueService();
+        return await queue.dismiss(ctx.user.id, input.id);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 });

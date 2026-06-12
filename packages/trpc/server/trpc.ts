@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { OpenApiMeta } from "trpc-to-openapi";
 import { AuthError } from "@repo/services/auth/errors";
+import { ServiceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 import { ZodError } from "zod";
 
@@ -92,6 +93,29 @@ export function mapAuthError(error: unknown): never {
 
     throw new TRPCError({
       code: codeMap[error.code],
+      message: error.message,
+    });
+  }
+
+  sanitizeTrpcError(error);
+}
+
+const serviceErrorCodeMap = {
+  BAD_REQUEST: "BAD_REQUEST",
+  UNAUTHORIZED: "UNAUTHORIZED",
+  FORBIDDEN: "FORBIDDEN",
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  PRECONDITION_FAILED: "PRECONDITION_FAILED",
+  INTERNAL: "INTERNAL_SERVER_ERROR",
+} as const;
+
+export function mapServiceError(error: unknown): never {
+  if (error instanceof TRPCError) throw error;
+
+  if (error instanceof ServiceError) {
+    throw new TRPCError({
+      code: serviceErrorCodeMap[error.code],
       message: error.message,
     });
   }

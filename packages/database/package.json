@@ -5,12 +5,14 @@
     ".": "./index.ts",
     "./health": "./health.ts",
     "./migrate": "./migrate.ts",
+    "./pg": "./pg.ts",
     "./schema": "./schema.ts",
     "./relations": "./relations.ts"
   },
   "scripts": {
     "db:migrate": "dotenv -e ../../.env -- drizzle-kit migrate",
     "db:generate": "dotenv -e ../../.env -- drizzle-kit generate",
+    "db:check": "dotenv -e ../../.env -- tsx scripts/check-db.ts",
     "db:seed": "dotenv -e ../../.env -- tsx scripts/seed.ts",
     "db:studio": "dotenv -e ../../.env -- drizzle-kit studio",
     "lint": "eslint . --max-warnings 0",

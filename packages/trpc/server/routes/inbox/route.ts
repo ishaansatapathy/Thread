@@ -1,8 +1,15 @@
 import { z } from "zod";
 
 import { getInboxService } from "@repo/services/inbox";
+import {
+  emailBodySchema,
+  safeEmailSubjectSchema,
+  singleRecipientSchema,
+} from "@repo/services/validation/email";
 
-import { protectedProcedure, router } from "../../trpc";
+import { TRPCError } from "@trpc/server";
+
+import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
 
 const TAGS = ["Inbox"];
@@ -37,11 +44,20 @@ const connectionStatusSchema = z.object({
 });
 
 const composeInputSchema = z.object({
-  to: z.string().min(3).max(320),
-  subject: z.string().min(1).max(998),
-  body: z.string().min(1).max(100_000),
+  to: singleRecipientSchema,
+  subject: safeEmailSubjectSchema,
+  body: emailBodySchema,
   threadId: z.string().optional(),
 });
+
+function assertDirectSendAllowed() {
+  if (process.env.THREAD_ALLOW_DIRECT_SEND?.trim() !== "true") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Direct send is disabled. Add the action to the approval queue instead.",
+    });
+  }
+}
 
 export const inboxRouter = router({
   connectionStatus: protectedProcedure
@@ -68,8 +84,12 @@ export const inboxRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      return inbox.listThreads(ctx.user.id, input);
+      try {
+        const inbox = getInboxService();
+        return await inbox.listThreads(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   getThread: protectedProcedure
@@ -77,8 +97,12 @@ export const inboxRouter = router({
     .input(z.object({ threadId: z.string().min(1) }))
     .output(inboxThreadSchema.nullable())
     .query(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      return inbox.getThread(ctx.user.id, input.threadId, { userEmail: ctx.user.email });
+      try {
+        const inbox = getInboxService();
+        return await inbox.getThread(ctx.user.id, input.threadId, { userEmail: ctx.user.email });
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   sendMessage: protectedProcedure
@@ -91,8 +115,13 @@ export const inboxRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      return inbox.sendMessage(ctx.user.id, input);
+      assertDirectSendAllowed();
+      try {
+        const inbox = getInboxService();
+        return await inbox.sendMessage(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   createDraft: protectedProcedure
@@ -104,7 +133,11 @@ export const inboxRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      return inbox.createDraft(ctx.user.id, input);
+      try {
+        const inbox = getInboxService();
+        return await inbox.createDraft(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 });

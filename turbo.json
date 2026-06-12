@@ -3,6 +3,7 @@
   "ui": "tui",
   "globalEnv": [
     "DATABASE_URL",
+    "DATABASE_URL_UNPOOLED",
     "JWT_SECRET",
     "JWT_REFRESH_SECRET",
     "CLIENT_URL",
@@ -52,6 +53,7 @@
     },
     "db:generate": {},
     "db:migrate": {},
+    "db:check": {},
     "db:seed": {},
     "test": {
       "dependsOn": ["^test"]

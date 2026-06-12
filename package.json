@@ -6,6 +6,7 @@
     "dev": "dotenv -- turbo dev",
     "db:generate": "dotenv -- turbo db:generate",
     "db:migrate": "dotenv -- turbo db:migrate",
+    "db:check": "dotenv -- turbo db:check --filter=@repo/database",
     "db:seed": "dotenv -- turbo db:seed",
     "db:up": "docker compose up -d postgresdb",
     "lint": "turbo run lint",

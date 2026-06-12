@@ -16,8 +16,12 @@ const envSchema = z.object({
   BASE_URL: z.string().default("http://localhost:8000"),
   CLIENT_URL: z.string().default("http://localhost:3000"),
   OPENAPI_DOCS_SECRET: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
-  PUBLIC_OPENAPI_DOCS: z.enum(["true", "false"]).default("true"),
+  PUBLIC_OPENAPI_DOCS: z.enum(["true", "false"]).optional(),
 });
+
+function defaultPublicOpenApiDocs(nodeEnv: string) {
+  return nodeEnv === "development" || nodeEnv === "test" ? "true" : "false";
+}
 
 function createEnv(env: NodeJS.ProcessEnv) {
   const safeParseResult = envSchema.safeParse(env);
@@ -27,6 +31,7 @@ function createEnv(env: NodeJS.ProcessEnv) {
     ...data,
     BASE_URL: normalizeEnvUrl(data.BASE_URL),
     CLIENT_URL: normalizeEnvUrl(data.CLIENT_URL),
+    PUBLIC_OPENAPI_DOCS: data.PUBLIC_OPENAPI_DOCS ?? defaultPublicOpenApiDocs(data.NODE_ENV),
   };
 }
 

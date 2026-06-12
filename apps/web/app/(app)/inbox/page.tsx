@@ -9,7 +9,6 @@ import {
   Mail,
   Filter,
   Loader2,
-  Send,
   FilePenLine,
   CalendarPlus,
   ListChecks,
@@ -108,16 +107,6 @@ export default function InboxPage() {
     { threadId: selectedId ?? "" },
     { enabled: Boolean(selectedId) && statusQuery.data?.gmail === "connected" },
   );
-
-  const sendMessage = trpc.inbox.sendMessage.useMutation({
-    onSuccess: async () => {
-      await utils.inbox.listThreads.invalidate();
-      if (selectedId) await utils.inbox.getThread.invalidate({ threadId: selectedId });
-      toast.success("Email sent");
-      setReplyBody("");
-    },
-    onError: (error) => toast.error(error.message),
-  });
 
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
     onSuccess: async () => {
@@ -507,15 +496,6 @@ export default function InboxPage() {
                 >
                   <ListChecks size={14} />
                   {queueEmail.isPending ? "Queuing…" : "Add to queue"}
-                </button>
-                <button
-                  type="button"
-                  className="thread-btn-ghost thread-inbox-send-now"
-                  disabled={sendMessage.isPending || !replyBody.trim() || !replyTo.trim()}
-                  onClick={() => sendMessage.mutate(emailPayload)}
-                >
-                  <Send size={14} />
-                  Send now
                 </button>
               </div>
               <p className="thread-inbox-compose-note">
