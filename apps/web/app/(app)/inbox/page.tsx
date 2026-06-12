@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -9,9 +9,11 @@ import {
   Mail,
   Loader2,
   FilePenLine,
+  FileText,
   CalendarPlus,
   ListChecks,
   X,
+  Search,
   Sparkles,
 } from "lucide-react";
 
@@ -19,21 +21,84 @@ import { SenderAvatar } from "~/components/app/sender-avatar";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import {
   displaySender,
+  formatListDate,
   formatMessageDate,
   parseReplyTo,
   replySubject,
   replyTargetForMessage,
   sortThreadsByRank,
 } from "~/lib/inbox-display";
+import type { RouterOutputs } from "@repo/trpc/client";
 import { trpc } from "~/trpc/client";
 
-type InboxView = "inbox" | "priority";
+type InboxView = "inbox" | "priority" | "drafts";
+type ThreadRow = RouterOutputs["inbox"]["listThreads"]["threads"][number];
+
+const PAGE_SIZE = 25;
+
+/**
+ * Manual pagination + search accumulator. tRPC's useInfiniteQuery expects a
+ * `cursor` field, but our REST-friendly endpoint uses Gmail's native
+ * `pageToken`, so we page explicitly and merge results de-duplicated by id.
+ */
+function useInboxThreads(query: string, enabled: boolean) {
+  const [pageToken, setPageToken] = useState<string | undefined>(undefined);
+  const [pages, setPages] = useState<{ token: string | undefined; threads: ThreadRow[] }[]>([]);
+
+  const result = trpc.inbox.listThreads.useQuery(
+    { maxResults: PAGE_SIZE, query: query || undefined, pageToken },
+    { enabled, placeholderData: (prev) => prev },
+  );
+
+  // Reset accumulation whenever the search query changes.
+  useEffect(() => {
+    setPageToken(undefined);
+    setPages([]);
+  }, [query]);
+
+  useEffect(() => {
+    if (!result.data) return;
+    setPages((current) => {
+      if (current.some((page) => page.token === pageToken)) return current;
+      return [...current, { token: pageToken, threads: result.data.threads }];
+    });
+  }, [result.data, pageToken]);
+
+  const threads = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ThreadRow[] = [];
+    for (const page of pages) {
+      for (const thread of page.threads) {
+        if (seen.has(thread.id)) continue;
+        seen.add(thread.id);
+        merged.push(thread);
+      }
+    }
+    return merged;
+  }, [pages]);
+
+  const nextPageToken = result.data?.nextPageToken;
+  const loadMore = useCallback(() => {
+    if (nextPageToken) setPageToken(nextPageToken);
+  }, [nextPageToken]);
+
+  return {
+    threads,
+    nextPageToken,
+    loadMore,
+    isLoading: result.isLoading && pages.length === 0,
+    isFetchingMore: result.isFetching && pageToken !== undefined,
+    dataUpdatedAt: result.dataUpdatedAt,
+  };
+}
 
 export default function InboxPage() {
   const searchParams = useSearchParams();
   const [view, setView] = useState<InboxView>("inbox");
   const [priorityRankedIds, setPriorityRankedIds] = useState<string[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -47,6 +112,7 @@ export default function InboxPage() {
   );
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
   const meQuery = trpc.auth.me.useQuery({});
@@ -56,13 +122,27 @@ export default function InboxPage() {
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
   const pendingCount = trpc.queue.pendingCount.useQuery({});
   const aiStatus = trpc.ai.status.useQuery({});
-  const threadsQuery = trpc.inbox.listThreads.useQuery(
-    { maxResults: 25 },
-    { enabled: statusQuery.data?.gmail === "connected" },
+
+  const isConnected = statusQuery.data?.gmail === "connected";
+
+  // Debounce the search box so each keystroke doesn't hit Gmail.
+  useEffect(() => {
+    const id = window.setTimeout(() => setAppliedQuery(searchInput.trim()), 350);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
+
+  const inbox = useInboxThreads(appliedQuery, isConnected);
+  const threads = inbox.threads;
+
+  const draftsQuery = trpc.inbox.listDrafts.useQuery(
+    { maxResults: PAGE_SIZE },
+    { enabled: isConnected && view === "drafts" },
   );
+  const drafts = draftsQuery.data?.drafts ?? [];
+
   const selectedQuery = trpc.inbox.getThread.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && statusQuery.data?.gmail === "connected" },
+    { enabled: Boolean(selectedId) && isConnected },
   );
 
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
@@ -98,11 +178,9 @@ export default function InboxPage() {
     onError: (error) => toast.error(error.message),
   });
 
-  const gmailStatus = statusQuery.data?.gmail ?? "not_configured";
-  const isConnected = gmailStatus === "connected";
   const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
-  const threads = threadsQuery.data?.threads ?? [];
   const aiReady = aiStatus.data?.openai === true;
+
   const visibleThreads = useMemo(() => {
     if (view !== "priority" || !priorityRankedIds?.length) return threads;
     return sortThreadsByRank(threads, priorityRankedIds);
@@ -110,7 +188,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     setPriorityRankedIds(null);
-  }, [threadsQuery.dataUpdatedAt]);
+  }, [inbox.dataUpdatedAt]);
 
   const handleViewChange = (nextView: InboxView) => {
     setView(nextView);
@@ -125,7 +203,7 @@ export default function InboxPage() {
         id: thread.id,
         snippet: thread.snippet,
         subject: thread.subject,
-        from: thread.from,
+        from: thread.fromName ?? thread.from,
       })),
     });
   };
@@ -139,10 +217,11 @@ export default function InboxPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!selectedId && threads.length > 0) {
-      setSelectedId(threads[0]?.id ?? null);
+    if (view === "drafts") return;
+    if (!selectedId && visibleThreads.length > 0) {
+      setSelectedId(visibleThreads[0]?.id ?? null);
     }
-  }, [threads, selectedId]);
+  }, [visibleThreads, selectedId, view]);
 
   useEffect(() => {
     if (searchParams.get("gmail") === "connected") {
@@ -172,6 +251,38 @@ export default function InboxPage() {
     }
   }, [selectedQuery.data, userEmail]);
 
+  // Keyboard navigation: j/k move, Enter opens, / focuses search.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (view === "drafts" || visibleThreads.length === 0) return;
+
+      if (event.key === "j" || event.key === "k") {
+        event.preventDefault();
+        const index = visibleThreads.findIndex((thread) => thread.id === selectedId);
+        const delta = event.key === "j" ? 1 : -1;
+        const nextIndex = Math.min(
+          Math.max((index === -1 ? 0 : index) + delta, 0),
+          visibleThreads.length - 1,
+        );
+        setSelectedId(visibleThreads[nextIndex]?.id ?? null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleThreads, selectedId, view]);
+
   const threadMessages = selectedQuery.data?.messages ?? [];
 
   const handleMessageClick = (message: (typeof threadMessages)[number]) => {
@@ -198,6 +309,8 @@ export default function InboxPage() {
     threadId: selectedQuery.data?.id,
   };
 
+  const showThreadList = view !== "drafts";
+
   return (
     <div className="thread-inbox">
       <div className="thread-inbox-list">
@@ -221,6 +334,15 @@ export default function InboxPage() {
             <Sparkles size={12} />
             Priority
           </button>
+          <button
+            type="button"
+            className="thread-inbox-tab"
+            data-active={view === "drafts"}
+            onClick={() => setView("drafts")}
+          >
+            <FileText size={12} />
+            Drafts
+          </button>
           <Link
             href="/queue"
             className="thread-inbox-queue-link"
@@ -231,6 +353,32 @@ export default function InboxPage() {
             {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
           </Link>
         </div>
+
+        {isConnected && showThreadList ? (
+          <div className="thread-inbox-search">
+            <Search size={14} />
+            <input
+              ref={searchRef}
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search mail (from:, subject:, has:attachment…)"
+              aria-label="Search mail"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                className="thread-inbox-search-clear"
+                onClick={() => setSearchInput("")}
+                aria-label="Clear search"
+              >
+                <X size={13} />
+              </button>
+            ) : (
+              <kbd className="thread-app-kbd">/</kbd>
+            )}
+          </div>
+        ) : null}
 
         {view === "priority" && isConnected ? (
           <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
@@ -268,19 +416,10 @@ export default function InboxPage() {
           ) : !isConnected ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
-              <p
-                style={{
-                  marginTop: 12,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--thread-muted)",
-                }}
-              >
+              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
                 No threads yet
               </p>
-              <p
-                style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}
-              >
+              <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
                 Connect Gmail via Corsair to sync your inbox here.
               </p>
               <a
@@ -291,42 +430,114 @@ export default function InboxPage() {
                 Connect Gmail
               </a>
             </div>
-          ) : threadsQuery.isLoading ? (
+          ) : view === "drafts" ? (
+            draftsQuery.isLoading ? (
+              <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
+                <Loader2 size={18} className="thread-spin" />
+                <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
+                  Loading drafts…
+                </p>
+              </div>
+            ) : drafts.length === 0 ? (
+              <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
+                <FileText size={20} style={{ opacity: 0.35 }} />
+                <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
+                  No drafts
+                </p>
+                <p style={{ marginTop: 6, fontSize: 12, color: "var(--thread-dim)" }}>
+                  Queue a draft from any thread — approve it to save into Gmail.
+                </p>
+              </div>
+            ) : (
+              drafts.map((draft) => (
+                <button
+                  key={draft.id}
+                  type="button"
+                  className="thread-inbox-row"
+                  data-active={Boolean(draft.threadId) && selectedId === draft.threadId}
+                  onClick={() => {
+                    if (draft.threadId) {
+                      setView("inbox");
+                      setSelectedId(draft.threadId);
+                    }
+                  }}
+                >
+                  <span className="thread-inbox-row-line">
+                    <span className="thread-inbox-row-sender">
+                      {draft.to ? `To ${draft.to}` : "Draft"}
+                    </span>
+                    <span className="thread-inbox-row-date">{formatListDate(draft.updatedAt)}</span>
+                  </span>
+                  <span className="thread-inbox-row-subject">
+                    {draft.subject?.trim() || "(no subject)"}
+                  </span>
+                  <span className="thread-inbox-row-snippet">{draft.snippet}</span>
+                </button>
+              ))
+            )
+          ) : inbox.isLoading ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Loader2 size={18} className="thread-spin" />
               <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
                 Loading threads…
               </p>
             </div>
-          ) : threads.length === 0 ? (
+          ) : visibleThreads.length === 0 ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
-              <p
-                style={{
-                  marginTop: 12,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--thread-muted)",
-                }}
-              >
-                Inbox is empty
+              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
+                {appliedQuery ? "No matches" : "Inbox is empty"}
               </p>
+              {appliedQuery ? (
+                <p style={{ marginTop: 6, fontSize: 12, color: "var(--thread-dim)" }}>
+                  Nothing matched “{appliedQuery}”.
+                </p>
+              ) : null}
             </div>
           ) : (
-            visibleThreads.map((thread) => (
-              <button
-                key={thread.id}
-                type="button"
-                className="thread-inbox-row"
-                data-active={selectedId === thread.id}
-                onClick={() => setSelectedId(thread.id)}
-              >
-                <span className="thread-inbox-row-subject">
-                  {thread.subject?.trim() || thread.snippet?.trim() || "No subject"}
-                </span>
-                <span className="thread-inbox-row-snippet">{thread.snippet}</span>
-              </button>
-            ))
+            <>
+              {visibleThreads.map((thread) => (
+                <button
+                  key={thread.id}
+                  type="button"
+                  className="thread-inbox-row"
+                  data-active={selectedId === thread.id}
+                  data-unread={thread.unread ? "true" : undefined}
+                  onClick={() => setSelectedId(thread.id)}
+                >
+                  <span className="thread-inbox-row-line">
+                    <span className="thread-inbox-row-sender">
+                      {thread.unread ? <span className="thread-inbox-row-dot" aria-hidden /> : null}
+                      {thread.fromName?.trim() || thread.from?.trim() || "Unknown sender"}
+                      {thread.messageCount && thread.messageCount > 1 ? (
+                        <span className="thread-inbox-row-count">{thread.messageCount}</span>
+                      ) : null}
+                    </span>
+                    <span className="thread-inbox-row-date">{formatListDate(thread.date)}</span>
+                  </span>
+                  <span className="thread-inbox-row-subject">
+                    {thread.subject?.trim() || thread.snippet?.trim() || "No subject"}
+                  </span>
+                  <span className="thread-inbox-row-snippet">{thread.snippet}</span>
+                </button>
+              ))}
+              {inbox.nextPageToken ? (
+                <button
+                  type="button"
+                  className="thread-inbox-loadmore"
+                  onClick={inbox.loadMore}
+                  disabled={inbox.isFetchingMore}
+                >
+                  {inbox.isFetchingMore ? (
+                    <>
+                      <Loader2 size={13} className="thread-spin" /> Loading…
+                    </>
+                  ) : (
+                    "Load more"
+                  )}
+                </button>
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -448,10 +659,7 @@ export default function InboxPage() {
               <label className="thread-set-label" htmlFor="reply-to">
                 To
                 {activeMessageId ? (
-                  <span className="thread-inbox-reply-hint">
-                    {" "}
-                    — replying based on selected message
-                  </span>
+                  <span className="thread-inbox-reply-hint"> — replying based on selected message</span>
                 ) : null}
               </label>
               <input
@@ -505,8 +713,8 @@ export default function InboxPage() {
                 </button>
               </div>
               <p className="thread-inbox-compose-note">
-                Approve queued actions from <Link href="/queue">Queue</Link>. Nothing sends until
-                you approve.
+                Approve queued actions from <Link href="/queue">Queue</Link>. Nothing sends until you
+                approve.
               </p>
             </div>
           </div>
@@ -528,11 +736,7 @@ export default function InboxPage() {
           <div className="thread-modal" onClick={(event) => event.stopPropagation()}>
             <div className="thread-modal-head">
               <h3>Schedule meeting from thread</h3>
-              <button
-                type="button"
-                className="thread-app-iconbtn"
-                onClick={() => setShowSchedule(false)}
-              >
+              <button type="button" className="thread-app-iconbtn" onClick={() => setShowSchedule(false)}>
                 <X size={14} />
               </button>
             </div>
@@ -543,23 +747,23 @@ export default function InboxPage() {
                 try {
                   const when = localDateTimeRangeToPayload(meetingStart, meetingEnd);
                   queueMeeting.mutate({
-                  email: {
-                    ...emailPayload,
-                    body:
-                      replyBody.trim() ||
-                      `Looking forward to our meeting about ${meetingTitle}. Calendar invite attached.`,
-                    subject: `Meeting: ${meetingTitle}`,
-                  },
-                  calendar: {
-                    summary: meetingTitle,
-                    description: `Scheduled from Thread inbox thread.`,
-                    startDateTime: when.startDateTime,
-                    endDateTime: when.endDateTime,
-                    timeZone: when.timeZone,
-                    attendeeEmails: replyTo.trim() ? [replyTo.trim()] : undefined,
-                  },
-                  sourceThreadId: selectedQuery.data?.id,
-                  title: `Meeting with ${replyTo || "guest"}`,
+                    email: {
+                      ...emailPayload,
+                      body:
+                        replyBody.trim() ||
+                        `Looking forward to our meeting about ${meetingTitle}. Calendar invite attached.`,
+                      subject: `Meeting: ${meetingTitle}`,
+                    },
+                    calendar: {
+                      summary: meetingTitle,
+                      description: `Scheduled from Thread inbox thread.`,
+                      startDateTime: when.startDateTime,
+                      endDateTime: when.endDateTime,
+                      timeZone: when.timeZone,
+                      attendeeEmails: replyTo.trim() ? [replyTo.trim()] : undefined,
+                    },
+                    sourceThreadId: selectedQuery.data?.id,
+                    title: `Meeting with ${replyTo || "guest"}`,
                   });
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : "Please review your dates");
@@ -631,25 +835,17 @@ export default function InboxPage() {
               />
 
               <div className="thread-modal-actions">
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  onClick={() => setShowSchedule(false)}
-                >
+                <button type="button" className="thread-btn-ghost" onClick={() => setShowSchedule(false)}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="thread-btn-accent"
-                  disabled={queueMeeting.isPending}
-                >
+                <button type="submit" className="thread-btn-accent" disabled={queueMeeting.isPending}>
                   <ListChecks size={14} />
                   {queueMeeting.isPending ? "Queuing…" : "Queue invite + email"}
                 </button>
               </div>
               <p className="thread-inbox-compose-note" style={{ margin: 0 }}>
-                Goes to the approval queue first. After you approve, it appears on Calendar for the
-                date you picked.
+                Goes to the approval queue first. After you approve, it appears on Calendar for the date
+                you picked.
               </p>
             </form>
           </div>

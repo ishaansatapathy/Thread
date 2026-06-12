@@ -37,6 +37,26 @@ export function formatMessageDate(value?: string) {
   });
 }
 
+/** Compact date for dense inbox rows: time today, weekday this week, else date. */
+export function formatListDate(value?: string) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    parsed.getDate() === now.getDate() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getFullYear() === now.getFullYear();
+  if (sameDay) {
+    return parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  const sixDaysMs = 6 * 24 * 60 * 60 * 1000;
+  if (now.getTime() - parsed.getTime() < sixDaysMs) {
+    return parsed.toLocaleDateString(undefined, { weekday: "short" });
+  }
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export function replyTargetForMessage(
   message: { from?: string; to?: string },
   userEmail?: string,

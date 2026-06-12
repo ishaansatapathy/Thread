@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import {
-  Bot,
   Calendar,
   ChevronDown,
   Github,
+  ListChecks,
   Mail,
   Search,
   Sparkles,
@@ -15,7 +15,7 @@ import { ThreadLogoMark, ThreadWordmark } from "./thread-logo";
 import { Reveal } from "./thread-reveal";
 import { ThreadAgentDemo } from "./thread-agent-demo";
 
-const MARQUEE = ["Gmail", "Google Calendar", "Corsair", "Corsair MCP", "Webhooks", "Postgres", "Next.js", "Vector Search"];
+const MARQUEE = ["Gmail", "Google Calendar", "Corsair", "Corsair MCP", "Webhooks", "Postgres", "Next.js", "OpenAI"];
 
 const BENTO = [
   {
@@ -39,23 +39,23 @@ const BENTO = [
     ),
   },
   {
-    title: "Agent chat",
-    desc: "Corsair MCP — send emails and invites in plain English.",
-    visual: <Bot size={18} color="var(--thread-accent-bright)" />,
+    title: "Approval queue",
+    desc: "Every reply, draft and invite waits in a queue you approve — nothing sends on its own.",
+    visual: <ListChecks size={18} color="var(--thread-accent-bright)" />,
   },
   {
-    title: "Realtime webhooks",
-    desc: "Corsair webhooks notify Thread when Gmail or Calendar changes.",
+    title: "Webhook sync",
+    desc: "A webhook receiver refreshes the local mail cache when Gmail changes.",
     visual: <Zap size={18} color="var(--thread-accent-bright)" />,
   },
   {
-    title: "Local vector search",
-    desc: "Search mail cached in Postgres — fewer round-trips back to Gmail.",
+    title: "Local mail cache",
+    desc: "Thread metadata cached in Postgres for instant loads and offline search.",
     visual: <Search size={18} color="var(--thread-accent-bright)" />,
   },
   {
-    title: "Gmail advanced search",
-    desc: "Corsair search API with a UI that actually helps you filter.",
+    title: "Gmail search",
+    desc: "Full Gmail query syntax (from:, subject:, has:attachment) with load-more paging.",
     visual: <Mail size={18} color="#f87171" />,
   },
   {
@@ -69,7 +69,7 @@ const CAPABILITIES = [
   { title: "Read & search mail", desc: "Pull threads from Gmail and search locally in Postgres." },
   { title: "Draft replies", desc: "Generate a reply from context — you approve before anything sends." },
   { title: "Schedule from inbox", desc: "Pick a slot and send a calendar invite without switching tabs." },
-  { title: "Agent commands", desc: "Ask in plain English via Corsair MCP once Gmail is connected." },
+  { title: "Approve before send", desc: "Drafts, replies and invites wait in a queue — you approve, then Thread acts." },
 ];
 
 const FAQS = [
@@ -79,11 +79,11 @@ const FAQS = [
   },
   {
     q: "How does Thread use Corsair?",
-    a: "Corsair handles Gmail and Calendar integrations, webhooks, search APIs, and MCP so agents can send emails and invites on your behalf.",
+    a: "Corsair handles Gmail and Calendar OAuth, the search and send APIs, and webhook delivery — Thread consumes those to read mail, queue actions, and keep its local cache fresh.",
   },
   {
     q: "Is this just a Gmail clone?",
-    a: "No. Thread adds meaningful workflow improvements: one-step invites, AI priority, keyboard shortcuts, agent chat, and sub-second local search.",
+    a: "No. Thread adds meaningful workflow improvements: one-step invites, AI priority, keyboard shortcuts, a human-approval queue, and instant local search.",
   },
   {
     q: "What stack is Thread built on?",
@@ -250,11 +250,12 @@ export function ThreadAgent() {
       <div className="thread-frame" style={{ padding: "72px 32px" }}>
         <div style={{ marginBottom: 36, maxWidth: 520 }}>
           <div className="thread-badge" style={{ marginBottom: 16 }}>
-            <span className="thread-eyebrow" style={{ letterSpacing: "0.1em" }}>Corsair MCP</span>
+            <span className="thread-eyebrow" style={{ letterSpacing: "0.1em" }}>Corsair MCP · Preview</span>
           </div>
           <h2 className="thread-h2">Talk to your inbox</h2>
           <p className="thread-lede" style={{ maxWidth: 420 }}>
-            Natural language → email + calendar actions. Pick a scenario to see how it flows.
+            A preview of where Thread is heading: natural language → email + calendar actions over
+            Corsair MCP. The animation below shows the intended flow.
           </p>
         </div>
 

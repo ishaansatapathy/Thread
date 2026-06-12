@@ -23,6 +23,7 @@ export type InboxThread = {
   historyId?: string;
   subject?: string;
   from?: string;
+  fromName?: string;
   to?: string;
   date?: string;
   body?: string;
@@ -30,6 +31,24 @@ export type InboxThread = {
   messages?: InboxMessage[];
   suggestedReplyTo?: string;
   messageCount?: number;
+  unread?: boolean;
+};
+
+export type InboxDraft = {
+  id: string;
+  messageId?: string;
+  threadId?: string;
+  subject?: string;
+  to?: string;
+  snippet: string;
+  updatedAt?: string;
+};
+
+export type ListThreadsOptions = {
+  maxResults?: number;
+  pageToken?: string;
+  /** Gmail search query (e.g. `from:foo subject:bar`). When omitted, lists INBOX. */
+  query?: string;
 };
 
 export interface InboxService {
@@ -37,8 +56,12 @@ export interface InboxService {
   getConnectionStatus(tenantId: string): Promise<InboxConnectionStatus>;
   listThreads(
     tenantId: string,
-    opts?: { maxResults?: number; pageToken?: string },
+    opts?: ListThreadsOptions,
   ): Promise<{ threads: InboxThread[]; nextPageToken?: string }>;
+  listDrafts(
+    tenantId: string,
+    opts?: { maxResults?: number; pageToken?: string },
+  ): Promise<{ drafts: InboxDraft[]; nextPageToken?: string }>;
   getThread(
     tenantId: string,
     threadId: string,

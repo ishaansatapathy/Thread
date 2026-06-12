@@ -1,11 +1,18 @@
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
-import type { InboxConnectionStatus, InboxService, InboxThread } from "@repo/services/inbox";
+import type {
+  InboxConnectionStatus,
+  InboxDraft,
+  InboxService,
+  InboxThread,
+  ListThreadsOptions,
+} from "@repo/services/inbox";
 
 import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
 import {
   buildRawEmail,
+  displaySender,
   getHeader,
   normalizeSubject,
   parseEmailAddress,
@@ -13,6 +20,48 @@ import {
   suggestReplyTo,
 } from "../utils/gmail-message";
 import { ensureCorsairTenant } from "./corsair-tenant";
+import { mailCache, type CachedThreadMetadata } from "./mail-cache";
+
+const LIST_METADATA_HEADERS = ["Subject", "From", "Date"];
+const ENRICH_CONCURRENCY = 6;
+
+type GmailHeader = { name?: string; value?: string };
+
+type GmailMetadataMessage = {
+  id?: string;
+  snippet?: string;
+  labelIds?: string[];
+  threadId?: string;
+  payload?: { headers?: GmailHeader[] };
+};
+
+type GmailDraftListItem = { id?: string; message?: { id?: string } };
+
+type DraftRef = { id: string; messageId?: string };
+
+/** Maps over items with a bounded concurrency so we never fan out hundreds of Gmail gets. */
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index]!, index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+export function parseHeaderDate(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
 
 export class CorsairInboxService implements InboxService {
   isConfigured() {
@@ -70,7 +119,7 @@ export class CorsairInboxService implements InboxService {
 
   async listThreads(
     tenantId: string,
-    opts?: { maxResults?: number; pageToken?: string },
+    opts?: ListThreadsOptions,
   ): Promise<{ threads: InboxThread[]; nextPageToken?: string }> {
     if (!this.isConfigured()) {
       return { threads: [] };
@@ -81,25 +130,172 @@ export class CorsairInboxService implements InboxService {
       return { threads: [] };
     }
 
+    const maxResults = Math.min(Math.max(opts?.maxResults ?? 25, 1), 100);
+    const query = opts?.query?.trim();
+
     const corsair = getCorsair().withTenant(tenantId);
-    const result = await corsair.gmail.api.threads.list({
-      maxResults: opts?.maxResults ?? 25,
-      pageToken: opts?.pageToken,
-      labelIds: ["INBOX"],
+
+    let listResult: { threads?: Array<{ id?: string }>; nextPageToken?: string };
+    try {
+      listResult = await corsair.gmail.api.threads.list({
+        maxResults,
+        pageToken: opts?.pageToken,
+        // A search query spans all mail; an unfiltered view stays scoped to INBOX.
+        labelIds: query ? undefined : ["INBOX"],
+        q: query || undefined,
+      });
+    } catch (error) {
+      logger.warn("Gmail thread list failed, serving local cache", {
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      const threads = query
+        ? await mailCache.search(tenantId, query, maxResults)
+        : await mailCache.recent(tenantId, maxResults);
+      return { threads };
+    }
+
+    const ids = (listResult.threads ?? [])
+      .map((thread) => thread.id)
+      .filter((id): id is string => Boolean(id));
+
+    const enriched = await this.enrichThreads(tenantId, corsair, ids);
+
+    return { threads: enriched, nextPageToken: listResult.nextPageToken };
+  }
+
+  /**
+   * Gmail's thread list lacks headers, so we hydrate each row with a cheap
+   * `metadata` get. Rows whose historyId is unchanged are served from the local
+   * cache, avoiding redundant Gmail calls.
+   */
+  private async enrichThreads(
+    tenantId: string,
+    corsair: ReturnType<ReturnType<typeof getCorsair>["withTenant"]>,
+    ids: string[],
+  ): Promise<InboxThread[]> {
+    if (ids.length === 0) return [];
+
+    const cache = await mailCache.getHistoryMap(tenantId, ids);
+    const toPersist: CachedThreadMetadata[] = [];
+
+    const threads = await mapWithConcurrency(ids, ENRICH_CONCURRENCY, async (id) => {
+      try {
+        const detail = await corsair.gmail.api.threads.get({
+          id,
+          format: "metadata",
+          metadataHeaders: LIST_METADATA_HEADERS,
+        });
+
+        const messages = (detail.messages ?? []) as GmailMetadataMessage[];
+        const last = messages[messages.length - 1];
+        const headers = (last?.payload?.headers ?? []) as GmailHeader[];
+        const fromRaw = getHeader(headers, "From");
+        const subject = getHeader(headers, "Subject")?.trim();
+        const labelIds = messages.flatMap(
+          (message: GmailMetadataMessage) => message.labelIds ?? [],
+        );
+        const unread = labelIds.includes("UNREAD");
+        const lastMessageAt = parseHeaderDate(getHeader(headers, "Date"));
+
+        const thread: InboxThread = {
+          id,
+          snippet: detail.snippet ?? last?.snippet ?? "",
+          historyId: detail.historyId,
+          subject: subject || "No subject",
+          from: parseEmailAddress(fromRaw) || undefined,
+          fromName: fromRaw ? displaySender(fromRaw) : undefined,
+          date: lastMessageAt?.toISOString(),
+          messageCount: messages.length,
+          unread,
+        };
+
+        toPersist.push({
+          threadId: id,
+          historyId: detail.historyId,
+          subject: thread.subject,
+          fromName: thread.fromName,
+          fromAddress: thread.from,
+          snippet: thread.snippet,
+          lastMessageAt,
+          messageCount: messages.length,
+          unread,
+          labelIds: Array.from(new Set(labelIds)),
+        });
+
+        return thread;
+      } catch (error) {
+        logger.warn("Gmail thread metadata failed, using cache row", {
+          tenantId,
+          threadId: id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        const cached = cache.get(id);
+        return {
+          id,
+          snippet: cached?.snippet ?? "",
+          historyId: cached?.historyId ?? undefined,
+          subject: cached?.subject ?? "No subject",
+          from: cached?.fromAddress ?? undefined,
+          fromName: cached?.fromName ?? undefined,
+          date: cached?.lastMessageAt?.toISOString(),
+          messageCount: cached?.messageCount ?? 1,
+          unread: cached?.unread ?? false,
+        } satisfies InboxThread;
+      }
     });
 
-    const threads: InboxThread[] = (result.threads ?? []).map(
-      (thread: { id?: string; snippet?: string; historyId?: string }) => ({
-        id: thread.id ?? "",
-        snippet: thread.snippet ?? "",
-        historyId: thread.historyId,
-      }),
-    );
+    void mailCache.upsertMany(tenantId, toPersist);
 
-    return {
-      threads: threads.filter((thread) => thread.id),
-      nextPageToken: result.nextPageToken,
-    };
+    return threads;
+  }
+
+  async listDrafts(
+    tenantId: string,
+    opts?: { maxResults?: number; pageToken?: string },
+  ): Promise<{ drafts: InboxDraft[]; nextPageToken?: string }> {
+    if (!this.isConfigured()) return { drafts: [] };
+
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") return { drafts: [] };
+
+    const maxResults = Math.min(Math.max(opts?.maxResults ?? 25, 1), 100);
+    const corsair = getCorsair().withTenant(tenantId);
+    const result = await corsair.gmail.api.drafts.list({
+      maxResults,
+      pageToken: opts?.pageToken,
+    });
+
+    const draftRefs: DraftRef[] = [];
+    for (const draft of (result.drafts ?? []) as GmailDraftListItem[]) {
+      if (draft.id) draftRefs.push({ id: draft.id, messageId: draft.message?.id });
+    }
+
+    const drafts = await mapWithConcurrency(draftRefs, ENRICH_CONCURRENCY, async (ref: DraftRef) => {
+      try {
+        const detail = await corsair.gmail.api.drafts.get({ id: ref.id, format: "metadata" });
+        const message = detail.message;
+        const headers = (message?.payload?.headers ?? []) as GmailHeader[];
+        return {
+          id: ref.id,
+          messageId: message?.id,
+          threadId: message?.threadId,
+          subject: getHeader(headers, "Subject")?.trim() || "(no subject)",
+          to: parseEmailAddress(getHeader(headers, "To")) || undefined,
+          snippet: message?.snippet ?? "",
+          updatedAt: parseHeaderDate(getHeader(headers, "Date"))?.toISOString(),
+        } satisfies InboxDraft;
+      } catch (error) {
+        logger.warn("Gmail draft metadata failed", {
+          tenantId,
+          draftId: ref.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return { id: ref.id, snippet: "" } satisfies InboxDraft;
+      }
+    });
+
+    return { drafts, nextPageToken: result.nextPageToken };
   }
 
   async getThread(
@@ -120,7 +316,7 @@ export class CorsairInboxService implements InboxService {
 
     if (!thread.id) return null;
 
-    const messages = (thread.messages ?? [])
+    const messages = ((thread.messages ?? []) as Array<Parameters<typeof parseGmailMessage>[0]>)
       .map((message) => parseGmailMessage(message))
       .filter((message): message is NonNullable<typeof message> => Boolean(message));
 

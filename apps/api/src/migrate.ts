@@ -1,106 +1,13 @@
 import { runJournalMigrations } from "@repo/database/migrate";
 import { createPgClient, getMigrationDatabaseUrl } from "@repo/database/pg";
 
-/** Idempotent schema patches for legacy DBs + Corsair tables. */
+/**
+ * Idempotent safety patches applied after journal migrations. Kept intentionally
+ * small: only the auth columns Thread actually relies on. Schema for queues,
+ * Corsair and the mail cache lives in versioned drizzle migrations.
+ */
 const ENSURE_SCHEMA_SQL = `
-ALTER TABLE "forms" ADD COLUMN IF NOT EXISTS "expires_at" timestamp;
-ALTER TABLE "forms" ADD COLUMN IF NOT EXISTS "allow_multiple_submissions" boolean DEFAULT true NOT NULL;
-ALTER TABLE "submissions" ADD COLUMN IF NOT EXISTS "respondent_key" varchar(64);
-CREATE INDEX IF NOT EXISTS "submissions_form_respondent_idx" ON "submissions" ("form_id", "respondent_key");
-ALTER TABLE "forms" ADD COLUMN IF NOT EXISTS "require_authentication" boolean DEFAULT false NOT NULL;
-ALTER TABLE "submissions" ADD COLUMN IF NOT EXISTS "submitter_user_id" uuid;
-DO $$ BEGIN
-  ALTER TABLE "submissions" ADD CONSTRAINT "submissions_submitter_user_id_users_id_fk"
-    FOREIGN KEY ("submitter_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
-CREATE INDEX IF NOT EXISTS "submissions_form_submitter_idx" ON "submissions" ("form_id", "submitter_user_id");
-
-CREATE TABLE IF NOT EXISTS "form_versions" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "form_id" uuid NOT NULL,
-  "version_number" integer NOT NULL,
-  "schema_snapshot" jsonb NOT NULL,
-  "created_at" timestamp DEFAULT now()
-);
-
-DO $$ BEGIN
-  ALTER TABLE "form_versions" ADD CONSTRAINT "form_versions_form_id_forms_id_fk"
-    FOREIGN KEY ("form_id") REFERENCES "public"."forms"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
-
-CREATE UNIQUE INDEX IF NOT EXISTS "form_versions_form_version_unique"
-  ON "form_versions" ("form_id", "version_number");
-
-ALTER TABLE "forms" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp;
-ALTER TABLE "forms" ADD COLUMN IF NOT EXISTS "current_version_id" uuid;
-ALTER TABLE "submissions" ADD COLUMN IF NOT EXISTS "form_version_id" uuid;
-ALTER TABLE "submissions" ADD COLUMN IF NOT EXISTS "idempotency_key" varchar(64);
-CREATE INDEX IF NOT EXISTS "submissions_form_version_idx" ON "submissions" ("form_version_id");
-CREATE UNIQUE INDEX IF NOT EXISTS "submissions_form_idempotency_idx"
-  ON "submissions" ("form_id", "idempotency_key") WHERE "idempotency_key" IS NOT NULL;
-CREATE INDEX IF NOT EXISTS "forms_deleted_at_idx" ON "forms" ("deleted_at");
-
-INSERT INTO "form_versions" ("form_id", "version_number", "schema_snapshot")
-SELECT f.id, 1,
-  COALESCE((SELECT jsonb_agg(jsonb_build_object('id', ff.id, 'label', ff.label, 'type', ff.type, 'required', ff.required, 'config', COALESCE(ff.config, '{}'::jsonb)) ORDER BY ff.sort_order) FROM "form_fields" ff WHERE ff.form_id = f.id), '[]'::jsonb)
-FROM "forms" f
-WHERE NOT EXISTS (SELECT 1 FROM "form_versions" fv WHERE fv.form_id = f.id AND fv.version_number = 1);
-
-UPDATE "forms" f SET "current_version_id" = fv.id FROM "form_versions" fv
-WHERE fv.form_id = f.id AND fv.version_number = 1 AND f."current_version_id" IS NULL;
-
-UPDATE "submissions" s SET "form_version_id" = f."current_version_id" FROM "forms" f
-WHERE s.form_id = f.id AND s."form_version_id" IS NULL AND f."current_version_id" IS NOT NULL;
-
-DO $$ BEGIN
-  ALTER TABLE "forms" ADD CONSTRAINT "forms_current_version_id_form_versions_id_fk"
-    FOREIGN KEY ("current_version_id") REFERENCES "public"."form_versions"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
-DO $$ BEGIN
-  ALTER TABLE "submissions" ADD CONSTRAINT "submissions_form_version_id_form_versions_id_fk"
-    FOREIGN KEY ("form_version_id") REFERENCES "public"."form_versions"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "role" varchar(20) DEFAULT 'user' NOT NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS "submissions_form_respondent_unique_idx"
-  ON "submissions" ("form_id", "respondent_key")
-  WHERE "respondent_key" IS NOT NULL;
-
-ALTER TABLE "submission_responses"
-  DROP CONSTRAINT IF EXISTS "submission_responses_field_id_form_fields_id_fk";
-
-CREATE TABLE IF NOT EXISTS "submission_audit_events" (
-  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "event_type" varchar(40) NOT NULL,
-  "form_id" uuid NOT NULL,
-  "submission_id" uuid NOT NULL,
-  "actor_user_id" uuid,
-  "snapshot" jsonb NOT NULL,
-  "created_at" timestamp DEFAULT now()
-);
-
-DO $$ BEGIN
-  ALTER TABLE "submission_audit_events" ADD CONSTRAINT "submission_audit_events_form_id_forms_id_fk"
-    FOREIGN KEY ("form_id") REFERENCES "public"."forms"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
-DO $$ BEGIN
-  ALTER TABLE "submission_audit_events" ADD CONSTRAINT "submission_audit_events_actor_user_id_users_id_fk"
-    FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
-CREATE INDEX IF NOT EXISTS "submission_audit_events_form_created_idx"
-  ON "submission_audit_events" ("form_id", "created_at");
-
-CREATE INDEX IF NOT EXISTS "submission_audit_events_submission_idx"
-  ON "submission_audit_events" ("submission_id");
-
 ALTER TABLE "users" ALTER COLUMN "reset_password_otp" TYPE varchar(64);
 ALTER TABLE "users" ALTER COLUMN "two_factor_otp" TYPE varchar(64);
 `;

@@ -1,12 +1,11 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 /**
  * tsx compiles the API to CJS, which breaks subpath imports from the ESM-only
  * `corsair` package (they resolve to `.d.ts` stubs). Load the compiled JS directly.
  */
-const require = createRequire(fileURLToPath(import.meta.url));
+const require = createRequire(__filename);
 
 function loadCorsairModule<T>(subpath: string): T {
   const entryPath = require.resolve("corsair");

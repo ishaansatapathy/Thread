@@ -1,0 +1,158 @@
+import { and, desc, eq, ilike, or, sql } from "@repo/database";
+import db from "@repo/database";
+import { threadMailCacheTable, type SelectMailCacheRow } from "@repo/database/schema";
+import { logger } from "@repo/logger";
+import type { InboxThread } from "@repo/services/inbox";
+
+export type CachedThreadMetadata = {
+  threadId: string;
+  historyId?: string;
+  subject?: string;
+  fromName?: string;
+  fromAddress?: string;
+  snippet?: string;
+  lastMessageAt?: Date;
+  messageCount?: number;
+  unread?: boolean;
+  labelIds?: string[];
+};
+
+function rowToThread(row: SelectMailCacheRow): InboxThread {
+  return {
+    id: row.threadId,
+    snippet: row.snippet ?? "",
+    historyId: row.historyId ?? undefined,
+    subject: row.subject ?? undefined,
+    from: row.fromAddress ?? undefined,
+    fromName: row.fromName ?? undefined,
+    date: row.lastMessageAt?.toISOString(),
+    messageCount: row.messageCount,
+    unread: row.unread,
+  };
+}
+
+/** Stable composite key so upserts target a single row per (tenant, thread). */
+function cacheId(userId: string, threadId: string) {
+  return `${userId}:${threadId}`;
+}
+
+/**
+ * Best-effort cache writes. Cache failures must never break the live inbox, so
+ * every method swallows errors after logging.
+ */
+export const mailCache = {
+  async upsertMany(userId: string, items: CachedThreadMetadata[]) {
+    if (items.length === 0) return;
+    try {
+      await db
+        .insert(threadMailCacheTable)
+        .values(
+          items.map((item) => ({
+            id: cacheId(userId, item.threadId),
+            userId,
+            threadId: item.threadId,
+            historyId: item.historyId ?? null,
+            subject: item.subject ?? null,
+            fromName: item.fromName ?? null,
+            fromAddress: item.fromAddress ?? null,
+            snippet: item.snippet ?? null,
+            lastMessageAt: item.lastMessageAt ?? null,
+            messageCount: item.messageCount ?? 1,
+            unread: item.unread ?? false,
+            labelIds: item.labelIds ?? [],
+            updatedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: threadMailCacheTable.id,
+          set: {
+            historyId: sql`excluded.history_id`,
+            subject: sql`excluded.subject`,
+            fromName: sql`excluded.from_name`,
+            fromAddress: sql`excluded.from_address`,
+            snippet: sql`excluded.snippet`,
+            lastMessageAt: sql`excluded.last_message_at`,
+            messageCount: sql`excluded.message_count`,
+            unread: sql`excluded.unread`,
+            labelIds: sql`excluded.label_ids`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+        });
+    } catch (error) {
+      logger.warn("Mail cache upsert failed", {
+        userId,
+        count: items.length,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  /** Returns the cached historyId per thread so callers can skip unchanged gets. */
+  async getHistoryMap(userId: string, threadIds: string[]): Promise<Map<string, SelectMailCacheRow>> {
+    const map = new Map<string, SelectMailCacheRow>();
+    if (threadIds.length === 0) return map;
+    try {
+      const rows = await db
+        .select()
+        .from(threadMailCacheTable)
+        .where(eq(threadMailCacheTable.userId, userId));
+      for (const row of rows) {
+        if (threadIds.includes(row.threadId)) map.set(row.threadId, row);
+      }
+    } catch (error) {
+      logger.warn("Mail cache read failed", {
+        userId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return map;
+  },
+
+  /** Local fallback search over cached metadata (used when Gmail is unreachable). */
+  async search(userId: string, query: string, limit = 25): Promise<InboxThread[]> {
+    const term = `%${query.trim()}%`;
+    try {
+      const rows = await db
+        .select()
+        .from(threadMailCacheTable)
+        .where(
+          and(
+            eq(threadMailCacheTable.userId, userId),
+            or(
+              ilike(threadMailCacheTable.subject, term),
+              ilike(threadMailCacheTable.fromAddress, term),
+              ilike(threadMailCacheTable.fromName, term),
+              ilike(threadMailCacheTable.snippet, term),
+            ),
+          ),
+        )
+        .orderBy(desc(threadMailCacheTable.lastMessageAt))
+        .limit(limit);
+      return rows.map(rowToThread);
+    } catch (error) {
+      logger.warn("Mail cache search failed", {
+        userId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  },
+
+  async recent(userId: string, limit = 25): Promise<InboxThread[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(threadMailCacheTable)
+        .where(eq(threadMailCacheTable.userId, userId))
+        .orderBy(desc(threadMailCacheTable.lastMessageAt))
+        .limit(limit);
+      return rows.map(rowToThread);
+    } catch (error) {
+      logger.warn("Mail cache recent failed", {
+        userId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  },
+};

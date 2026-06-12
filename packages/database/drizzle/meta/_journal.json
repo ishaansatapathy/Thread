@@ -148,6 +148,20 @@
       "when": 1767592965711,
       "tag": "0020_thread_queue_and_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1767592965712,
+      "tag": "0021_thread_mail_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1767592965713,
+      "tag": "0022_drop_legacy_forms",
+      "breakpoints": true
     }
   ]
 }

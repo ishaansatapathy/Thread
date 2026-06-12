@@ -36,6 +36,11 @@
     "CORSAIR_CALENDAR_REDIRECT_URI",
     "APP_URL",
     "LOGGER_LEVEL",
+    "CORSAIR_WEBHOOK_SECRET",
+    "REDIS_URL",
+    "RATE_LIMIT_REQUIRE_REDIS",
+    "E2E_BASE_URL",
+    "E2E_API_URL",
     "CI"
   ],
   "tasks": {
