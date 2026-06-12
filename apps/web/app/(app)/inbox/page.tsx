@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
-import { localDateTimeInputToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
+import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import { trpc } from "~/trpc/client";
 
 const TABS = [
@@ -510,8 +510,7 @@ export default function InboxPage() {
               className="thread-modal-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                const start = localDateTimeInputToPayload(meetingStart);
-                const end = localDateTimeInputToPayload(meetingEnd);
+                const when = localDateTimeRangeToPayload(meetingStart, meetingEnd);
                 queueMeeting.mutate({
                   email: {
                     ...emailPayload,
@@ -523,9 +522,9 @@ export default function InboxPage() {
                   calendar: {
                     summary: meetingTitle,
                     description: `Scheduled from Thread inbox thread.`,
-                    startDateTime: start.startDateTime,
-                    endDateTime: end.endDateTime,
-                    timeZone: start.timeZone,
+                    startDateTime: when.startDateTime,
+                    endDateTime: when.endDateTime,
+                    timeZone: when.timeZone,
                     attendeeEmails: replyTo.trim() ? [replyTo.trim()] : undefined,
                   },
                   sourceThreadId: selectedQuery.data?.id,

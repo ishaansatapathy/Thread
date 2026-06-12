@@ -21,6 +21,7 @@ import {
   eventDayKey,
   eventToArchivePayload,
   localDateTimeInputToPayload,
+  localDateTimeRangeToPayload,
   localDayKey,
   toLocalDateTimeInput,
 } from "~/lib/calendar-datetime";
@@ -297,15 +298,14 @@ export default function CalendarPage() {
               className="thread-modal-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                const start = localDateTimeInputToPayload(startAt);
-                const end = localDateTimeInputToPayload(endAt);
+                const when = localDateTimeRangeToPayload(startAt, endAt);
                 queueInvite.mutate({
                   calendar: {
                     summary,
                     description: "Scheduled from Thread calendar.",
-                    startDateTime: start.startDateTime,
-                    endDateTime: end.endDateTime,
-                    timeZone: start.timeZone,
+                    startDateTime: when.startDateTime,
+                    endDateTime: when.endDateTime,
+                    timeZone: when.timeZone,
                     attendeeEmails: attendee.trim() ? [attendee.trim()] : undefined,
                   },
                   title: summary,
