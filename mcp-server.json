@@ -1,0 +1,95 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
+  "name": "thread-mcp",
+  "description": "Thread MCP server — exposes Gmail inbox, approval queue, and agent tools for AI assistants via the Model Context Protocol.",
+  "version": "1.0.0",
+  "transport": {
+    "type": "http",
+    "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "auth": {
+    "type": "cookie",
+    "note": "Authenticate by sending the 'jwt' and 'jwt_refresh' cookies returned by the Thread sign-in flow."
+  },
+  "tools": [
+    {
+      "name": "list_inbox",
+      "description": "List recent Gmail inbox threads"
+    },
+    {
+      "name": "search_inbox",
+      "description": "Full-text search over Gmail inbox"
+    },
+    {
+      "name": "get_thread",
+      "description": "Retrieve a full Gmail thread including all messages"
+    },
+    {
+      "name": "list_queue",
+      "description": "List pending approval queue items"
+    },
+    {
+      "name": "approve_queue_item",
+      "description": "Approve a pending queue item (sends email / creates calendar event)"
+    },
+    {
+      "name": "dismiss_queue_item",
+      "description": "Dismiss a pending queue item"
+    },
+    {
+      "name": "get_gmail_connection_status",
+      "description": "Check Gmail connection status"
+    }
+  ],
+  "examples": [
+    {
+      "description": "Discover available tools",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+      }
+    },
+    {
+      "description": "List 10 most recent inbox threads",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "list_inbox",
+          "arguments": { "maxResults": 10 }
+        }
+      }
+    },
+    {
+      "description": "Search inbox for unread emails",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+          "name": "search_inbox",
+          "arguments": { "query": "is:unread", "maxResults": 20 }
+        }
+      }
+    },
+    {
+      "description": "Approve a queued email send",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "tools/call",
+        "params": {
+          "name": "approve_queue_item",
+          "arguments": { "itemId": "<queue-item-id>" }
+        }
+      }
+    }
+  ]
+}
