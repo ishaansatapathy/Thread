@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectMessageHeaders, decodeHtmlEntities, extractHtmlBody } from "./gmail-message";
+import { collectMessageHeaders, decodeHtmlEntities, extractHtmlBody, findHeaderInThreadMessages } from "./gmail-message";
 
 describe("collectMessageHeaders", () => {
   it("returns headers from the root payload", () => {
@@ -19,6 +19,32 @@ describe("collectMessageHeaders", () => {
       ],
     });
     expect(headers[0]?.value).toBe("Ada <ada@example.com>");
+  });
+});
+
+describe("findHeaderInThreadMessages", () => {
+  it("finds From on the newest message first", () => {
+    const from = findHeaderInThreadMessages(
+      [
+        { payload: { headers: [{ name: "From", value: "Old <old@example.com>" }] } },
+        { payload: { headers: [{ name: "From", value: "New <new@example.com>" }] } },
+      ],
+      "From",
+      "last",
+    );
+    expect(from).toBe("New <new@example.com>");
+  });
+
+  it("finds Subject on the oldest message first", () => {
+    const subject = findHeaderInThreadMessages(
+      [
+        { payload: { headers: [{ name: "Subject", value: "Original topic" }] } },
+        { payload: { headers: [{ name: "Subject", value: "Re: Original topic" }] } },
+      ],
+      "Subject",
+      "first",
+    );
+    expect(subject).toBe("Original topic");
   });
 });
 

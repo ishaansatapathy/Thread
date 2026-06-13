@@ -123,6 +123,20 @@ export function getHeader(headers: GmailHeader[], name: string) {
 
 type HeaderPart = { headers?: GmailHeader[]; parts?: HeaderPart[] };
 
+/** Scan thread messages (newest-first or oldest-first) for a header value. */
+export function findHeaderInThreadMessages(
+  messages: Array<{ payload?: HeaderPart }>,
+  headerName: string,
+  order: "first" | "last",
+): string | undefined {
+  const ordered = order === "first" ? messages : [...messages].reverse();
+  for (const message of ordered) {
+    const value = getHeader(collectMessageHeaders(message.payload), headerName);
+    if (value?.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 /** Walks MIME parts until we find headers (metadata responses often nest them). */
 export function collectMessageHeaders(part: HeaderPart | undefined): GmailHeader[] {
   if (!part) return [];

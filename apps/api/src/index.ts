@@ -84,6 +84,26 @@ async function bootstrap() {
   }
 
   try {
+    const { registerContactsService } = await import("@repo/services/contacts");
+    const { DbContactsService } = await import("./services/contacts");
+    registerContactsService(new DbContactsService());
+  } catch (err) {
+    logger.warn("Contacts service registration failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    const { registerSettingsService } = await import("@repo/services/settings");
+    const { DbSettingsService } = await import("./services/settings");
+    registerSettingsService(new DbSettingsService());
+  } catch (err) {
+    logger.warn("Settings service registration failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
     const { bootstrapCorsair } = await import("./corsair-bootstrap");
     await bootstrapCorsair();
   } catch (err) {

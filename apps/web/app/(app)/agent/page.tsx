@@ -11,13 +11,13 @@ import {
   Mail,
   PenLine,
   Search,
-  SendHorizonal,
   Sparkles,
   ListChecks,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
+import { AgentMentionInput } from "~/components/app/agent-mention-input";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -71,7 +71,41 @@ function actionIcon(kind: ActionCard["kind"]) {
   }
 }
 
-function ActionPanel({ actions }: { actions: ActionCard[] }) {
+function agentWelcomeCopy(opts: {
+  agentAutoApprove: boolean;
+  calendarAutoApprove: boolean;
+  settingsReady: boolean;
+}) {
+  if (!opts.settingsReady) {
+    return "Ask in plain language — e.g. send mail, rank inbox, or schedule a meeting. Loading your approval settings…";
+  }
+
+  if (opts.agentAutoApprove) {
+    return (
+      <>
+        Ask in plain language — e.g. &quot;Email hr@company.com that I was sick 29–30 May&quot;.
+        <strong> Auto-approve is on</strong> for agent emails: I&apos;ll send via Gmail right away.
+        {opts.calendarAutoApprove ? " Calendar invites also send immediately." : " Calendar invites still go to Queue first."}
+      </>
+    );
+  }
+
+  return (
+    <>
+      Ask in plain language — e.g. &quot;Draft an email to hr@company.com about sick leave 29–30 May&quot;.
+      <strong> Queue first</strong> is on for agent emails: I&apos;ll draft and add to{" "}
+      <strong>Queue</strong> — nothing sends until you approve.
+    </>
+  );
+}
+
+function ActionPanel({
+  actions,
+  agentAutoApprove,
+}: {
+  actions: ActionCard[];
+  agentAutoApprove: boolean;
+}) {
   if (actions.length === 0) {
     return (
       <div className="thread-agent-pane">
@@ -81,15 +115,24 @@ function ActionPanel({ actions }: { actions: ActionCard[] }) {
         </div>
         <div className="thread-agent-feed" style={{ justifyContent: "center" }}>
           <p style={{ margin: 0, fontSize: 13, color: "var(--thread-muted)", lineHeight: 1.55, textAlign: "center" }}>
-            Tool results and queued items appear here — drafts, sends, and calendar invites always go to{" "}
-            <strong style={{ color: "var(--thread-text)" }}>Queue</strong> for your approval.
+            {agentAutoApprove ? (
+              <>
+                Agent emails and calendar actions can run immediately when{" "}
+                <strong style={{ color: "var(--thread-text)" }}>Auto-approve</strong> is on in Settings.
+              </>
+            ) : (
+              <>
+                Drafts, sends, and calendar invites go to{" "}
+                <strong style={{ color: "var(--thread-text)" }}>Queue</strong> for your approval first.
+              </>
+            )}
           </p>
         </div>
       </div>
     );
   }
 
-  const latest = actions[actions.length - 1]!;
+  const latest = actions.find((a) => a.kind === "inbox_ranked" || a.kind === "inbox_search") ?? actions[actions.length - 1]!;
   const Icon = actionIcon(latest.kind);
 
   return (
@@ -114,16 +157,25 @@ function ActionPanel({ actions }: { actions: ActionCard[] }) {
             </span>
           </div>
         ))}
-        {(latest.kind === "email_queued" || latest.kind === "calendar_queued") && (
+        {(latest.kind === "email_queued" || latest.kind === "calendar_queued") &&
+        latest.disposition === "queued" ? (
           <div className="thread-inbox-banner" style={{ marginTop: 4 }}>
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-              Nothing sends until you <strong>Approve</strong> in Queue.
+              Waiting in Queue — <strong>Approve</strong> before it sends.
             </p>
             <Link href="/queue" className="thread-inbox-loadmore" style={{ marginTop: 10, display: "inline-flex" }}>
               Review in Queue
             </Link>
           </div>
-        )}
+        ) : null}
+        {(latest.kind === "email_queued" || latest.kind === "calendar_queued") &&
+        latest.disposition === "sent" ? (
+          <div className="thread-inbox-banner" style={{ marginTop: 4, borderColor: "rgba(52, 211, 153, 0.25)" }}>
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: "#34d399" }}>
+              Sent immediately — auto-approve is on for this action type.
+            </p>
+          </div>
+        ) : null}
         {actions.length > 1 ? (
           <div className="thread-agent-log" style={{ padding: 0, marginTop: 8 }}>
             <span style={{ fontSize: 11, color: "var(--thread-dim)", fontFamily: "var(--thread-mono)" }}>
@@ -143,6 +195,13 @@ export default function AgentPage() {
   const feedRef = useRef<HTMLDivElement>(null);
 
   const status = trpc.agent.status.useQuery({});
+  const approvalDefaults = trpc.settings.getApprovalDefaults.useQuery({}, {
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const agentAutoApprove = approvalDefaults.data?.autoApproveAgentEmail ?? false;
+  const calendarAutoApprove = approvalDefaults.data?.autoApproveCalendar ?? false;
+  const approvalSettingsReady = !approvalDefaults.isLoading && approvalDefaults.data !== undefined;
   const ready = status.data?.ready === true;
   const utils = trpc.useUtils();
 
@@ -185,18 +244,25 @@ export default function AgentPage() {
             <Bot size={14} style={{ opacity: 0.7 }} />
             Thread Agent
             <span className="thread-mono-tag" style={{ marginLeft: "auto" }}>
-              {ready ? status.data?.model ?? "gpt-4o-mini" : "OpenAI required"}
+              {approvalSettingsReady
+                ? agentAutoApprove
+                  ? "Auto-approve · agent"
+                  : "Queue first · agent"
+                : ready
+                  ? status.data?.model ?? "gpt-4o-mini"
+                  : "OpenAI required"}
             </span>
           </div>
 
           <div className="thread-agent-feed" ref={feedRef}>
             {messages.length === 0 ? (
-              <div className="thread-rotator-bubble" style={{ fontSize: 13, maxWidth: "100%" }}>
+              <div
+                className="thread-rotator-bubble"
+                data-approval={approvalSettingsReady ? (agentAutoApprove ? "on" : "off") : undefined}
+                style={{ fontSize: 13, maxWidth: "100%" }}
+              >
                 <Bot size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
-                <span>
-                  Ask in plain language — e.g. &quot;Send mail to hr@company.com that I was sick 29–30 May&quot;.
-                  I&apos;ll draft and <strong>queue</strong> it; you approve in Queue before anything sends.
-                </span>
+                <span>{agentWelcomeCopy({ agentAutoApprove, calendarAutoApprove, settingsReady: approvalSettingsReady })}</span>
               </div>
             ) : null}
 
@@ -241,26 +307,26 @@ export default function AgentPage() {
           </div>
 
           <form
-            className="thread-agent-composer"
             onSubmit={(e) => {
               e.preventDefault();
               send(input);
             }}
           >
-            <input
+            <AgentMentionInput
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={ready ? "Ask Thread Agent…" : "Set OPENAI_API_KEY in .env"}
-              disabled={!ready || chat.isPending}
-              aria-label="Agent message"
+              onChange={setInput}
+              onSubmit={() => send(input)}
+              disabled={chat.isPending}
+              placeholder={
+                ready
+                  ? "Ask Thread Agent… type @ to mention someone"
+                  : "Type @ to pick a sender · set OPENAI_API_KEY to chat"
+              }
             />
-            <button type="submit" className="thread-agent-send" disabled={!ready || chat.isPending || !input.trim()} aria-label="Send">
-              {chat.isPending ? <Loader2 size={16} className="thread-spin" /> : <SendHorizonal size={16} />}
-            </button>
           </form>
         </div>
 
-        <ActionPanel actions={lastActions} />
+        <ActionPanel actions={lastActions} agentAutoApprove={agentAutoApprove} />
       </div>
     </div>
   );

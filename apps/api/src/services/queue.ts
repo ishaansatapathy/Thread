@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from "@repo/database";
 import db from "@repo/database";
-import { threadQueueItemsTable, type SelectQueueItem } from "@repo/database/schema";
+import { threadQueueItemsTable, usersTable, type SelectQueueItem } from "@repo/database/schema";
 import { logger } from "@repo/logger";
 import { getCalendarService } from "@repo/services/calendar";
 import { ServiceError, serviceError } from "@repo/services/errors";
@@ -18,6 +18,8 @@ import type {
   CalendarQueuePayload,
   EmailQueuePayload,
   MeetingBundlePayload,
+  QueueEnqueueOptions,
+  QueueEnqueueOrigin,
   QueueItem,
   QueueItemKind,
   QueueItemStatus,
@@ -45,12 +47,114 @@ function truncate(value: string, max = 240) {
   return `${trimmed.slice(0, max - 1)}…`;
 }
 
+function emailQueueFingerprint(kind: QueueItemKind, email: EmailQueuePayload): string {
+  return `${kind}:${email.to.trim().toLowerCase()}|${email.subject.trim()}|${email.body.trim()}`;
+}
+
+const DUPLICATE_QUEUE_WINDOW_MS = 10 * 60 * 1000;
+
 function userFacingApproveError(error: unknown): string {
   if (error instanceof ServiceError) return error.message;
   return "Could not complete this action. Check your connections and try again.";
 }
 
+type ApprovalPrefs = {
+  autoApproveEmail: boolean;
+  autoApproveAgentEmail: boolean;
+  autoApproveCalendar: boolean;
+};
+
+async function loadApprovalPrefs(userId: string): Promise<ApprovalPrefs> {
+  const [user] = await db
+    .select({
+      autoApproveEmail: usersTable.autoApproveEmail,
+      autoApproveAgentEmail: usersTable.autoApproveAgentEmail,
+      autoApproveCalendar: usersTable.autoApproveCalendar,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+
+  return {
+    autoApproveEmail: user?.autoApproveEmail ?? false,
+    autoApproveAgentEmail: user?.autoApproveAgentEmail ?? false,
+    autoApproveCalendar: user?.autoApproveCalendar ?? false,
+  };
+}
+
+function wantsAutoApprove(
+  kind: QueueItemKind,
+  origin: QueueEnqueueOrigin | undefined,
+  prefs: ApprovalPrefs,
+): boolean {
+  switch (kind) {
+    case "email_send":
+    case "email_draft":
+      return origin === "agent" ? prefs.autoApproveAgentEmail : prefs.autoApproveEmail;
+    case "calendar_invite":
+    case "calendar_archive":
+    case "calendar_delete":
+    case "meeting_bundle":
+      return prefs.autoApproveCalendar;
+    default:
+      return false;
+  }
+}
+
 export class ThreadQueueService implements QueueService {
+  private async findRecentDuplicateEmailItem(
+    userId: string,
+    kind: QueueItemKind,
+    email: EmailQueuePayload,
+  ): Promise<SelectQueueItem | undefined> {
+    const fingerprint = emailQueueFingerprint(kind, email);
+    const since = new Date(Date.now() - DUPLICATE_QUEUE_WINDOW_MS);
+    const rows = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(
+        and(
+          eq(threadQueueItemsTable.userId, userId),
+          eq(threadQueueItemsTable.kind, kind),
+        ),
+      )
+      .orderBy(desc(threadQueueItemsTable.createdAt))
+      .limit(20);
+
+    return rows.find((row) => {
+      if (!row.createdAt || row.createdAt < since) return false;
+      if (row.status !== "pending" && row.status !== "approved") return false;
+      try {
+        return emailQueueFingerprint(row.kind, parseEmailQueuePayload(row.payload)) === fingerprint;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private async maybeAutoApprove(
+    userId: string,
+    item: QueueItem,
+    opts?: QueueEnqueueOptions,
+  ): Promise<QueueItem> {
+    const prefs = await loadApprovalPrefs(userId);
+    if (!wantsAutoApprove(item.kind, opts?.origin, prefs)) {
+      return item;
+    }
+
+    try {
+      return await this.approve(userId, item.id);
+    } catch (error) {
+      logger.warn("Auto-approve failed; item left pending in queue", {
+        userId,
+        itemId: item.id,
+        kind: item.kind,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return item;
+    }
+  }
+
   async listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all" }) {
     const status = opts?.status ?? "pending";
     const rows =
@@ -94,11 +198,23 @@ export class ThreadQueueService implements QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ) {
     const kind: QueueItemKind = input.mode === "draft" ? "email_draft" : "email_send";
     const title = input.title?.trim() || (kind === "email_draft" ? "Draft reply" : "Send reply");
     const preview = input.preview?.trim() || truncate(input.email.body);
     const email = parseEmailQueuePayload(input.email);
+
+    const duplicate = await this.findRecentDuplicateEmailItem(userId, kind, email);
+    if (duplicate) {
+      logger.warn("Duplicate email queue enqueue skipped", {
+        userId,
+        kind,
+        existingId: duplicate.id,
+        status: duplicate.status,
+      });
+      return mapRow(duplicate);
+    }
 
     const [row] = await db
       .insert(threadQueueItemsTable)
@@ -114,7 +230,7 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue email action");
-    return mapRow(row);
+    return this.maybeAutoApprove(userId, mapRow(row), opts);
   }
 
   async enqueueCalendarInvite(
@@ -124,6 +240,7 @@ export class ThreadQueueService implements QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ) {
     const calendar = parseCalendarQueuePayload(input.calendar);
     const title = input.title?.trim() || calendar.summary;
@@ -148,7 +265,7 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue calendar invite");
-    return mapRow(row);
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
   async enqueueMeetingBundle(
@@ -159,6 +276,7 @@ export class ThreadQueueService implements QueueService {
       preview?: string;
       sourceThreadId?: string;
     },
+    opts?: QueueEnqueueOptions,
   ) {
     const bundle = parseMeetingBundlePayload(input.bundle);
     const title = input.title?.trim() || `Meeting: ${bundle.calendar.summary}`;
@@ -182,7 +300,7 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue meeting bundle");
-    return mapRow(row);
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
   async enqueueCalendarArchive(
@@ -192,6 +310,7 @@ export class ThreadQueueService implements QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ) {
     const archive = parseCalendarArchivePayload(input.archive);
     const title = input.title?.trim() || `Reschedule: ${archive.summary}`;
@@ -214,7 +333,7 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue calendar archive");
-    return mapRow(row);
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
   async enqueueCalendarDelete(
@@ -224,6 +343,7 @@ export class ThreadQueueService implements QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ) {
     const payload = parseCalendarDeletePayload(input.delete);
     const title = input.title?.trim() || `Delete: ${payload.summary}`;
@@ -242,7 +362,7 @@ export class ThreadQueueService implements QueueService {
       .returning();
 
     if (!row) throw serviceError("INTERNAL", "Could not queue calendar delete");
-    return mapRow(row);
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
   async approve(

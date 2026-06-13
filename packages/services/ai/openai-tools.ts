@@ -29,7 +29,7 @@ export async function runOpenAiToolLoop(
   messages: OpenAiConversationMessage[],
   tools: OpenAiToolDefinition[],
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>,
-  opts?: { maxRounds?: number },
+  opts?: { maxRounds?: number; timeoutMs?: number },
 ): Promise<{ content: string; messages: OpenAiConversationMessage[] }> {
   if (!isOpenAiConfigured()) {
     throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
@@ -37,11 +37,12 @@ export async function runOpenAiToolLoop(
 
   const apiKey = process.env.OPENAI_API_KEY!.trim();
   const maxRounds = opts?.maxRounds ?? MAX_TOOL_ROUNDS;
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const transcript = [...messages];
 
   for (let round = 0; round < maxRounds; round += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     let payload: {
       error?: { message?: string };

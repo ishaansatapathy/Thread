@@ -169,6 +169,20 @@
       "when": 1767592965714,
       "tag": "0023_calendar_delete_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1767592965715,
+      "tag": "0024_thread_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1767592965716,
+      "tag": "0025_user_approval_prefs",
+      "breakpoints": true
     }
   ]
 }

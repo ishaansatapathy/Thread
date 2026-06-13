@@ -95,6 +95,24 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("skips duplicate email enqueue within the dedupe window", async () => {
+    sendMessage.mockClear();
+
+    const payload = {
+      mode: "send" as const,
+      email: {
+        to: "guest@company.com",
+        subject: "Duplicate test",
+        body: "Same body.",
+      },
+    };
+
+    const first = await queue.enqueueEmail(userId, payload);
+    const second = await queue.enqueueEmail(userId, payload);
+
+    expect(second.id).toBe(first.id);
+  });
+
   it("dismisses a pending item without executing side effects", async () => {
     sendMessage.mockClear();
 

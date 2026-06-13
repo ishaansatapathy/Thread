@@ -43,6 +43,10 @@ export const usersTable = pgTable("users", {
   role: varchar("role", { length: 20 }).$type<UserRole>().default("user").notNull(),
   tokenVersion: varchar("token_version", { length: 20 }).default("0").notNull(),
 
+  autoApproveEmail: boolean("auto_approve_email").default(false).notNull(),
+  autoApproveAgentEmail: boolean("auto_approve_agent_email").default(false).notNull(),
+  autoApproveCalendar: boolean("auto_approve_calendar").default(false).notNull(),
+
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
 }, (t) => ({

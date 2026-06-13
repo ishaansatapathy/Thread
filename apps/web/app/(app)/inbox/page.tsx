@@ -19,6 +19,7 @@ import {
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { EmailMessageBody } from "~/components/app/email-message-body";
+import { queueResultMessage } from "~/lib/queue-toast";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import {
   decodeHtmlEntities,
@@ -242,9 +243,9 @@ export default function InboxPage() {
   );
 
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
-      toast.success("Added to approval queue");
+      toast.success(queueResultMessage(item).title);
       setReplyBody("");
     },
     onError: (error) => toast.error(error.message),
@@ -258,18 +259,23 @@ export default function InboxPage() {
   });
 
   const queueMeeting = trpc.queue.enqueueMeeting.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
       await utils.queue.list.invalidate();
       setShowSchedule(false);
-      toast.success("Meeting queued — approve from Queue to add it to Google Calendar", {
-        action: {
-          label: "Open Queue",
-          onClick: () => {
-            window.location.href = "/queue";
+      const msg = queueResultMessage(item);
+      if (msg.queued) {
+        toast.success(msg.title, {
+          action: {
+            label: "Open Queue",
+            onClick: () => {
+              window.location.href = "/queue";
+            },
           },
-        },
-      });
+        });
+      } else {
+        toast.success(msg.title);
+      }
     },
     onError: (error) => toast.error(error.message),
   });

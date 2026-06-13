@@ -7,6 +7,8 @@ import { calendarRouter } from "./routes/calendar/route";
 import { queueRouter } from "./routes/queue/route";
 import { aiRouter } from "./routes/ai/route";
 import { agentRouter } from "./routes/agent/route";
+import { contactsRouter } from "./routes/contacts/route";
+import { settingsRouter } from "./routes/settings/route";
 
 export const serverRouter = router({
   health: healthRouter,
@@ -16,6 +18,8 @@ export const serverRouter = router({
   queue: queueRouter,
   ai: aiRouter,
   agent: agentRouter,
+  contacts: contactsRouter,
+  settings: settingsRouter,
 });
 
 export const openApiRouter = serverRouter;

@@ -7,7 +7,8 @@ const API_BASE = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 export const maxDuration = 60;
 
 const ATTEMPTS = 3;
-const ATTEMPT_TIMEOUT_MS = 25_000;
+const ATTEMPT_TIMEOUT_MS = 90_000;
+const MUTATION_TIMEOUT_MS = 120_000;
 
 function buildUpstreamHeaders(request: NextRequest): Headers {
   const headers = new Headers();
@@ -40,8 +41,12 @@ async function proxyTrpc(request: NextRequest, context: { params: Promise<{ path
   const body =
     request.method !== "GET" && request.method !== "HEAD" ? await request.arrayBuffer() : undefined;
 
+  const isMutation = request.method !== "GET" && request.method !== "HEAD";
+  const maxAttempts = isMutation ? 1 : ATTEMPTS;
+  const timeoutMs = isMutation ? MUTATION_TIMEOUT_MS : ATTEMPT_TIMEOUT_MS;
+
   let upstreamRes: Response | null = null;
-  for (let attempt = 0; attempt < ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       upstreamRes = await fetch(upstream, {
         method: request.method,
@@ -49,16 +54,16 @@ async function proxyTrpc(request: NextRequest, context: { params: Promise<{ path
         body,
         redirect: "manual",
         cache: "no-store",
-        signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (upstreamRes.status < 500) break;
 
-      if (attempt < ATTEMPTS - 1) {
+      if (attempt < maxAttempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
       }
     } catch {
-      if (attempt < ATTEMPTS - 1) {
+      if (attempt < maxAttempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
         continue;
       }

@@ -1,7 +1,9 @@
 import { getCalendarService } from "../calendar";
+import { getContactsService } from "../contacts";
 import { ServiceError } from "../errors";
 import { getInboxService } from "../inbox";
 import { getQueueService } from "../queue";
+import { getSettingsService, type ApprovalDefaults } from "../settings";
 import { isOpenAiConfigured } from "./openai";
 import { rankInboxThreads } from "./inbox-priority";
 import type { OpenAiConversationMessage, OpenAiToolDefinition } from "./openai-tools";
@@ -18,6 +20,8 @@ export type AgentActionCard = {
   detail?: string;
   href?: string;
   lines?: string[];
+  /** Whether the action completed immediately or is waiting in Queue. */
+  disposition?: "sent" | "queued";
 };
 
 export type AgentChatResult = {
@@ -137,14 +141,24 @@ const AGENT_TOOLS: OpenAiToolDefinition[] = [
   },
 ];
 
-function buildSystemPrompt(userEmail?: string) {
+function buildSystemPrompt(userEmail?: string, approval?: ApprovalDefaults) {
+  const agentEmailMode = approval?.autoApproveAgentEmail
+    ? "Agent-composed emails are set to AUTO-APPROVE: when queue_email returns status approved, the email already went out via Gmail — say it was sent. Never mention Queue approval in that case."
+    : "Agent-composed emails are set to QUEUE FIRST: when queue_email returns status pending, tell the user to review and Approve in the Queue tab before it sends.";
+
+  const calendarMode = approval?.autoApproveCalendar
+    ? "Calendar actions are set to AUTO-APPROVE: when queue_calendar_invite returns status approved, the invite is already on Google Calendar — say it was created/sent. Do not mention Queue."
+    : "Calendar actions are set to QUEUE FIRST: when queue_calendar_invite returns status pending, tell the user to approve in the Queue tab.";
+
   return [
     "You are Thread Agent — an assistant for Gmail and Google Calendar inside the Thread app.",
-    "CRITICAL: You cannot send email or create calendar events directly. Always use queue_email or queue_calendar_invite.",
-    "After queueing, tell the user to review and Approve in the Queue tab.",
-    "When the user asks to send mail to someone with a topic (e.g. sick leave on certain dates), write a professional plain-text email and queue it with mode send.",
+    "Use queue_email and queue_calendar_invite for outbound actions. Always read the tool result status and outcome fields before replying.",
+    agentEmailMode,
+    calendarMode,
+    "When the user asks to send mail, write a professional plain-text email and call queue_email with mode send.",
+    "Call queue_email at most once per user message unless they explicitly ask for multiple different emails.",
     "Use search_inbox / get_thread before drafting replies to existing threads.",
-    "Be concise and friendly. Confirm what you queued with to/subject preview.",
+    "Be concise and friendly. Match your wording to what actually happened (sent vs queued).",
     userEmail ? `The signed-in user's email is ${userEmail}.` : "",
   ]
     .filter(Boolean)
@@ -178,7 +192,10 @@ export async function runAgentChat(
   const inbox = getInboxService();
   const queue = getQueueService();
   const calendar = getCalendarService();
+  const settings = getSettingsService();
+  const approvalDefaults = await settings.getApprovalDefaults(tenantId);
   const actions: AgentActionCard[] = [];
+  const emailQueueFingerprints = new Set<string>();
 
   const executeTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
     switch (name) {
@@ -242,49 +259,107 @@ export async function runAgentChat(
         const body = String(args.body ?? "").trim();
         const mode = args.mode === "draft" ? "draft" : "send";
         const threadId = typeof args.threadId === "string" ? args.threadId : undefined;
-        const item = await queue.enqueueEmail(tenantId, {
-          mode,
-          email: { to, subject, body, threadId },
-          title: mode === "draft" ? `Draft: ${subject}` : `Send: ${subject}`,
-          preview: body.slice(0, 240),
-        });
+        const fingerprint = `${mode}:${to.toLowerCase()}|${subject}|${body}`;
+        if (emailQueueFingerprints.has(fingerprint)) {
+          return JSON.stringify({
+            success: true,
+            duplicate: true,
+            message: "This exact email was already queued in this request.",
+          });
+        }
+        emailQueueFingerprints.add(fingerprint);
+        const item = await queue.enqueueEmail(
+          tenantId,
+          {
+            mode,
+            email: { to, subject, body, threadId },
+            title: mode === "draft" ? `Draft: ${subject}` : `Send: ${subject}`,
+            preview: body.slice(0, 240),
+          },
+          { origin: "agent" },
+        );
+        try {
+          const contacts = getContactsService();
+          await contacts.upsert(tenantId, { email: to, source: "agent" });
+          await contacts.touch(tenantId, to);
+        } catch {
+          /* contacts are best-effort */
+        }
+        const sent = item.status === "approved";
         actions.push({
           kind: "email_queued",
-          title: mode === "draft" ? "Draft queued" : "Send queued for approval",
+          title: sent
+            ? mode === "draft"
+              ? "Draft saved"
+              : "Email sent"
+            : mode === "draft"
+              ? "Draft queued"
+              : "Send queued for approval",
           detail: `To ${to}`,
-          href: "/queue",
+          href: sent ? undefined : "/queue",
+          disposition: sent ? "sent" : "queued",
           lines: [`Subject: ${subject}`, body.slice(0, 400)],
         });
-        return JSON.stringify({ success: true, queueItemId: item.id, status: "pending" });
+        return JSON.stringify({
+          success: true,
+          queueItemId: item.id,
+          status: item.status,
+          outcome: sent
+            ? mode === "draft"
+              ? "draft_saved"
+              : "email_sent"
+            : mode === "draft"
+              ? "draft_queued"
+              : "email_queued_for_approval",
+          tellUser: sent
+            ? mode === "draft"
+              ? `Draft saved to Gmail for ${to}.`
+              : `Email sent to ${to} via Gmail.`
+            : `Email added to Queue for ${to} — user must approve before it sends.`,
+        });
       }
 
       case "queue_calendar_invite": {
         const summary = String(args.summary ?? "").trim();
         const startDateTime = String(args.startDateTime ?? "").trim();
         const endDateTime = String(args.endDateTime ?? "").trim();
-        const item = await queue.enqueueCalendarInvite(tenantId, {
-          calendar: {
-            summary,
-            startDateTime,
-            endDateTime,
-            description: typeof args.description === "string" ? args.description : undefined,
-            location: typeof args.location === "string" ? args.location : undefined,
-            timeZone: typeof args.timeZone === "string" ? args.timeZone : undefined,
-            attendeeEmails: Array.isArray(args.attendeeEmails)
-              ? args.attendeeEmails.map(String)
-              : undefined,
+        const item = await queue.enqueueCalendarInvite(
+          tenantId,
+          {
+            calendar: {
+              summary,
+              startDateTime,
+              endDateTime,
+              description: typeof args.description === "string" ? args.description : undefined,
+              location: typeof args.location === "string" ? args.location : undefined,
+              timeZone: typeof args.timeZone === "string" ? args.timeZone : undefined,
+              attendeeEmails: Array.isArray(args.attendeeEmails)
+                ? args.attendeeEmails.map(String)
+                : undefined,
+            },
+            title: `Invite: ${summary}`,
+            preview: `${startDateTime} → ${endDateTime}`,
           },
-          title: `Invite: ${summary}`,
-          preview: `${startDateTime} → ${endDateTime}`,
-        });
+          { origin: "agent" },
+        );
+        const sent = item.status === "approved";
         actions.push({
           kind: "calendar_queued",
-          title: "Calendar invite queued",
+          title: sent ? "Calendar invite sent" : "Calendar invite queued",
           detail: summary,
-          href: "/queue",
+          href: sent ? undefined : "/queue",
+          disposition: sent ? "sent" : "queued",
           lines: [`Start: ${startDateTime}`, `End: ${endDateTime}`],
         });
-        return JSON.stringify({ success: true, queueItemId: item.id, status: "pending" });
+        return JSON.stringify({
+          success: true,
+          queueItemId: item.id,
+          status: item.status,
+          outcome: sent ? "calendar_sent" : "calendar_queued_for_approval",
+          tellUser: sent
+            ? `Calendar invite "${summary}" was created on Google Calendar.`
+            : `Calendar invite "${summary}" is in Queue — user must approve before it is created.`,
+        });
       }
 
       case "list_queue": {
@@ -315,12 +390,15 @@ export async function runAgentChat(
 
   const history = input.history ?? [];
   const messages: OpenAiConversationMessage[] = [
-    { role: "system", content: buildSystemPrompt(input.userEmail) },
+    { role: "system", content: buildSystemPrompt(input.userEmail, approvalDefaults) },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: input.message.trim() },
   ];
 
-  const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool);
+  const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
+    maxRounds: 6,
+    timeoutMs: 120_000,
+  });
 
   return {
     reply: content,
