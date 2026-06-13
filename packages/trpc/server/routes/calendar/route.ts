@@ -134,4 +134,23 @@ export const calendarRouter = router({
         mapServiceError(error);
       }
     }),
+
+  checkFreeBusy: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/free-busy"), tags: TAGS } })
+    .input(
+      z.object({
+        startDateTime: isoDateTimeSchema,
+        endDateTime: isoDateTimeSchema,
+        timeZone: z.string().max(64).optional(),
+      }),
+    )
+    .output(z.object({ conflicts: z.array(calendarEventSchema) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const calendar = getCalendarService();
+        return await calendar.checkFreeBusy(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
 });

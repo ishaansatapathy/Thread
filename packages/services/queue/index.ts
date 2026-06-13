@@ -65,7 +65,7 @@ export type QueueEnqueueOptions = {
 };
 
 export interface QueueService {
-  listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all" }): Promise<QueueItem[]>;
+  listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all"; limit?: number }): Promise<QueueItem[]>;
   pendingCount(userId: string): Promise<number>;
   enqueueEmail(
     userId: string,

@@ -188,6 +188,28 @@ function ActionPanel({
   );
 }
 
+const HISTORY_KEY = "thread:agent:history";
+const MAX_STORED_MESSAGES = 40;
+
+function loadHistory(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ChatMessage[];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(messages: ChatMessage[]) {
+  try {
+    const trimmed = messages.slice(-MAX_STORED_MESSAGES);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+  } catch {
+    // localStorage unavailable (SSR / private mode)
+  }
+}
+
 export default function AgentPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -195,6 +217,22 @@ export default function AgentPage() {
   const [isPending, setIsPending] = useState(false);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
+  const historyLoaded = useRef(false);
+
+  // Restore history from localStorage on mount.
+  useEffect(() => {
+    if (historyLoaded.current) return;
+    historyLoaded.current = true;
+    const saved = loadHistory();
+    if (saved.length > 0) setMessages(saved);
+  }, []);
+
+  // Persist messages whenever they change.
+  useEffect(() => {
+    if (historyLoaded.current && messages.length > 0) {
+      saveHistory(messages);
+    }
+  }, [messages]);
 
   const status = trpc.agent.status.useQuery({});
   const approvalDefaults = trpc.settings.getApprovalDefaults.useQuery({}, {
@@ -306,6 +344,21 @@ export default function AgentPage() {
                   ? status.data?.model ?? "gpt-4o-mini"
                   : "OpenAI required"}
             </span>
+            {messages.length > 0 ? (
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6 }}
+                onClick={() => {
+                  setMessages([]);
+                  setLastActions([]);
+                  try { localStorage.removeItem(HISTORY_KEY); } catch { /* ignore */ }
+                }}
+                title="Clear conversation history"
+              >
+                Clear
+              </button>
+            ) : null}
           </div>
 
           <div className="thread-agent-feed" ref={feedRef}>

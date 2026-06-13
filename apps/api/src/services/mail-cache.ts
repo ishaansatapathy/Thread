@@ -170,4 +170,24 @@ export const mailCache = {
       .filter((row): row is SelectMailCacheRow => Boolean(row))
       .map(rowToThread);
   },
+
+  /** Remove a single thread from cache (e.g. after archive). */
+  async remove(userId: string, threadId: string): Promise<void> {
+    try {
+      await db
+        .delete(threadMailCacheTable)
+        .where(
+          and(
+            eq(threadMailCacheTable.userId, userId),
+            eq(threadMailCacheTable.threadId, threadId),
+          ),
+        );
+    } catch (error) {
+      logger.warn("Mail cache remove failed", {
+        userId,
+        threadId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
 };

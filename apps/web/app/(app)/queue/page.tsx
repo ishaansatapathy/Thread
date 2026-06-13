@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Archive,
@@ -10,6 +10,7 @@ import {
   Clock3,
   Loader2,
   Mail,
+  Search,
   Sparkles,
   Trash2,
   X,
@@ -59,14 +60,28 @@ export default function QueuePage() {
   const [archiveConfirm, setArchiveConfirm] = useState<ArchiveConfirmState | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<"approve" | "dismiss" | null>(null);
+  const [search, setSearch] = useState("");
   const utils = trpc.useUtils();
 
   const itemsQuery = trpc.queue.list.useQuery({ status: tab === "pending" ? "pending" : "all" });
 
   const approve = trpc.queue.approve.useMutation({
-    onMutate: ({ id }) => {
+    onMutate: async ({ id }) => {
       setActiveItemId(id);
       setActiveAction("approve");
+      // Optimistic update: mark item as approved immediately
+      await utils.queue.list.cancel();
+      const prev = utils.queue.list.getData({ status: tab === "pending" ? "pending" : "all" });
+      utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items.map((item) =>
+            item.id === id ? { ...item, status: "approved" as const } : item,
+          ),
+        };
+      });
+      return { prev };
     },
     onSuccess: async (data) => {
       await utils.queue.list.invalidate();
@@ -88,7 +103,12 @@ export default function QueuePage() {
         toast.success("Approved and sent");
       }
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error, _vars, ctx) => {
+      toast.error(error.message);
+      if (ctx?.prev) {
+        utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
+      }
+    },
     onSettled: () => {
       setActiveItemId(null);
       setActiveAction(null);
@@ -96,16 +116,34 @@ export default function QueuePage() {
   });
 
   const dismiss = trpc.queue.dismiss.useMutation({
-    onMutate: ({ id }) => {
+    onMutate: async ({ id }) => {
       setActiveItemId(id);
       setActiveAction("dismiss");
+      // Optimistic update: mark item as dismissed immediately
+      await utils.queue.list.cancel();
+      const prev = utils.queue.list.getData({ status: tab === "pending" ? "pending" : "all" });
+      utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          items: old.items.map((item) =>
+            item.id === id ? { ...item, status: "dismissed" as const } : item,
+          ),
+        };
+      });
+      return { prev };
     },
     onSuccess: async () => {
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
       toast.success("Removed from queue");
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error, _vars, ctx) => {
+      toast.error(error.message);
+      if (ctx?.prev) {
+        utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
+      }
+    },
     onSettled: () => {
       setActiveItemId(null);
       setActiveAction(null);
@@ -115,6 +153,17 @@ export default function QueuePage() {
   const items = itemsQuery.data?.items ?? [];
   const pending = items.filter((item) => item.status === "pending");
   const anyBusy = activeItemId !== null;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        (item.preview ?? "").toLowerCase().includes(q) ||
+        (KIND_LABEL[item.kind] ?? item.kind).toLowerCase().includes(q),
+    );
+  }, [items, search]);
 
   const approveLabel = (item: (typeof items)[number]) => {
     if (activeItemId === item.id && activeAction === "approve") {
@@ -140,6 +189,23 @@ export default function QueuePage() {
     }
     approve.mutate({ id: item.id });
   };
+
+  // Keyboard shortcut: press A to approve first pending item, D to dismiss it.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (event.key === "a" || event.key === "A") {
+        const first = pending[0];
+        if (first && !anyBusy) handleApproveClick(first);
+      } else if (event.key === "d" || event.key === "D") {
+        const first = pending[0];
+        if (first && !anyBusy) dismiss.mutate({ id: first.id });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, anyBusy]);
 
   const archiveDateError = useMemo(() => {
     if (!archiveConfirm) return null;
@@ -185,6 +251,17 @@ export default function QueuePage() {
         </button>
       </div>
 
+      <div className="thread-queue-search">
+        <Search size={14} className="thread-queue-search-icon" />
+        <input
+          className="thread-set-input"
+          placeholder="Filter by title, preview, or type…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ paddingLeft: 30, fontSize: 13 }}
+        />
+      </div>
+
       {itemsQuery.isLoading ? (
         <div className="thread-empty-inbox" style={{ marginTop: 24 }}>
           <Loader2 size={18} className="thread-spin" />
@@ -209,7 +286,7 @@ export default function QueuePage() {
         </div>
       ) : (
         <div className="thread-queue-list">
-          {items.map((item) => {
+          {filtered.map((item) => {
             const Icon = kindIcon(item.kind);
             const isPending = item.status === "pending";
             return (

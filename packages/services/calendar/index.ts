@@ -65,6 +65,14 @@ export interface CalendarService {
     eventId: string,
     input: { startDateTime: string; endDateTime: string; timeZone?: string },
   ): Promise<CalendarEvent>;
+  /**
+   * Check for free/busy conflicts in the given time range.
+   * Returns events that overlap with the proposed time slot.
+   */
+  checkFreeBusy(
+    tenantId: string,
+    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+  ): Promise<{ conflicts: CalendarEvent[] }>;
 }
 
 let calendarService: CalendarService | null = null;

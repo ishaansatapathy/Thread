@@ -10,6 +10,7 @@ import {
   Loader2,
   FilePenLine,
   FileText,
+  Archive,
   CalendarPlus,
   ListChecks,
   X,
@@ -237,6 +238,25 @@ export default function InboxPage() {
     },
   });
 
+  const archiveThread = trpc.inbox.archiveThread.useMutation({
+    onSuccess: (_data, variables) => {
+      // Optimistically remove from thread list.
+      utils.inbox.listThreads.setData(
+        { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            threads: old.threads.filter((t) => t.id !== variables.threadId),
+          };
+        },
+      );
+      setSelectedId(null);
+      toast.success("Thread archived");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   // Debounce the search box so each keystroke doesn't hit Gmail.
   useEffect(() => {
     const id = window.setTimeout(() => setAppliedQuery(searchInput.trim()), 350);
@@ -403,10 +423,19 @@ export default function InboxPage() {
         );
         setSelectedId(visibleThreads[nextIndex]?.id ?? null);
       }
+      // e = archive selected thread
+      if (event.key === "e" && selectedId) {
+        event.preventDefault();
+        archiveThread.mutate({ threadId: selectedId });
+      }
+      // Escape = close reading pane on mobile
+      if (event.key === "Escape" && selectedId) {
+        setSelectedId(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleThreads, selectedId, view]);
+  }, [visibleThreads, selectedId, view, archiveThread]);
 
   const threadMessages = selectedQuery.data?.messages ?? [];
 
@@ -437,7 +466,7 @@ export default function InboxPage() {
   const showThreadList = view !== "drafts";
 
   return (
-    <div className="thread-inbox">
+    <div className="thread-inbox" data-selected={selectedId ? "true" : undefined}>
       <div className="thread-inbox-list">
         <div className="thread-inbox-list-head">
           <button
@@ -749,6 +778,13 @@ export default function InboxPage() {
           </div>
         ) : selectedQuery.data ? (
           <div className="thread-inbox-message">
+            <button
+              type="button"
+              className="thread-inbox-back-btn"
+              onClick={() => setSelectedId(null)}
+            >
+              ← Back
+            </button>
             <div className="thread-inbox-message-head">
               <div className="thread-inbox-message-head-row">
                 <div>
@@ -768,6 +804,17 @@ export default function InboxPage() {
                 >
                   <CalendarPlus size={14} />
                   Schedule meeting
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0 }}
+                  disabled={archiveThread.isPending}
+                  onClick={() => selectedId && archiveThread.mutate({ threadId: selectedId })}
+                  title="Archive thread (remove from inbox)"
+                >
+                  <Archive size={14} />
+                  {archiveThread.isPending ? "Archiving…" : "Archive"}
                 </button>
               </div>
             </div>
@@ -817,11 +864,40 @@ export default function InboxPage() {
                         </span>
                       </button>
                       {expanded ? (
-                        <EmailMessageBody
-                          bodyHtml={message.bodyHtml}
-                          body={message.body}
-                          snippet={message.snippet}
-                        />
+                        <>
+                          <EmailMessageBody
+                            bodyHtml={message.bodyHtml}
+                            body={message.body}
+                            snippet={message.snippet}
+                          />
+                          {message.attachments && message.attachments.length > 0 ? (
+                            <div className="thread-inbox-attachments">
+                              <p className="thread-inbox-attachments-label">
+                                <FileText size={12} />
+                                {message.attachments.length === 1
+                                  ? "1 attachment"
+                                  : `${message.attachments.length} attachments`}
+                              </p>
+                              <ul className="thread-inbox-attachment-list">
+                                {message.attachments.map((att) => (
+                                  <li key={att.attachmentId ?? att.filename} className="thread-inbox-attachment-item">
+                                    <FileText size={12} />
+                                    <span className="thread-inbox-attachment-name">{att.filename}</span>
+                                    {att.size > 0 ? (
+                                      <span className="thread-inbox-attachment-size">
+                                        {att.size < 1024
+                                          ? `${att.size} B`
+                                          : att.size < 1024 * 1024
+                                            ? `${Math.round(att.size / 1024)} KB`
+                                            : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
+                                      </span>
+                                    ) : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </>
                       ) : null}
                     </article>
                   );

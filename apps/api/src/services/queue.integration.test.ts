@@ -49,6 +49,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       sendMessage,
       createDraft,
       markThreadRead: vi.fn(async () => undefined),
+      archiveThread: vi.fn(async () => undefined),
     };
 
     registerInboxService(inboxStub);
@@ -65,6 +66,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
         end: "2026-06-15T11:00:00Z",
       }),
       deleteEvent: async () => ({ success: true as const }),
+      checkFreeBusy: async () => ({ conflicts: [] }),
     });
   });
 

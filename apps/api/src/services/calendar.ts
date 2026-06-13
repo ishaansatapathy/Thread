@@ -266,4 +266,25 @@ export class CorsairCalendarService implements CalendarService {
 
     return { success: true as const };
   }
+
+  async checkFreeBusy(
+    tenantId: string,
+    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+  ) {
+    try {
+      const status = await this.getConnectionStatus(tenantId);
+      if (status.googlecalendar !== "connected") return { conflicts: [] };
+
+      const result = await this.listEvents(tenantId, {
+        timeMin: input.startDateTime,
+        timeMax: input.endDateTime,
+        maxResults: 10,
+        timeZone: input.timeZone,
+      });
+
+      return { conflicts: result.events.filter((e: CalendarEvent) => e.status !== "cancelled") };
+    } catch {
+      return { conflicts: [] };
+    }
+  }
 }

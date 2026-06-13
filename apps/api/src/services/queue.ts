@@ -156,8 +156,9 @@ export class ThreadQueueService implements QueueService {
     }
   }
 
-  async listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all" }) {
+  async listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all"; limit?: number }) {
     const status = opts?.status ?? "pending";
+    const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
     const rows =
       status === "all"
         ? await db
@@ -165,7 +166,7 @@ export class ThreadQueueService implements QueueService {
             .from(threadQueueItemsTable)
             .where(eq(threadQueueItemsTable.userId, userId))
             .orderBy(desc(threadQueueItemsTable.createdAt))
-            .limit(50)
+            .limit(limit)
         : await db
             .select()
             .from(threadQueueItemsTable)
@@ -176,7 +177,7 @@ export class ThreadQueueService implements QueueService {
               ),
             )
             .orderBy(desc(threadQueueItemsTable.createdAt))
-            .limit(50);
+            .limit(limit);
 
     return rows.map(mapRow);
   }

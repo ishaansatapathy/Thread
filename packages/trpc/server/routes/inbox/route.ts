@@ -23,6 +23,16 @@ const inboxMessageSchema = z.object({
   body: z.string(),
   bodyHtml: z.string().optional(),
   snippet: z.string(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string(),
+        size: z.number(),
+        attachmentId: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const inboxThreadSchema = z.object({
@@ -205,6 +215,16 @@ export const inboxRouter = router({
     .mutation(async ({ ctx, input }) => {
       const inbox = getInboxService();
       await inbox.markThreadRead(ctx.user.id, input.threadId);
+      return { ok: true };
+    }),
+
+  archiveThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/archive"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      await inbox.archiveThread(ctx.user.id, input.threadId);
       return { ok: true };
     }),
 });
