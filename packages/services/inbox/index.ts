@@ -14,9 +14,9 @@ export type InboxMessage = {
   to?: string;
   date?: string;
   body: string;
-  /** Sanitized on the client before render; raw HTML from Gmail when available. */
   bodyHtml?: string;
   snippet: string;
+  attachments?: Array<{ filename: string; mimeType: string; size: number; attachmentId?: string }>;
 };
 
 export type InboxThread = {
@@ -99,6 +99,11 @@ export interface InboxService {
    * Best-effort: implementations must not throw on failure.
    */
   markThreadRead(tenantId: string, threadId: string): Promise<void>;
+  /**
+   * Move a thread to Trash by removing INBOX label and adding TRASH label.
+   * Best-effort: implementations must not throw on failure.
+   */
+  archiveThread(tenantId: string, threadId: string): Promise<void>;
 }
 
 let inboxService: InboxService | null = null;

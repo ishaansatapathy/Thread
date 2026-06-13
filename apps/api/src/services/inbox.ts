@@ -694,4 +694,26 @@ export class CorsairInboxService implements InboxService {
       });
     }
   }
+
+  async archiveThread(tenantId: string, threadId: string): Promise<void> {
+    try {
+      const status = getCachedConnectionStatus(tenantId);
+      if (status && status !== "connected") return;
+
+      const corsair = getCorsair().withTenant(tenantId);
+      await corsair.gmail.api.threads.modify({
+        id: threadId,
+        removeLabelIds: ["INBOX"],
+      });
+
+      // Remove from local mail cache so it no longer appears in inbox list.
+      await mailCache.remove(tenantId, threadId);
+    } catch (error) {
+      logger.warn("archiveThread failed (best-effort)", {
+        tenantId,
+        threadId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }

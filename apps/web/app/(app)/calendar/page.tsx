@@ -131,6 +131,7 @@ export default function CalendarPage() {
   );
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [conflicts, setConflicts] = useState<CalendarEventItem[]>([]);
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -153,6 +154,10 @@ export default function CalendarPage() {
 
   const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
 
+  const checkFreeBusy = trpc.calendar.checkFreeBusy.useMutation({
+    onSuccess: (data) => setConflicts(data.conflicts as CalendarEventItem[]),
+  });
+
   const queueInvite = trpc.queue.enqueueCalendar.useMutation({
     onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
@@ -162,6 +167,7 @@ export default function CalendarPage() {
       setShowCreate(false);
       setSummary("");
       setAttendee("");
+      setConflicts([]);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -516,11 +522,43 @@ export default function CalendarPage() {
                     className="thread-set-input"
                     type="datetime-local"
                     value={endAt}
-                    onChange={(event) => setEndAt(event.target.value)}
+                    onChange={(event) => {
+                      setEndAt(event.target.value);
+                      // Trigger free/busy check when both dates are set
+                      if (startAt && event.target.value && isConnected) {
+                        try {
+                          const { startDateTime, endDateTime, timeZone } = localDateTimeRangeToPayload(
+                            startAt,
+                            event.target.value,
+                          );
+                          checkFreeBusy.mutate({ startDateTime, endDateTime, timeZone });
+                        } catch {
+                          // ignore validation errors during typing
+                        }
+                      }
+                    }}
                     required
                   />
                 </div>
               </div>
+
+              {conflicts.length > 0 ? (
+                <div className="thread-cal-conflict-warning">
+                  <p className="thread-cal-conflict-title">
+                    ⚠ {conflicts.length} conflict{conflicts.length > 1 ? "s" : ""} detected
+                  </p>
+                  <ul className="thread-cal-conflict-list">
+                    {conflicts.map((c) => (
+                      <li key={c.id} className="thread-cal-conflict-item">
+                        {c.summary}
+                        {c.start
+                          ? ` · ${new Date(c.start).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+                          : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               <div className="thread-modal-actions">
                 <button

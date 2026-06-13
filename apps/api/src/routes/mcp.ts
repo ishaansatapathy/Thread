@@ -249,9 +249,10 @@ async function callTool(
       const limit = Math.min(Number(args.limit ?? 10), 50);
       const items = await queue.listItems(userId, {
         status: status as "pending" | "approved" | "dismissed",
+        limit,
       });
       return toolResult(
-        items.slice(0, limit).map((item) => ({
+        items.map((item) => ({
           id: item.id,
           kind: item.kind,
           title: item.title,

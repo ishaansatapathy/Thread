@@ -2,9 +2,36 @@ import { sanitizeEmailHeader } from "@repo/services/validation/email";
 
 type MessagePart = {
   mimeType?: string;
-  body?: { data?: string };
+  filename?: string;
+  body?: { data?: string; attachmentId?: string; size?: number };
   parts?: MessagePart[];
 };
+
+function collectAttachments(payload: MessagePart | undefined): Array<{ filename: string; mimeType: string; size: number; attachmentId?: string }> {
+  if (!payload) return [];
+  const result: Array<{ filename: string; mimeType: string; size: number; attachmentId?: string }> = [];
+
+  function walk(part: MessagePart) {
+    const isAttachment =
+      part.filename?.trim() &&
+      part.mimeType &&
+      !part.mimeType.startsWith("text/") &&
+      !part.mimeType.startsWith("multipart/");
+
+    if (isAttachment && part.filename) {
+      result.push({
+        filename: part.filename.trim(),
+        mimeType: part.mimeType ?? "application/octet-stream",
+        size: part.body?.size ?? 0,
+        attachmentId: part.body?.attachmentId,
+      });
+    }
+    for (const child of part.parts ?? []) walk(child);
+  }
+
+  walk(payload);
+  return result;
+}
 
 export function decodeBase64Url(data: string): string {
   const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
@@ -115,6 +142,7 @@ export type ParsedGmailMessage = {
   body: string;
   bodyHtml?: string;
   snippet: string;
+  attachments?: Array<{ filename: string; mimeType: string; size: number; attachmentId?: string }>;
 };
 
 export function getHeader(headers: GmailHeader[], name: string) {
@@ -169,6 +197,7 @@ export function parseGmailMessage(message: {
   const headers = message.payload?.headers ?? [];
   const bodyHtml = extractHtmlBody(message.payload) || undefined;
   const body = extractPlainBody(message.payload) || message.snippet || "";
+  const attachments = collectAttachments(message.payload);
 
   return {
     id: message.id,
@@ -178,6 +207,7 @@ export function parseGmailMessage(message: {
     body,
     bodyHtml,
     snippet: message.snippet ?? body.slice(0, 140),
+    attachments: attachments.length > 0 ? attachments : undefined,
   };
 }
 
