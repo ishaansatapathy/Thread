@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { logger } from "@repo/logger";
 import { isAgentConfigured, runAgentChat } from "@repo/services/ai/agent";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
@@ -52,6 +53,12 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Structured audit entry — every agent invocation is traceable by userId.
+      logger.info("agent.chat_invoked", {
+        userId: ctx.user.id,
+        messageLength: input.message.length,
+        historyLength: input.history?.length ?? 0,
+      });
       try {
         return await runAgentChat(ctx.user.id, {
           message: input.message,
