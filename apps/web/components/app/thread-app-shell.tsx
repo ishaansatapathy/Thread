@@ -13,6 +13,7 @@ import {
   ChevronsUpDown,
   PanelsTopLeft,
   ListChecks,
+  Bot,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -26,12 +27,14 @@ const NAV = [
   { label: "Inbox", href: "/inbox", icon: Inbox },
   { label: "Queue", href: "/queue", icon: ListChecks },
   { label: "Calendar", href: "/calendar", icon: Calendar },
+  { label: "Agent", href: "/agent", icon: Bot },
 ];
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/inbox": { title: "Inbox", sub: "Triage what matters" },
   "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
+  "/agent": { title: "Agent", sub: "AI assistant — always through Queue" },
   "/settings": { title: "Settings", sub: "Account & connections" },
 };
 
