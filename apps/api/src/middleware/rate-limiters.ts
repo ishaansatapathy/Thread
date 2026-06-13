@@ -44,6 +44,8 @@ export function matchesProcedure(path: string, procedures: string[]): boolean {
 
 const AUTH_CREDENTIAL_PROCS = ["auth.signUp", "auth.signIn", "auth.verify2FA", "auth.refresh"];
 const PASSWORD_RESET_PROCS = ["auth.forgotPassword", "auth.verifyOtp", "auth.resetPassword"];
+/** Agent chat is expensive (OpenAI calls) and a vector for mass-send abuse. */
+const AGENT_CHAT_PROCS = ["agent.chat"];
 
 export function normalizeProcedurePath(path: string) {
   const normalized = path.replace(/^\/+/, "");
@@ -78,6 +80,23 @@ export function createTrpcRateLimitMiddleware() {
         windowMs: 15 * 60 * 1000,
         max: 30,
         message: "Too many password reset attempts. Try again in 15 minutes.",
+      });
+      return ok ? next() : undefined;
+    }
+
+    if (matchesProcedure(path, AGENT_CHAT_PROCS)) {
+      // Key on authenticated user ID (set by auth middleware in x-thread-user-id
+      // header) so the limit is per-user, not per-IP — shared NATs won't
+      // throttle unrelated users.  Fall back to IP if the header is absent.
+      const ok = await applyRateLimit(req, res, {
+        windowMs: 60 * 1000, // 1 minute
+        max: 20, // 20 agent calls per user per minute
+        message: "Too many agent requests. Please wait a moment before sending another message.",
+        keyGenerator: (r) => {
+          const userId = r.headers["x-thread-user-id"];
+          if (typeof userId === "string" && userId.trim()) return `agent:${userId.trim()}`;
+          return `agent:ip:${r.ip ?? r.socket.remoteAddress ?? "unknown"}`;
+        },
       });
       return ok ? next() : undefined;
     }

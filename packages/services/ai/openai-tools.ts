@@ -3,7 +3,8 @@ import { ServiceError } from "../errors";
 import { getOpenAiModel, isOpenAiConfigured } from "./openai";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
-const MAX_TOOL_ROUNDS = 8;
+/** Hard ceiling on tool-call rounds. Must match the maxRounds passed by runAgentChat. */
+const MAX_TOOL_ROUNDS = 6;
 
 export type OpenAiToolDefinition = {
   type: "function";
