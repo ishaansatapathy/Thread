@@ -12,6 +12,7 @@ import {
   Mail,
   ListChecks,
   CornerDownLeft,
+  Bot,
 } from "lucide-react";
 
 type CommandAction = {
@@ -39,6 +40,7 @@ export function ThreadCommand({ open, onClose }: { open: boolean; onClose: () =>
       { id: "search", group: "Navigate", label: "Search inbox", hint: "Press /", icon: Search, run: go("/inbox?focus=search") },
       { id: "queue", group: "Navigate", label: "Open approval queue", icon: ListChecks, run: go("/queue") },
       { id: "calendar", group: "Navigate", label: "Go to Calendar", icon: Calendar, run: go("/calendar") },
+      { id: "agent", group: "Navigate", label: "Open Thread Agent", icon: Bot, run: go("/agent") },
       { id: "settings", group: "Navigate", label: "Go to Settings", icon: Settings, run: go("/settings") },
       { id: "compose", group: "Actions", label: "Compose reply", hint: "Inbox", icon: PenLine, run: go("/inbox") },
       { id: "approve", group: "Actions", label: "Review approval queue", icon: ListChecks, run: go("/queue") },

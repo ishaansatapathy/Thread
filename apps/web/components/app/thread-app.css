@@ -1763,12 +1763,16 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
-.thread-agent-log-row span:last-child {
-  margin-left: auto;
-  color: var(--thread-dim);
+.thread-agent-msg[data-user="true"] {
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.28);
 }
 
-/* ── Settings ── */
+.thread-rotator-bubble--user.thread-agent-msg,
+.thread-agent-msg[data-user="true"] {
+  flex-direction: row-reverse;
+}
+
 .thread-set-section {
   margin-bottom: 28px;
 }
