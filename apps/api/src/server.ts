@@ -26,6 +26,7 @@ import { googleAuthRouter } from "./routes/google-auth";
 import { corsairAuthRouter } from "./routes/corsair-auth";
 import { webhooksRouter } from "./routes/webhooks";
 import { mcpRouter } from "./routes/mcp";
+import { agentStreamRouter } from "./routes/agent-stream";
 
 export const app = express();
 
@@ -260,6 +261,7 @@ app.use("/auth", googleAuthRouter);
 app.use("/auth/corsair", corsairAuthRouter);
 app.use("/webhooks", webhooksRouter);
 app.use("/mcp", mcpRouter);
+app.use("/agent/stream", agentStreamRouter);
 
 const trpcRateLimit = createTrpcRateLimitMiddleware();
 

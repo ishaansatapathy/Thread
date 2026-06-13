@@ -192,6 +192,8 @@ export default function AgentPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [lastActions, setLastActions] = useState<ActionCard[]>([]);
+  const [isPending, setIsPending] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
 
   const status = trpc.agent.status.useQuery({});
@@ -205,35 +207,87 @@ export default function AgentPage() {
   const ready = status.data?.ready === true;
   const utils = trpc.useUtils();
 
-  const chat = trpc.agent.chat.useMutation({
-    onSuccess: (data) => {
-      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
-      setLastActions(data.actions);
-      void utils.queue.pendingCount.invalidate();
-    },
-    onError: (error) => {
-      toast.error(error.message || "Agent request failed");
-    },
-  });
+  const meQuery = trpc.auth.me.useQuery({});
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, chat.isPending]);
+  }, [messages, isPending, streamStatus]);
 
   const send = (text: string) => {
     const message = text.trim();
-    if (!message || chat.isPending) return;
+    if (!message || isPending) return;
     if (!ready) {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
       return;
     }
     setInput("");
     setLastActions([]);
+    setStreamStatus(null);
+    const history = messages.slice(-12);
     setMessages((prev) => [...prev, { role: "user", content: message }]);
-    chat.mutate({
-      message,
-      history: messages.slice(-12),
-    });
+    setIsPending(true);
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+    fetch(`${API_URL}/agent/stream`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history, userEmail: meQuery.data?.email }),
+    })
+      .then(async (res) => {
+        if (!res.ok || !res.body) {
+          const err = await res.json().catch(() => ({ error: "Agent request failed" }));
+          throw new Error((err as { error?: string }).error ?? "Agent request failed");
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE lines from buffer
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          let currentEvent = "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              try {
+                const data = JSON.parse(dataStr) as Record<string, unknown>;
+                if (currentEvent === "status") {
+                  setStreamStatus(String(data.label ?? "Working…"));
+                } else if (currentEvent === "complete") {
+                  setMessages((prev) => [...prev, { role: "assistant", content: String(data.reply ?? "") }]);
+                  setLastActions((data.actions as ActionCard[]) ?? []);
+                  setStreamStatus(null);
+                  void utils.queue.pendingCount.invalidate();
+                } else if (currentEvent === "error") {
+                  throw new Error(String(data.message ?? "Agent error"));
+                }
+              } catch (parseErr) {
+                if (parseErr instanceof SyntaxError) continue;
+                throw parseErr;
+              }
+              currentEvent = "";
+            }
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : "Agent request failed");
+      })
+      .finally(() => {
+        setIsPending(false);
+        setStreamStatus(null);
+      });
   };
 
   return (
@@ -283,18 +337,16 @@ export default function AgentPage() {
               </div>
             ))}
 
-            {chat.isPending ? (
+            {isPending ? (
               <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
                 <Loader2 size={13} className="thread-spin" />
-                <span className="thread-agent-typing">
-                  <i />
-                  <i />
-                  <i />
+                <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>
+                  {streamStatus ?? "Thinking…"}
                 </span>
               </div>
             ) : null}
 
-            {!chat.isPending && messages.length === 0 ? (
+            {!isPending && messages.length === 0 ? (
               <div className="thread-agent-suggest">
                 {SUGGESTIONS.map((s) => (
                   <button key={s.label} type="button" onClick={() => send(s.prompt)} disabled={!ready}>
@@ -316,7 +368,7 @@ export default function AgentPage() {
               value={input}
               onChange={setInput}
               onSubmit={() => send(input)}
-              disabled={chat.isPending}
+              disabled={isPending}
               placeholder={
                 ready
                   ? "Ask Thread Agent… type @ to mention someone"

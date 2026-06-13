@@ -41,7 +41,8 @@ function getOrCreate(route: string): RouteStats {
       ok: 0,
       clientError: 0,
       serverError: 0,
-      latency: { samples: new Array<number>(LATENCY_BUCKET_COUNT).fill(0), head: 0, count: 0 },
+      // Use -1 as sentinel for "empty slot" so genuine 0ms responses aren't filtered.
+      latency: { samples: new Array<number>(LATENCY_BUCKET_COUNT).fill(-1), head: 0, count: 0 },
     };
     routes.set(route, s);
   }
@@ -67,7 +68,8 @@ export function incrementCounter(name: string, by = 1) {
 
 function percentile(samples: number[], count: number, p: number): number {
   if (count === 0) return 0;
-  const filled = samples.filter((v) => v > 0);
+  // -1 is the sentinel for empty ring-buffer slots; genuine 0ms entries are valid.
+  const filled = samples.filter((v) => v >= 0);
   if (filled.length === 0) return 0;
   const sorted = [...filled].sort((a, b) => a - b);
   const idx = Math.max(0, Math.ceil((p / 100) * sorted.length) - 1);

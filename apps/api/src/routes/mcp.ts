@@ -24,6 +24,25 @@ import { getInboxService } from "@repo/services/inbox";
 import { getQueueService } from "@repo/services/queue";
 import { incrementCounter } from "../metrics";
 import { authService } from "@repo/trpc/server/services";
+import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
+
+const skipInTests = () => process.env.VITEST === "true";
+
+async function applyMcpRateLimit(req: Request, res: Response): Promise<boolean> {
+  if (skipInTests()) return true;
+  // 60 tool calls per user per minute. Keyed on userId if authenticated, else IP.
+  const userId = req.headers["x-mcp-user-id"] as string | undefined;
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const key = userId ? `mcp:user:${userId}` : `mcp:ip:${ip}`;
+  const result = await checkDistributedRateLimit(key, 60, 60_000);
+  res.setHeader("RateLimit-Limit", "60");
+  res.setHeader("RateLimit-Remaining", String(result.remaining));
+  if (!result.allowed) {
+    res.status(429).json(rpcError(null, -32000, "Too many requests. Please slow down."));
+    return false;
+  }
+  return true;
+}
 
 export const mcpRouter = Router();
 
@@ -289,46 +308,50 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
       .json(rpcError(body?.id ?? null, -32600, "Invalid JSON-RPC request"));
   }
 
+  // Apply rate limit early (before auth so unauthenticated flood is also throttled).
+  const rateLimitOk = await applyMcpRateLimit(req, res);
+  if (!rateLimitOk) return;
+
   const id = body.id ?? null;
   const method = body.method;
 
   try {
-    // ── initialize ───────────────────────────────────────────────────────
     if (method === "initialize") {
       return res.json(
         ok(id, {
           protocolVersion: "2024-11-05",
           capabilities: { tools: {} },
-          serverInfo: {
-            name: "thread-mcp",
-            version: "1.0.0",
-          },
+          serverInfo: { name: "thread-mcp", version: "1.0.0" },
         }),
       );
     }
 
-    // ── tools/list ───────────────────────────────────────────────────────
     if (method === "tools/list") {
       return res.json(ok(id, { tools: MCP_TOOLS }));
     }
 
-    // ── tools/call ───────────────────────────────────────────────────────
+    // notifications/initialized — no-op acknowledgment per MCP spec
+    if (method === "notifications/initialized") {
+      return res.status(200).send();
+    }
+
     if (method === "tools/call") {
       const params = (body.params ?? {}) as Record<string, unknown>;
       const toolName = String(params.name ?? "");
       const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
 
-      // Auth gate
       const userId = await resolveUserId(req);
       if (!userId) {
         return res.status(401).json(rpcError(id, -32001, "Authentication required"));
       }
 
+      // Re-key rate limit on userId now that we know it.
+      req.headers["x-mcp-user-id"] = userId;
+
       const result = await callTool(toolName, toolArgs, userId);
       return res.json(ok(id, result));
     }
 
-    // ── unknown method ────────────────────────────────────────────────────
     return res.status(404).json(rpcError(id, -32601, `Method not found: ${method}`));
   } catch (error) {
     const code = (error as { code?: number }).code ?? -32603;

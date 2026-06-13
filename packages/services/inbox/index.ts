@@ -94,6 +94,11 @@ export interface InboxService {
     tenantId: string,
     input: { to: string; subject: string; body: string; threadId?: string },
   ): Promise<{ id?: string }>;
+  /**
+   * Remove the UNREAD label from a Gmail thread.
+   * Best-effort: implementations must not throw on failure.
+   */
+  markThreadRead(tenantId: string, threadId: string): Promise<void>;
 }
 
 let inboxService: InboxService | null = null;
