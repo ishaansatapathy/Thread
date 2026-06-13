@@ -219,6 +219,24 @@ export default function InboxPage() {
 
   const isConnected = statusQuery.data?.gmail === "connected";
 
+  const markRead = trpc.inbox.markThreadRead.useMutation({
+    onSuccess: (_data, variables) => {
+      // Optimistically flip unread=false in the cached thread list.
+      utils.inbox.listThreads.setData(
+        { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            threads: old.threads.map((t) =>
+              t.id === variables.threadId ? { ...t, unread: false } : t,
+            ),
+          };
+        },
+      );
+    },
+  });
+
   // Debounce the search box so each keystroke doesn't hit Gmail.
   useEffect(() => {
     const id = window.setTimeout(() => setAppliedQuery(searchInput.trim()), 350);
@@ -333,6 +351,11 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!selectedQuery.data) return;
+    // Mark the thread as read when it's opened and it's currently unread.
+    const thread = visibleThreads.find((t) => t.id === selectedId);
+    if (thread?.unread && selectedId && isConnected) {
+      markRead.mutate({ threadId: selectedId });
+    }
     const messages = selectedQuery.data.messages ?? [];
     const last = messages[messages.length - 1];
     const lastId = last?.id ?? null;

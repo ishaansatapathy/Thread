@@ -48,6 +48,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       getThread: async () => null,
       sendMessage,
       createDraft,
+      markThreadRead: vi.fn(async () => undefined),
     };
 
     registerInboxService(inboxStub);

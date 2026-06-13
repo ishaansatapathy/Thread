@@ -197,4 +197,14 @@ export const inboxRouter = router({
         mapServiceError(error);
       }
     }),
+
+  markThreadRead: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/read"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      await inbox.markThreadRead(ctx.user.id, input.threadId);
+      return { ok: true };
+    }),
 });

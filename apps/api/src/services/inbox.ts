@@ -31,6 +31,30 @@ import { mailCache, type CachedThreadMetadata } from "./mail-cache";
 import { fetchInWaves } from "../utils/gmail-batch";
 import { incrementCounter } from "../metrics";
 
+// ── Connection status cache (30s TTL) ───────────────────────────────────────
+// getConnectionStatus is a Corsair network call (~200ms). Caching it means
+// warm-cache inbox loads don't pay the Corsair round-trip on every page view.
+const CONNECTION_CACHE_TTL_MS = 30_000;
+const connectionCache = new Map<string, { status: string; expiresAt: number }>();
+
+function getCachedConnectionStatus(tenantId: string): string | null {
+  const entry = connectionCache.get(tenantId);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    connectionCache.delete(tenantId);
+    return null;
+  }
+  return entry.status;
+}
+
+function setCachedConnectionStatus(tenantId: string, status: string) {
+  connectionCache.set(tenantId, { status, expiresAt: Date.now() + CONNECTION_CACHE_TTL_MS });
+}
+
+/** Call after a successful Gmail/Calendar OAuth to force a fresh status check. */
+export function invalidateConnectionCache(tenantId: string) {
+  connectionCache.delete(tenantId);
+}
+
 const LIST_METADATA_HEADERS = ["Subject", "From", "Date"];
 const ENRICH_WAVE_SIZE = INBOX_PAGE_SIZE;
 /** Parallel Gmail metadata gets — keep low to avoid rate limits and timeouts. */
@@ -148,11 +172,18 @@ export class CorsairInboxService implements InboxService {
       return { gmail: "not_configured" };
     }
 
+    const cached = getCachedConnectionStatus(tenantId);
+    if (cached) {
+      return { gmail: cached as InboxConnectionStatus["gmail"] };
+    }
+
     try {
       await ensureCorsairTenant(tenantId);
       const corsair = getCorsair();
       const status = await corsair.manage.connectionStatus.get({ tenantId });
-      return { gmail: status.gmail ?? "not_connected" };
+      const gmail = status.gmail ?? "not_connected";
+      setCachedConnectionStatus(tenantId, gmail);
+      return { gmail };
     } catch (error) {
       logger.warn("Inbox connection status failed", {
         tenantId,
@@ -640,5 +671,27 @@ export class CorsairInboxService implements InboxService {
     });
 
     return { id: result.id };
+  }
+
+  async markThreadRead(tenantId: string, threadId: string): Promise<void> {
+    try {
+      const status = getCachedConnectionStatus(tenantId);
+      if (status && status !== "connected") return;
+
+      const corsair = getCorsair().withTenant(tenantId);
+      await corsair.gmail.api.threads.modify({
+        id: threadId,
+        removeLabelIds: ["UNREAD"],
+      });
+
+      // Update the local cache unread flag so the UI reflects it instantly.
+      await mailCache.upsertMany(tenantId, [{ threadId, unread: false }]);
+    } catch (error) {
+      logger.warn("markThreadRead failed (best-effort)", {
+        tenantId,
+        threadId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

@@ -1,179 +1,256 @@
-# Thread — Corsair Hackathon
+# Thread — Gmail + Calendar Productivity App
 
-**Thread** is a Gmail + Google Calendar workflow app with a human-in-the-loop **approval queue**. Nothing sends or schedules until you approve it in Queue.
+A full-stack productivity application built on the [Corsair SDK](https://corsair.dev) that brings Gmail and Google Calendar into a focused, human-in-the-loop workflow. Built for the Corsair Hackathon.
 
-Built for the Corsair Hackathon using the **Corsair SDK** (Gmail + Calendar), **tRPC**, **OpenAPI REST**, **Drizzle/Postgres**, and optional **OpenAI** for inbox priority ranking.
+## What it does
 
-## Quick start
+- **Inbox** — Cache-first Gmail inbox with stale-while-revalidate, search, thread reader, and keyboard navigation (`j/k/Enter/`/)
+- **AI Priority** — Rank inbox threads by urgency using OpenAI
+- **Queue** — Every outbound action (email send, draft save, calendar invite) is staged here for your approval before it executes — nothing sends without your OK
+- **Agent** — Plain-language AI assistant with streaming responses. Ask it to send emails, rank your inbox, schedule meetings, or check your queue
+- **Calendar** — View and manage events; create/reschedule/delete through the approval queue
+- **MCP Server** — Full Model Context Protocol server at `/mcp` so other AI tools (Claude, Cursor, etc.) can use your inbox and queue directly
 
-```bash
-pnpm install
-pnpm db:up          # local Postgres (optional if using Neon)
-pnpm db:migrate
-pnpm dev
-```
-
-| App | URL |
-|-----|-----|
-| Web | http://localhost:3000 |
-| API | http://localhost:8000 |
-| OpenAPI spec | http://localhost:8000/openapi.json |
-| API docs (Scalar) | http://localhost:8000/docs |
-
-Copy `.env.example` → `.env` and fill in secrets (see [Environment](#environment)).
+---
 
 ## Architecture
 
 ```
-┌─────────────┐     tRPC (cookie + CSRF)      ┌──────────────┐
-│  Next.js    │ ─────────────────────────────▶│  Express API │
-│  apps/web   │                               │  apps/api    │
-└─────────────┘                               └──────┬───────┘
-                                                     │
-                     ┌───────────────────────────────┼───────────────────────────────┐
-                     │                               │                               │
-                     ▼                               ▼                               ▼
-              ┌─────────────┐                ┌─────────────┐                ┌─────────────┐
-              │  Postgres   │                │   Corsair   │                │   OpenAI    │
-              │  (Neon ok)  │                │ Gmail + Cal │                │  (optional) │
-              └─────────────┘                └─────────────┘                └─────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                         Browser                             │
+│  Next.js 15 (apps/web)                                      │
+│  ├── /inbox    — Gmail inbox (cache-first, SWR)             │
+│  ├── /queue    — Human approval queue                       │
+│  ├── /agent    — AI chat (SSE streaming)                    │
+│  ├── /calendar — Event management                           │
+│  └── /settings — Auto-approve preferences                   │
+└────────────────────┬────────────────────────────────────────┘
+                     │  tRPC + REST (OpenAPI)
+┌────────────────────▼────────────────────────────────────────┐
+│                    Express API (apps/api)                    │
+│  ├── /trpc          — Type-safe tRPC procedures             │
+│  ├── /mcp           — MCP 2024-11 / JSON-RPC 2.0 server     │
+│  ├── /agent/stream  — SSE streaming agent responses         │
+│  ├── /auth/corsair  — Gmail + Calendar OAuth callbacks      │
+│  ├── /webhooks      — Gmail push notification handler       │
+│  ├── /metrics       — Prometheus-compatible metrics         │
+│  ├── /health        — Database health check                 │
+│  └── /docs          — Scalar OpenAPI reference              │
+└──────────┬──────────────────────┬───────────────────────────┘
+           │                      │
+┌──────────▼──────────┐  ┌────────▼────────────────────────────┐
+│   PostgreSQL        │  │   Corsair SDK                        │
+│   (Neon / local)    │  │   ├── Gmail API (threads, messages)  │
+│   Drizzle ORM       │  │   ├── Google Calendar API            │
+│   ├── users         │  │   ├── OAuth management               │
+│   ├── queue_items   │  │   └── Push webhook delivery          │
+│   ├── mail_cache    │  └─────────────────────────────────────┘
+│   └── contacts      │
+└─────────────────────┘
 ```
 
-### Packages
+### Key packages
 
-| Package | Role |
-|---------|------|
-| `apps/web` | Next.js UI — Inbox, Queue, Calendar, Settings |
-| `apps/api` | Express + tRPC + OpenAPI REST + Corsair adapters |
-| `packages/trpc` | Shared tRPC routers (Zod in/out, OpenAPI metadata) |
-| `packages/services` | Domain interfaces, auth, AI, validation |
-| `packages/database` | Drizzle schema + versioned migrations |
+| Package | Purpose |
+|---------|---------|
+| `apps/web` | Next.js frontend |
+| `apps/api` | Express API server |
+| `packages/trpc` | Shared tRPC router + procedures |
+| `packages/services` | Domain services (inbox, queue, calendar, AI agent) |
+| `packages/database` | Drizzle schema + migrations |
 
-### Core flow (approval queue)
+---
 
-1. **Inbox** — read Gmail, compose reply or meeting → **Add to queue**
-2. **Queue** — review pending items → **Approve** or **Dismiss**
-3. **Approve** — atomically claims item, executes via Corsair (send email / create event)
-4. **Calendar** — live Google events; queued invites show as dashed blocks until approved
+## Prerequisites
 
-Direct send is **disabled by default** (`THREAD_ALLOW_DIRECT_SEND` must be `true` to bypass queue).
+- **Node.js** 20+
+- **pnpm** 9+
+- **PostgreSQL** (local Docker or [Neon](https://neon.tech) free tier)
+- **Corsair account** — [corsair.dev](https://corsair.dev) (free tier works)
+- **Google Cloud project** with Gmail API + Google Calendar API enabled
+- **OpenAI API key** (for AI features; optional but required for agent/ranking)
 
-### Gmail workflow
+---
 
-- **Search** — full Gmail query syntax (`from:`, `subject:`, `has:attachment`) via the `query` param; press `/` to focus the box.
-- **Load more** — 15 threads per page; Postgres cache paints instantly, then Gmail refreshes in the background.
-- **Rich list metadata** — each row is hydrated with sender, subject, date, message count and unread state via a cheap `threads.get(metadata)` enrichment pass.
-- **Drafts** — a Drafts tab lists Gmail drafts (subject/recipient/snippet).
-- **Local mail cache** — thread metadata in Postgres (`thread_mail_cache`). Unchanged threads skip re-fetch when `historyId` matches; search falls back to cache when Gmail is unreachable.
-- **Webhooks** — `POST /webhooks/gmail` and `/webhooks/calendar` verify a shared secret, then refresh inbox cache / calendar range. Set `CORSAIR_WEBHOOK_SECRET` to enable.
-- **Keyboard** — `j`/`k` move selection, `/` focuses search, `⌘K` opens the command palette.
+## Quick start
 
-### OpenAPI + AI
-
-Every tRPC procedure exposes a REST path via `trpc-to-openapi`. External agents (or future Thread Agent) can read `/openapi.json` and call:
-
-- `GET /api/inbox/threads?query=from:boss` — search + paginate the inbox
-- `GET /api/inbox/drafts` — list Gmail drafts
-- `POST /api/queue/enqueue/email` — queue a send
-- `POST /api/queue/approve` — approve after human review
-- `POST /api/ai/inbox/rank` — rank threads by urgency (requires `OPENAI_API_KEY`)
-
-The web app uses tRPC internally; OpenAPI is for tools, integrations, and AI function-calling.
-
-## Environment
-
-### Required
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | Postgres URL (Neon pooled URL for runtime) |
-| `DATABASE_URL_UNPOOLED` | Neon direct URL for migrations (recommended) |
-| `JWT_SECRET` | Min 16 chars |
-| `JWT_REFRESH_SECRET` | Min 16 chars |
-| `CLIENT_URL` | e.g. `http://localhost:3000` |
-| `BASE_URL` | e.g. `http://localhost:8000` |
-
-### Gmail + Calendar (Corsair)
-
-| Variable | Description |
-|----------|-------------|
-| `CORSAIR_KEK` | Corsair encryption key |
-| `GOOGLE_OAUTH_CLIENT_ID` / `SECRET` | Google Cloud OAuth |
-| `CORSAIR_GMAIL_REDIRECT_URI` | Gmail OAuth callback |
-| `CORSAIR_CALENDAR_REDIRECT_URI` | Calendar OAuth callback |
-
-### Email (auth transactional)
-
-| Variable | Description |
-|----------|-------------|
-| `BREVO_API_KEY` | Brevo API key |
-| `EMAIL_FROM` | Verified sender |
-
-### Turnstile (bot protection)
-
-| Variable | Description |
-|----------|-------------|
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key (widget on sign-in / sign-up) |
-| `TURNSTILE_SECRET_KEY` | Turnstile secret for server-side verification |
-
-Both unset = Turnstile disabled (fine for local dev). In production, set both and add your domain plus `localhost` in the Turnstile dashboard hostnames.
-
-### OpenAI (Priority inbox tab)
-
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Enables **Priority** ranking in Inbox |
-| `OPENAI_MODEL` | Optional, default `gpt-4o-mini` |
-
-### Webhooks (optional)
-
-| Variable | Description |
-|----------|-------------|
-| `CORSAIR_WEBHOOK_SECRET` | Min 16 chars. Enables `POST /webhooks/gmail` + `/webhooks/calendar`. Unset = receiver returns 503 and Thread uses on-demand sync. |
-
-## Demo script (~2 min)
-
-1. Sign up / sign in at http://localhost:3000
-2. **Settings** → connect Gmail + Google Calendar
-3. **Inbox** → search (`/`), `j`/`k` to navigate, **Load more** to page
-4. Open a thread → write reply → **Add to queue**
-5. **Queue** → **Approve** → email sends via Gmail
-6. **Inbox** → **Schedule meeting** → Queue → Approve → event on **Calendar**
-7. **Calendar** → recurring events show a ↻ badge → **Reschedule** or **Delete** (both queue-first) → approve in **Queue**
-8. (Optional) Set `OPENAI_API_KEY` → Inbox **Priority** tab ranks urgent threads
-9. Show judges **http://localhost:8000/docs** — live OpenAPI
-
-### Webhook wiring (optional, production)
-
-1. Set `CORSAIR_WEBHOOK_SECRET` in `.env` (min 16 chars).
-2. Point Google Pub/Sub (Gmail) or your push proxy at `POST https://<api-host>/webhooks/gmail` with header `x-corsair-webhook-secret: <secret>`.
-3. Calendar pushes can use `POST /webhooks/calendar` with the same secret (body may include `tenantId` or Pub/Sub `emailAddress`).
-4. Thread ACKs immediately and refreshes cache in the background — no slow handler required.
-
-## Scripts
+### 1. Clone and install
 
 ```bash
-pnpm dev              # web :3000 + api :8000
-pnpm db:migrate       # Drizzle migrations
-pnpm db:check         # test DB connection
-pnpm test             # unit + integration tests
-pnpm --filter web test:e2e:install   # one-time: install Playwright chromium
-pnpm --filter web test:e2e           # Playwright smoke E2E (landing, auth gate)
-pnpm build            # production build
+git clone <repo-url>
+cd "Corsair Hackathon"
+pnpm install
 ```
 
-## Production notes
+### 2. Configure environment
 
-- Queue **approve** is atomic (`UPDATE … WHERE pending RETURNING`) — no double-send race
-- Payloads re-validated with Zod at execute time
-- Email headers sanitized against CRLF injection
-- OpenAPI docs **off by default** in production (`PUBLIC_OPENAPI_DOCS=false`)
-- Migrations versioned in `packages/database/drizzle/` (queue, Corsair, `thread_mail_cache`); legacy form-builder tables dropped in `0022`
-- Webhook receiver verifies a shared secret with a constant-time comparison and ACKs fast (refresh runs detached)
-- Mail-cache writes are best-effort — cache failures never break the live inbox
-- Calendar **delete** and **reschedule** are queue-first (same human-in-the-loop as email)
-- E2E smoke tests in `apps/web/e2e` (Playwright) cover the public surface and the auth gate
+Copy `.env.example` to `.env` and fill in the values:
 
-## License
+```bash
+cp .env.example .env
+```
 
-Private — Corsair Hackathon submission.
+Required variables:
+
+```env
+# Database
+DATABASE_URL=postgresql://...        # Pooled connection (app)
+DATABASE_URL_UNPOOLED=postgresql://... # Direct connection (migrations)
+
+# Auth
+JWT_SECRET=<random-32-char-string>
+JWT_REFRESH_SECRET=<random-32-char-string>
+
+# Google OAuth (for user sign-in with Google)
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+
+# Corsair (Gmail + Calendar integration)
+CORSAIR_API_KEY=...                  # From corsair.dev dashboard
+CORSAIR_GMAIL_CLIENT_ID=...          # Google OAuth app for Gmail
+CORSAIR_GMAIL_CLIENT_SECRET=...
+CORSAIR_CALENDAR_CLIENT_ID=...       # Google OAuth app for Calendar
+CORSAIR_CALENDAR_CLIENT_SECRET=...
+
+# OpenAI (optional — for Agent + Priority ranking)
+OPENAI_API_KEY=sk-...
+
+# App URLs
+NEXT_PUBLIC_API_URL=http://localhost:8000
+CLIENT_URL=http://localhost:3000
+BASE_URL=http://localhost:8000
+```
+
+### 3. Set up Corsair
+
+```bash
+pnpm --filter @repo/api corsair:setup
+```
+
+This provisions the Gmail plugin and does an initial backfill.
+
+### 4. Run migrations
+
+```bash
+pnpm db:migrate
+```
+
+### 5. Start dev servers
+
+```bash
+pnpm dev
+```
+
+This starts both the Next.js frontend (`:3000`) and Express API (`:8000`) in watch mode.
+
+---
+
+## Development commands
+
+```bash
+pnpm dev              # Start all services
+pnpm build            # Production build
+pnpm check-types      # TypeScript type-check (all packages)
+pnpm lint             # ESLint (all packages)
+pnpm test             # Vitest unit tests (API package)
+pnpm db:migrate       # Run Drizzle migrations
+pnpm db:studio        # Open Drizzle Studio (DB GUI)
+```
+
+### E2E tests
+
+```bash
+cd apps/web
+pnpm exec playwright test
+```
+
+For Gmail integration tests (requires a real session):
+
+```bash
+E2E_GMAIL_AVAILABLE=true E2E_SESSION_COOKIE="jwt=..." pnpm exec playwright test e2e/gmail-flows.spec.ts
+```
+
+---
+
+## MCP Server
+
+Thread exposes a full [Model Context Protocol](https://modelcontextprotocol.io) server at `POST /mcp`.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_inbox` | List recent Gmail threads |
+| `search_inbox` | Gmail query syntax search |
+| `get_thread` | Full thread content |
+| `list_queue` | Pending approval items |
+| `approve_queue_item` | Approve → sends email / creates event |
+| `dismiss_queue_item` | Reject without sending |
+| `get_gmail_connection_status` | Check connection |
+
+### Using with Cursor / Claude
+
+Point your AI tool at the MCP server using `mcp-server.json` in the project root, or configure manually:
+
+```json
+{
+  "mcpServers": {
+    "thread": {
+      "url": "http://localhost:8000/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+Auth uses the same JWT cookies as the web app. Sign in at `http://localhost:3000/sign-in` first.
+
+### Quick test (no auth needed)
+
+```bash
+# Discover tools
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+---
+
+## Observability
+
+```bash
+# Prometheus-compatible metrics (requires DOCS_SECRET header)
+curl http://localhost:8000/metrics -H "Authorization: Bearer $DOCS_SECRET"
+
+# JSON metrics
+curl http://localhost:8000/metrics/json -H "Authorization: Bearer $DOCS_SECRET"
+
+# Health
+curl http://localhost:8000/health
+
+# Readiness
+curl http://localhost:8000/ready
+```
+
+Metrics tracked:
+- Per-route p50 / p95 / p99 latency
+- Request counts + error rates
+- `inbox.cache_hit` — cache-warm inbox loads
+- `queue.approved.total` / `queue.dismissed.total`
+- `mcp.tool.<name>` — per-tool MCP call counts
+
+---
+
+## API Documentation
+
+Available at `http://localhost:8000/docs` (requires `DOCS_SECRET` env var or query param `?key=<secret>`).
+
+---
+
+## Security notes
+
+- All outbound actions go through the human-in-the-loop queue — nothing sends without explicit approval
+- Agent has 5 layers of guardrails: injection detection, email validation, per-session send cap (3), data fencing, token limit
+- Rate limiting: auth (40/15min), agent (20/min/user), MCP (60/min/user)
+- JWT with refresh rotation, account lockout after 5 failures
+- CSRF protection via `requireTrustedOrigin` on all state-changing requests
