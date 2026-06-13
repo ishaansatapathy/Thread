@@ -160,4 +160,14 @@ export const mailCache = {
       return [];
     }
   },
+
+  /** Preserve Gmail list order when hydrating from Postgres. */
+  async getOrderedThreads(userId: string, threadIds: string[]): Promise<InboxThread[]> {
+    if (threadIds.length === 0) return [];
+    const map = await this.getHistoryMap(userId, threadIds);
+    return threadIds
+      .map((threadId) => map.get(threadId))
+      .filter((row): row is SelectMailCacheRow => Boolean(row))
+      .map(rowToThread);
+  },
 };

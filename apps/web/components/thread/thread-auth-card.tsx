@@ -331,22 +331,6 @@ export function ThreadAuthCard({
           </>
         )}
 
-        {turnstileEnabled && !twoFactorStep && (
-          <div className="thread-auth-turnstile">
-            <Turnstile
-              ref={turnstileRef}
-              siteKey={turnstileSiteKey!}
-              onSuccess={setTurnstileToken}
-              onExpire={() => setTurnstileToken(null)}
-              onError={() => {
-                setTurnstileToken(null);
-                setError("Security check failed to load. Refresh and try again.");
-              }}
-              options={{ theme: "dark" }}
-            />
-          </div>
-        )}
-
         {(error ||
           signInForm.formState.errors.email?.message ||
           signInForm.formState.errors.password?.message ||
@@ -377,6 +361,22 @@ export function ThreadAuthCard({
             </button>
           )}
         </>
+      )}
+
+      {turnstileEnabled && mounted && !twoFactorStep && (
+        <div className="thread-auth-turnstile">
+          <Turnstile
+            ref={turnstileRef}
+            siteKey={turnstileSiteKey!}
+            onSuccess={setTurnstileToken}
+            onExpire={() => setTurnstileToken(null)}
+            onError={() => {
+              setTurnstileToken(null);
+              setError("Security check failed to load. Refresh and try again.");
+            }}
+            options={{ theme: "dark", size: "normal", appearance: "always" }}
+          />
+        </div>
       )}
     </div>
   );

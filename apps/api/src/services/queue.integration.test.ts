@@ -43,6 +43,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       isConfigured: () => true,
       getConnectionStatus: async () => ({ gmail: "connected" }),
       listThreads: async () => ({ threads: [] }),
+      listCachedThreads: async () => ({ threads: [] }),
       listDrafts: async () => ({ drafts: [] }),
       getThread: async () => null,
       sendMessage,
