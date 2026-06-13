@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
+import { EmailMessageBody } from "~/components/app/email-message-body";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import {
   decodeHtmlEntities,
@@ -31,37 +32,72 @@ import {
   sortThreadsByRank,
 } from "~/lib/inbox-display";
 import type { RouterOutputs } from "@repo/trpc/client";
+import { INBOX_PAGE_SIZE } from "@repo/services/inbox";
 import { trpc } from "~/trpc/client";
 
 type InboxView = "inbox" | "priority" | "drafts";
 type ThreadRow = RouterOutputs["inbox"]["listThreads"]["threads"][number];
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = INBOX_PAGE_SIZE;
 
 /**
  * Manual pagination + search accumulator. tRPC's useInfiniteQuery expects a
  * `cursor` field, but our REST-friendly endpoint uses Gmail's native
  * `pageToken`, so we page explicitly and merge results de-duplicated by id.
+ *
+ * Cache-first: Postgres snapshot paints instantly; live Gmail refresh follows.
  */
 function useInboxThreads(query: string, enabled: boolean) {
   const [pageToken, setPageToken] = useState<string | undefined>(undefined);
   const [pages, setPages] = useState<{ token: string | undefined; threads: ThreadRow[] }[]>([]);
+  const [refreshLive, setRefreshLive] = useState(false);
+  const [persistedNextPageToken, setPersistedNextPageToken] = useState<string | undefined>();
+  const isFirstPage = pageToken === undefined;
+
+  const cached = trpc.inbox.listCachedThreads.useQuery(
+    { limit: PAGE_SIZE, query: query || undefined },
+    { enabled: enabled && isFirstPage, staleTime: 60_000 },
+  );
 
   const result = trpc.inbox.listThreads.useQuery(
-    { maxResults: PAGE_SIZE, query: query || undefined, pageToken },
+    {
+      maxResults: PAGE_SIZE,
+      query: query || undefined,
+      pageToken,
+      refresh: refreshLive && isFirstPage ? true : undefined,
+    },
     { enabled, placeholderData: (prev) => prev },
   );
 
-  // Reset accumulation whenever the search query changes.
   useEffect(() => {
     setPageToken(undefined);
     setPages([]);
+    setRefreshLive(false);
+    setPersistedNextPageToken(undefined);
   }, [query]);
+
+  useEffect(() => {
+    if (result.data?.nextPageToken) {
+      setPersistedNextPageToken(result.data.nextPageToken);
+    }
+  }, [result.data?.nextPageToken]);
+
+  useEffect(() => {
+    if (result.data?.stale && isFirstPage && !refreshLive) {
+      setRefreshLive(true);
+    }
+  }, [result.data?.stale, isFirstPage, refreshLive]);
 
   useEffect(() => {
     if (!result.data) return;
     setPages((current) => {
-      if (current.some((page) => page.token === pageToken)) return current;
+      const existingIndex = current.findIndex((page) => page.token === pageToken);
+      if (existingIndex >= 0) {
+        if (result.data.stale) return current;
+        const next = [...current];
+        next[existingIndex] = { token: pageToken, threads: result.data.threads };
+        return next;
+      }
       return [...current, { token: pageToken, threads: result.data.threads }];
     });
   }, [result.data, pageToken]);
@@ -76,20 +112,29 @@ function useInboxThreads(query: string, enabled: boolean) {
         merged.push(thread);
       }
     }
-    return merged;
-  }, [pages]);
+    if (merged.length > 0) return merged;
+    if (isFirstPage && cached.data?.threads.length) return cached.data.threads;
+    return [];
+  }, [pages, isFirstPage, cached.data?.threads]);
 
-  const nextPageToken = result.data?.nextPageToken;
+  const nextPageToken = result.data?.nextPageToken ?? persistedNextPageToken;
   const loadMore = useCallback(() => {
     if (nextPageToken) setPageToken(nextPageToken);
   }, [nextPageToken]);
+
+  const hasCachedPreview = isFirstPage && Boolean(cached.data?.threads.length);
+  const isLoading = result.isLoading && threads.length === 0;
+  const isRefreshing =
+    result.isFetching && threads.length > 0 && (refreshLive || result.data?.stale === true);
 
   return {
     threads,
     nextPageToken,
     loadMore,
-    isLoading: result.isLoading && pages.length === 0,
+    isLoading,
     isFetchingMore: result.isFetching && pageToken !== undefined,
+    isRefreshing,
+    hasCachedPreview,
     dataUpdatedAt: result.dataUpdatedAt,
   };
 }
@@ -431,6 +476,22 @@ export default function InboxPage() {
           </div>
         ) : null}
 
+        {view === "inbox" && isConnected && inbox.isRefreshing ? (
+          <p
+            style={{
+              margin: "8px 12px 0",
+              fontSize: 11,
+              color: "var(--thread-dim)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Loader2 size={12} className="thread-spin" />
+            Updating from Gmail…
+          </p>
+        ) : null}
+
         {view === "priority" && isConnected ? (
           <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
             {rankThreads.isPending ? (
@@ -526,22 +587,6 @@ export default function InboxPage() {
                   <span className="thread-inbox-row-snippet">{draft.snippet}</span>
                 </button>
               ))}
-              {drafts.nextPageToken ? (
-                <button
-                  type="button"
-                  className="thread-inbox-loadmore"
-                  onClick={drafts.loadMore}
-                  disabled={drafts.isFetchingMore}
-                >
-                  {drafts.isFetchingMore ? (
-                    <>
-                      <Loader2 size={13} className="thread-spin" /> Loading…
-                    </>
-                  ) : (
-                    "Load more"
-                  )}
-                </button>
-              ) : null}
               </>
             )
           ) : inbox.isLoading ? (
@@ -590,25 +635,62 @@ export default function InboxPage() {
                   <span className="thread-inbox-row-snippet">{decodeHtmlEntities(thread.snippet)}</span>
                 </button>
               ))}
-              {inbox.nextPageToken ? (
-                <button
-                  type="button"
-                  className="thread-inbox-loadmore"
-                  onClick={inbox.loadMore}
-                  disabled={inbox.isFetchingMore}
-                >
-                  {inbox.isFetchingMore ? (
-                    <>
-                      <Loader2 size={13} className="thread-spin" /> Loading…
-                    </>
-                  ) : (
-                    "Load more"
-                  )}
-                </button>
-              ) : null}
             </>
           )}
         </div>
+
+        {isConnected && view === "inbox" && visibleThreads.length > 0 ? (
+          <div className="thread-inbox-list-footer">
+            {inbox.isRefreshing ? (
+              <p className="thread-inbox-list-footer-hint">
+                <Loader2 size={12} className="thread-spin" style={{ display: "inline", marginRight: 6 }} />
+                Syncing from Gmail…
+              </p>
+            ) : inbox.nextPageToken ? (
+              <button
+                type="button"
+                className="thread-inbox-loadmore"
+                onClick={inbox.loadMore}
+                disabled={inbox.isFetchingMore}
+              >
+                {inbox.isFetchingMore ? (
+                  <>
+                    <Loader2 size={13} className="thread-spin" /> Loading…
+                  </>
+                ) : (
+                  "Load more mails"
+                )}
+              </button>
+            ) : (
+              <p className="thread-inbox-list-footer-hint">
+                All caught up · {visibleThreads.length} shown{visibleThreads.length >= PAGE_SIZE ? " (scroll list above)" : ""}
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {isConnected && view === "drafts" && drafts.drafts.length > 0 ? (
+          <div className="thread-inbox-list-footer">
+            {drafts.nextPageToken ? (
+              <button
+                type="button"
+                className="thread-inbox-loadmore"
+                onClick={drafts.loadMore}
+                disabled={drafts.isFetchingMore}
+              >
+                {drafts.isFetchingMore ? (
+                  <>
+                    <Loader2 size={13} className="thread-spin" /> Loading…
+                  </>
+                ) : (
+                  "Load more drafts"
+                )}
+              </button>
+            ) : (
+              <p className="thread-inbox-list-footer-hint">All drafts loaded</p>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="thread-inbox-reading">
@@ -706,17 +788,22 @@ export default function InboxPage() {
                         </span>
                       </button>
                       {expanded ? (
-                        <div className="thread-inbox-msg-body">
-                          {message.body?.trim() || message.snippet || "(No content)"}
-                        </div>
+                        <EmailMessageBody
+                          bodyHtml={message.bodyHtml}
+                          body={message.body}
+                          snippet={message.snippet}
+                        />
                       ) : null}
                     </article>
                   );
                 })
               ) : (
-                <p className="thread-inbox-message-body">
-                  {selectedQuery.data.body?.trim() || selectedQuery.data.snippet}
-                </p>
+                <EmailMessageBody
+                  bodyHtml={selectedQuery.data.messages?.[selectedQuery.data.messages.length - 1]?.bodyHtml}
+                  body={selectedQuery.data.body}
+                  snippet={selectedQuery.data.snippet}
+                  className="thread-inbox-message-body"
+                />
               )}
             </div>
 

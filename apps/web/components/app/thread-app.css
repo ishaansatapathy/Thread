@@ -599,6 +599,50 @@
   padding: 8px;
 }
 
+.thread-inbox-list-footer {
+  flex-shrink: 0;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--thread-line);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.thread-inbox-list-footer-hint {
+  margin: 0;
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--thread-dim);
+}
+
+.thread-inbox-list-footer .thread-inbox-loadmore {
+  width: 100%;
+  margin: 0;
+}
+
+.thread-email-html-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--thread-text);
+  overflow-x: auto;
+  word-break: break-word;
+}
+
+.thread-email-html-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.thread-email-html-body a {
+  color: var(--thread-accent, #6ea8ff);
+  text-decoration: underline;
+}
+
+.thread-email-html-body table {
+  max-width: 100%;
+}
+
 .thread-inbox-reading {
   display: flex;
   flex-direction: column;

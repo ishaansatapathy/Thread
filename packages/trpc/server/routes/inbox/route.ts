@@ -21,6 +21,7 @@ const inboxMessageSchema = z.object({
   to: z.string().optional(),
   date: z.string().optional(),
   body: z.string(),
+  bodyHtml: z.string().optional(),
   snippet: z.string(),
 });
 
@@ -88,18 +89,38 @@ export const inboxRouter = router({
         maxResults: z.number().int().min(1).max(100).optional(),
         pageToken: z.string().optional(),
         query: z.string().trim().max(512).optional(),
+        refresh: z.boolean().optional(),
       }),
     )
     .output(
       z.object({
         threads: z.array(inboxThreadSchema),
         nextPageToken: z.string().optional(),
+        stale: z.boolean().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
       try {
         const inbox = getInboxService();
         return await inbox.listThreads(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  listCachedThreads: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/threads/cached"), tags: TAGS } })
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(100).optional(),
+        query: z.string().trim().max(512).optional(),
+      }),
+    )
+    .output(z.object({ threads: z.array(inboxThreadSchema) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        return await inbox.listCachedThreads(ctx.user.id, input);
       } catch (error) {
         mapServiceError(error);
       }

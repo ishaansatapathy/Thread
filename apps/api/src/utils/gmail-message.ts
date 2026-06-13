@@ -54,6 +54,11 @@ function findHtmlPart(payload: MessagePart): string {
   return "";
 }
 
+export function extractHtmlBody(payload: MessagePart | undefined): string {
+  if (!payload) return "";
+  return findHtmlPart(payload);
+}
+
 export function extractPlainBody(payload: MessagePart | undefined): string {
   if (!payload) return "";
 
@@ -108,6 +113,7 @@ export type ParsedGmailMessage = {
   to?: string;
   date?: string;
   body: string;
+  bodyHtml?: string;
   snippet: string;
 };
 
@@ -147,6 +153,7 @@ export function parseGmailMessage(message: {
   if (!message.id) return null;
 
   const headers = message.payload?.headers ?? [];
+  const bodyHtml = extractHtmlBody(message.payload) || undefined;
   const body = extractPlainBody(message.payload) || message.snippet || "";
 
   return {
@@ -155,6 +162,7 @@ export function parseGmailMessage(message: {
     to: getHeader(headers, "To"),
     date: getHeader(headers, "Date"),
     body,
+    bodyHtml,
     snippet: message.snippet ?? body.slice(0, 140),
   };
 }

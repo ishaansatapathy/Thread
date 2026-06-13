@@ -14,6 +14,8 @@ export type InboxMessage = {
   to?: string;
   date?: string;
   body: string;
+  /** Sanitized on the client before render; raw HTML from Gmail when available. */
+  bodyHtml?: string;
   snippet: string;
 };
 
@@ -49,6 +51,18 @@ export type ListThreadsOptions = {
   pageToken?: string;
   /** Gmail search query (e.g. `from:foo subject:bar`). When omitted, lists INBOX. */
   query?: string;
+  /** When true, bypass cache short-circuit and re-fetch metadata from Gmail. */
+  refresh?: boolean;
+};
+
+/** Default inbox page size — initial load and each "load more" chunk. */
+export const INBOX_PAGE_SIZE = 15;
+
+export type ListThreadsResult = {
+  threads: InboxThread[];
+  nextPageToken?: string;
+  /** True when rows were served from local cache and a live refresh may still be in flight. */
+  stale?: boolean;
 };
 
 export interface InboxService {
@@ -57,7 +71,12 @@ export interface InboxService {
   listThreads(
     tenantId: string,
     opts?: ListThreadsOptions,
-  ): Promise<{ threads: InboxThread[]; nextPageToken?: string }>;
+  ): Promise<ListThreadsResult>;
+  /** Postgres-only thread list for instant inbox paint (no Gmail calls). */
+  listCachedThreads(
+    tenantId: string,
+    opts?: { limit?: number; query?: string },
+  ): Promise<{ threads: InboxThread[] }>;
   listDrafts(
     tenantId: string,
     opts?: { maxResults?: number; pageToken?: string },

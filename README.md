@@ -61,7 +61,7 @@ Direct send is **disabled by default** (`THREAD_ALLOW_DIRECT_SEND` must be `true
 ### Gmail workflow
 
 - **Search** — full Gmail query syntax (`from:`, `subject:`, `has:attachment`) via the `query` param; press `/` to focus the box.
-- **Load more** — token-based pagination accumulates pages (no 25-thread cap).
+- **Load more** — 15 threads per page; Postgres cache paints instantly, then Gmail refreshes in the background.
 - **Rich list metadata** — each row is hydrated with sender, subject, date, message count and unread state via a cheap `threads.get(metadata)` enrichment pass.
 - **Drafts** — a Drafts tab lists Gmail drafts (subject/recipient/snippet).
 - **Local mail cache** — thread metadata in Postgres (`thread_mail_cache`). Unchanged threads skip re-fetch when `historyId` matches; search falls back to cache when Gmail is unreachable.
