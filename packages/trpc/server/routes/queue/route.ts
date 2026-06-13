@@ -74,7 +74,7 @@ export const queueRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const queue = getQueueService();
-        return await queue.enqueueEmail(ctx.user.id, input);
+        return await queue.enqueueEmail(ctx.user.id, input, { origin: "inbox" });
       } catch (error) {
         mapServiceError(error);
       }
@@ -114,12 +114,16 @@ export const queueRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const queue = getQueueService();
-        return await queue.enqueueMeetingBundle(ctx.user.id, {
-          bundle: { email: input.email, calendar: input.calendar },
-          title: input.title,
-          preview: input.preview,
-          sourceThreadId: input.sourceThreadId,
-        });
+        return await queue.enqueueMeetingBundle(
+          ctx.user.id,
+          {
+            bundle: { email: input.email, calendar: input.calendar },
+            title: input.title,
+            preview: input.preview,
+            sourceThreadId: input.sourceThreadId,
+          },
+          { origin: "calendar" },
+        );
       } catch (error) {
         mapServiceError(error);
       }

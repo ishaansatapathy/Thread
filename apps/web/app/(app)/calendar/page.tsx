@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { queueResultMessage } from "~/lib/queue-toast";
 import {
   eventDayKey,
   eventToArchivePayload,
@@ -153,10 +154,11 @@ export default function CalendarPage() {
   const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
 
   const queueInvite = trpc.queue.enqueueCalendar.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
       await utils.queue.list.invalidate();
-      toast.success("Invite queued — approve from Queue to add to Google Calendar");
+      const msg = queueResultMessage(item);
+      toast.success(msg.title);
       setShowCreate(false);
       setSummary("");
       setAttendee("");
@@ -170,22 +172,22 @@ export default function CalendarPage() {
   };
 
   const queueArchive = trpc.queue.enqueueCalendarArchive.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
       await utils.queue.list.invalidate();
       setSelectedEvent(null);
-      toast.success("Reschedule queued — confirm the new date in Queue to apply it");
+      toast.success(queueResultMessage(item).title);
     },
     onError: (error) => toast.error(error.message),
   });
 
   const queueDelete = trpc.queue.enqueueCalendarDelete.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
       await utils.queue.list.invalidate();
       setSelectedEvent(null);
       setShowDeleteConfirm(false);
-      toast.success("Delete queued — approve in Queue to remove from Google Calendar");
+      toast.success(queueResultMessage(item).title);
     },
     onError: (error) => toast.error(error.message),
   });

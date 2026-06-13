@@ -58,6 +58,12 @@ export type QueueItem = {
   resolvedAt?: string;
 };
 
+export type QueueEnqueueOrigin = "inbox" | "agent" | "calendar";
+
+export type QueueEnqueueOptions = {
+  origin?: QueueEnqueueOrigin;
+};
+
 export interface QueueService {
   listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all" }): Promise<QueueItem[]>;
   pendingCount(userId: string): Promise<number>;
@@ -69,6 +75,7 @@ export interface QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   enqueueCalendarInvite(
     userId: string,
@@ -77,6 +84,7 @@ export interface QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   enqueueMeetingBundle(
     userId: string,
@@ -86,6 +94,7 @@ export interface QueueService {
       preview?: string;
       sourceThreadId?: string;
     },
+    opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   enqueueCalendarArchive(
     userId: string,
@@ -94,6 +103,7 @@ export interface QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   enqueueCalendarDelete(
     userId: string,
@@ -102,6 +112,7 @@ export interface QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   approve(
     userId: string,

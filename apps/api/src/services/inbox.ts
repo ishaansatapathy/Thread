@@ -17,6 +17,7 @@ import {
   collectMessageHeaders,
   decodeHtmlEntities,
   displaySender,
+  findHeaderInThreadMessages,
   getHeader,
   normalizeSubject,
   parseEmailAddress,
@@ -31,9 +32,11 @@ import { fetchInWaves } from "../utils/gmail-batch";
 
 const LIST_METADATA_HEADERS = ["Subject", "From", "Date"];
 const ENRICH_WAVE_SIZE = INBOX_PAGE_SIZE;
+/** Parallel Gmail metadata gets — keep low to avoid rate limits and timeouts. */
+const ENRICH_CONCURRENCY = 5;
 /** Gmail list via Corsair often takes 12–15s; 8s caused cache fallback without pagination token. */
 const GMAIL_LIST_TIMEOUT_MS = 30_000;
-const ENRICH_TIMEOUT_MS = 20_000;
+const ENRICH_TIMEOUT_MS = 45_000;
 
 type GmailHeader = { name?: string; value?: string };
 
@@ -273,28 +276,53 @@ export class CorsairInboxService implements InboxService {
     }
 
     let enrichmentTimer: ReturnType<typeof setTimeout> | undefined;
+    const partialEnriched = new Map<string, InboxThread>();
+    let enrichmentFinished = false;
+
+    const enrichPromise = this.enrichThreadsToMap(tenantId, corsair, idsNeedingLive, cache).then(
+      (map) => {
+        enrichmentFinished = true;
+        for (const [id, thread] of map) partialEnriched.set(id, thread);
+        return map;
+      },
+    );
+
+    const enrichTimeoutMs = Math.max(
+      ENRICH_TIMEOUT_MS,
+      idsNeedingLive.length * 3_500,
+    );
+
     const cachedFallback = new Promise<Map<string, InboxThread>>((resolve) => {
       enrichmentTimer = setTimeout(() => {
-        logger.warn("Gmail thread enrichment timed out, serving local cache", {
+        if (enrichmentFinished) {
+          resolve(partialEnriched);
+          return;
+        }
+        logger.warn("Gmail thread enrichment timed out, serving partial cache", {
           tenantId,
-          threadCount: ids.length,
+          threadCount: idsNeedingLive.length,
+          enrichedCount: partialEnriched.size,
         });
         const fallback = new Map<string, InboxThread>();
-        for (const id of ids) {
+        for (const id of idsNeedingLive) {
+          const live = partialEnriched.get(id);
+          if (live?.fromName?.trim() || live?.from?.trim()) {
+            fallback.set(id, live);
+            continue;
+          }
           const row = cache.get(id);
           fallback.set(
             id,
-            row ? threadFromCacheOnly(id, row) : { id, snippet: "" },
+            row && isUsableCacheRow(row)
+              ? threadFromCacheOnly(id, row)
+              : (live ?? { id, snippet: row?.snippet ?? "" }),
           );
         }
         resolve(fallback);
-      }, ENRICH_TIMEOUT_MS);
+      }, enrichTimeoutMs);
     });
 
-    const enrichedMap = await Promise.race([
-      this.enrichThreadsToMap(tenantId, corsair, idsNeedingLive, cache),
-      cachedFallback,
-    ]).finally(() => {
+    const enrichedMap = await Promise.race([enrichPromise, cachedFallback]).finally(() => {
       if (enrichmentTimer) clearTimeout(enrichmentTimer);
     });
 
@@ -336,7 +364,7 @@ export class CorsairInboxService implements InboxService {
     const toPersist: CachedThreadMetadata[] = [];
     const result = new Map<string, InboxThread>();
 
-    const threads = await fetchInWaves(ids, ENRICH_WAVE_SIZE, async (id) => {
+    const threads = await mapWithConcurrency(ids, ENRICH_CONCURRENCY, async (id) => {
       try {
         const detail = await corsair.gmail.api.threads.get({
           id,
@@ -428,22 +456,24 @@ export class CorsairInboxService implements InboxService {
     const first = messages[0];
     const last = messages[messages.length - 1] ?? first;
 
-    let subjectHeaders = collectMessageHeaders(first?.payload);
-    let fromHeaders = collectMessageHeaders(last?.payload);
+    let normalized = normalizeSubject(findHeaderInThreadMessages(messages, "Subject", "first"));
+    let fromRaw = findHeaderInThreadMessages(messages, "From", "last");
+    let dateHeader =
+      findHeaderInThreadMessages(messages, "Date", "last") ??
+      findHeaderInThreadMessages(messages, "Date", "first");
 
-    if (!getHeader(subjectHeaders, "Subject")?.trim() && first?.id) {
-      subjectHeaders = await this.loadMessageHeaders(corsair, first.id);
+    if (normalized === "No subject" && first?.id) {
+      const headers = await this.loadMessageHeaders(corsair, first.id);
+      normalized = normalizeSubject(getHeader(headers, "Subject"));
+      dateHeader = dateHeader ?? getHeader(headers, "Date");
     }
-    if (!getHeader(fromHeaders, "From")?.trim() && last?.id) {
-      fromHeaders =
-        last.id === first?.id ? subjectHeaders : await this.loadMessageHeaders(corsair, last.id);
+    if (!fromRaw?.trim() && last?.id) {
+      const headers = await this.loadMessageHeaders(corsair, last.id);
+      fromRaw = getHeader(headers, "From") ?? fromRaw;
+      dateHeader = dateHeader ?? getHeader(headers, "Date");
     }
 
-    const normalized = normalizeSubject(getHeader(subjectHeaders, "Subject"));
     const subject = normalized === "No subject" ? undefined : normalized;
-    const fromRaw = getHeader(fromHeaders, "From");
-    const dateHeader = getHeader(fromHeaders, "Date") ?? getHeader(subjectHeaders, "Date");
-
     return { subject, fromRaw, dateHeader };
   }
 
@@ -451,10 +481,26 @@ export class CorsairInboxService implements InboxService {
     corsair: ReturnType<ReturnType<typeof getCorsair>["withTenant"]>,
     messageId: string,
   ) {
+    try {
+      const detail = await corsair.gmail.api.messages.get({
+        id: messageId,
+        format: "metadata",
+        metadataHeaders: LIST_METADATA_HEADERS,
+      });
+      const headers = collectMessageHeaders(detail.payload as GmailMetadataMessage["payload"]);
+      if (getHeader(headers, "From")?.trim() || getHeader(headers, "Subject")?.trim()) {
+        return headers;
+      }
+    } catch (error) {
+      logger.debug("Gmail metadata headers fetch failed, trying full format", {
+        messageId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const detail = await corsair.gmail.api.messages.get({
       id: messageId,
-      format: "metadata",
-      metadataHeaders: LIST_METADATA_HEADERS,
+      format: "full",
     });
     return collectMessageHeaders(detail.payload as GmailMetadataMessage["payload"]);
   }

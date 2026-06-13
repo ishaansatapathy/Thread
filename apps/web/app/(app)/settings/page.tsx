@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut } from "lucide-react";
+import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut, ListChecks } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { useThreadUser, initials } from "~/components/app/use-thread-user";
@@ -31,11 +31,48 @@ function ConnectionButton({
   );
 }
 
+function ApprovalToggle({
+  title,
+  description,
+  enabled,
+  onToggle,
+  disabled,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="thread-set-row">
+      <span className="thread-set-row-icon">
+        <ListChecks size={17} />
+      </span>
+      <div className="thread-set-row-meta">
+        <h4>{title}</h4>
+        <p>{description}</p>
+      </div>
+      <button
+        type="button"
+        className="thread-set-toggle"
+        data-on={enabled ? "true" : "false"}
+        disabled={disabled}
+        onClick={() => onToggle(!enabled)}
+        aria-pressed={enabled}
+      >
+        {enabled ? "Auto-approve" : "Queue first"}
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user } = useThreadUser();
   const utils = trpc.useUtils();
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
+  const approvalDefaults = trpc.settings.getApprovalDefaults.useQuery({});
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -57,6 +94,23 @@ export default function SettingsPage() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const updateApproval = trpc.settings.updateApprovalDefaults.useMutation({
+    onSuccess: async () => {
+      await utils.settings.getApprovalDefaults.invalidate();
+      toast.success("Approval defaults updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const setApprovalPref = (
+    key: "autoApproveEmail" | "autoApproveAgentEmail" | "autoApproveCalendar",
+    value: boolean,
+  ) => {
+    const current = approvalDefaults.data;
+    if (!current) return;
+    updateApproval.mutate({ ...current, [key]: value });
+  };
 
   const logout = trpc.auth.logout.useMutation({
     onSettled: async () => {
@@ -156,6 +210,39 @@ export default function SettingsPage() {
             connectedLabel="Connected"
           />
         </div>
+      </section>
+
+      {/* Approval defaults */}
+      <section className="thread-set-section">
+        <h2>Approval defaults</h2>
+        <p>
+          Safe by default — everything goes to Queue. Turn on auto-approve when you trust an action type
+          and want it to run immediately.
+        </p>
+
+        <ApprovalToggle
+          title="Email replies (Inbox)"
+          description="Replies and sends composed in Inbox."
+          enabled={approvalDefaults.data?.autoApproveEmail ?? false}
+          disabled={approvalDefaults.isLoading || updateApproval.isPending}
+          onToggle={(value) => setApprovalPref("autoApproveEmail", value)}
+        />
+
+        <ApprovalToggle
+          title="Agent-composed emails"
+          description="Emails drafted or sent by Thread Agent."
+          enabled={approvalDefaults.data?.autoApproveAgentEmail ?? false}
+          disabled={approvalDefaults.isLoading || updateApproval.isPending}
+          onToggle={(value) => setApprovalPref("autoApproveAgentEmail", value)}
+        />
+
+        <ApprovalToggle
+          title="Calendar actions"
+          description="Invites, reschedules, deletes, and meeting bundles."
+          enabled={approvalDefaults.data?.autoApproveCalendar ?? false}
+          disabled={approvalDefaults.isLoading || updateApproval.isPending}
+          onToggle={(value) => setApprovalPref("autoApproveCalendar", value)}
+        />
       </section>
 
       {/* Security */}
