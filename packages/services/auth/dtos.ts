@@ -12,6 +12,7 @@ export const signUpInputBaseSchema = z
       .regex(/[A-Z]/, "Password must include an uppercase letter")
       .regex(/\d/, "Password must include a number"),
     confirmPassword: z.string(),
+    turnstileToken: z.string().min(1).optional(),
   })
   .strict();
 
@@ -23,6 +24,7 @@ export const signUpInputSchema = signUpInputBaseSchema.refine(
 export const signInInputSchema = z.object({
   email: z.string().trim().email("Invalid email"),
   password: z.string().min(1, "Password is required"),
+  turnstileToken: z.string().min(1).optional(),
 });
 
 export const forgotPasswordInputSchema = z.object({
