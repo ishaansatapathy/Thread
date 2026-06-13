@@ -19,14 +19,19 @@ import { serverRouter, openApiRouter, createContext } from "@repo/trpc/server";
 import { env } from "./env";
 
 import { createTrpcRateLimitMiddleware } from "./middleware/rate-limiters";
+import { metricsMiddleware } from "./middleware/observe";
+import { snapshot, toPrometheusText, incrementCounter } from "./metrics";
 
 import { googleAuthRouter } from "./routes/google-auth";
 import { corsairAuthRouter } from "./routes/corsair-auth";
 import { webhooksRouter } from "./routes/webhooks";
+import { mcpRouter } from "./routes/mcp";
 
 export const app = express();
 
 app.set("trust proxy", 1);
+
+app.use(metricsMiddleware);
 
 app.use(
   helmet({
@@ -183,7 +188,12 @@ app.use(cookieParser());
 app.use(express.json({ limit: "256kb" }));
 
 app.get("/", (_req, res) => {
-  return res.json({ message: "Thread API is up and running..." });
+  return res.json({
+    message: "Thread API is up and running...",
+    mcp: `${env.BASE_URL}/mcp`,
+    docs: `${env.BASE_URL}/docs`,
+    health: `${env.BASE_URL}/health`,
+  });
 });
 
 app.get("/health", async (_req, res) => {
@@ -215,6 +225,19 @@ app.get("/ready", async (_req, res) => {
   return res.status(report.ready ? 200 : 503).json(report);
 });
 
+/** Prometheus-compatible plaintext metrics. */
+app.get("/metrics", requireOpenApiDocsAuth, (_req, res) => {
+  res.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  return res.send(toPrometheusText());
+});
+
+/** JSON metrics for dashboards / health pages. */
+app.get("/metrics/json", requireOpenApiDocsAuth, (_req, res) => {
+  return res.json({ ok: true, timestamp: new Date().toISOString(), ...snapshot() });
+});
+
+export { incrementCounter };
+
 logger.debug(`openapi.json: ${env.BASE_URL}/openapi.json`);
 
 app.get("/openapi.json", requireOpenApiDocsAuth, (_req, res) => {
@@ -236,6 +259,7 @@ import("@scalar/express-api-reference")
 app.use("/auth", googleAuthRouter);
 app.use("/auth/corsair", corsairAuthRouter);
 app.use("/webhooks", webhooksRouter);
+app.use("/mcp", mcpRouter);
 
 const trpcRateLimit = createTrpcRateLimitMiddleware();
 

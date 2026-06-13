@@ -29,6 +29,7 @@ import type { SelectMailCacheRow } from "@repo/database/schema";
 
 import { mailCache, type CachedThreadMetadata } from "./mail-cache";
 import { fetchInWaves } from "../utils/gmail-batch";
+import { incrementCounter } from "../metrics";
 
 const LIST_METADATA_HEADERS = ["Subject", "From", "Date"];
 const ENRICH_WAVE_SIZE = INBOX_PAGE_SIZE;
@@ -234,6 +235,7 @@ export class CorsairInboxService implements InboxService {
         tenantId,
         message: error instanceof Error ? error.message : String(error),
       });
+      incrementCounter("inbox.gmail_list_error");
       const threads = query
         ? await mailCache.search(tenantId, query, maxResults)
         : await mailCache.recent(tenantId, maxResults);
@@ -249,6 +251,7 @@ export class CorsairInboxService implements InboxService {
     if (!forceRefresh) {
       const allCached = ids.every((id) => isUsableCacheRow(cache.get(id)));
       if (allCached) {
+        incrementCounter("inbox.cache_hit");
         void this.enrichThreads(tenantId, corsair, ids).catch((error) => {
           logger.warn("Background inbox refresh failed", {
             tenantId,

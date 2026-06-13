@@ -25,6 +25,7 @@ import type {
   QueueItemStatus,
   QueueService,
 } from "@repo/services/queue";
+import { incrementCounter } from "../metrics";
 
 function mapRow(row: SelectQueueItem): QueueItem {
   return {
@@ -388,6 +389,8 @@ export class ThreadQueueService implements QueueService {
 
     try {
       await this.executeItem(userId, claimed.kind, claimed.payload, opts);
+      incrementCounter(`queue.approved.${claimed.kind}`);
+      incrementCounter("queue.approved.total");
       return mapRow(claimed);
     } catch (error) {
       const userMessage = userFacingApproveError(error);
@@ -423,6 +426,7 @@ export class ThreadQueueService implements QueueService {
     if (!updated) {
       throw serviceError("NOT_FOUND", "Queue item not found or already resolved");
     }
+    incrementCounter("queue.dismissed.total");
     return mapRow(updated);
   }
 
