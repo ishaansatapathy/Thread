@@ -36,6 +36,8 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().optional(),
   EMAIL_SENDER_NAME: z.string().optional(),
   EMAIL_PROVIDER: z.literal("brevo").optional(),
+  /** Cloudflare Turnstile secret — bot protection on sign-up / sign-in */
+  TURNSTILE_SECRET_KEY: z.string().optional(),
 });
 
 function createEnv(env: NodeJS.ProcessEnv) {

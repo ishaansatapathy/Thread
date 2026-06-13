@@ -16,6 +16,7 @@ import {
   verifyEmailInputSchema,
   verifyOtpInputSchema,
 } from "@repo/services/auth/dtos";
+import { assertTurnstileToken, getClientIp } from "@repo/services/auth/turnstile";
 
 import { TRPCError } from "@trpc/server";
 
@@ -39,12 +40,14 @@ export const authRouter = router({
     .meta({ openapi: { method: "POST", path: getPath("/sign-up"), tags: TAGS } })
     .input(signUpInputBaseSchema)
     .output(signUpOutputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       try {
         if (input.password !== input.confirmPassword) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Passwords do not match" });
         }
-        return await authService.signUp(input);
+        await assertTurnstileToken(input.turnstileToken, getClientIp(ctx.req));
+        const { turnstileToken: _token, ...signUpInput } = input;
+        return await authService.signUp(signUpInput);
       } catch (error) {
         mapAuthError(error);
       }
@@ -56,7 +59,9 @@ export const authRouter = router({
     .output(signInOutputSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        return await authService.signIn(input, ctx.res);
+        await assertTurnstileToken(input.turnstileToken, getClientIp(ctx.req));
+        const { turnstileToken: _token, ...signInInput } = input;
+        return await authService.signIn(signInInput, ctx.res);
       } catch (error) {
         mapAuthError(error);
       }

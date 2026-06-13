@@ -109,6 +109,15 @@ The web app uses tRPC internally; OpenAPI is for tools, integrations, and AI fun
 | `BREVO_API_KEY` | Brevo API key |
 | `EMAIL_FROM` | Verified sender |
 
+### Turnstile (bot protection)
+
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key (widget on sign-in / sign-up) |
+| `TURNSTILE_SECRET_KEY` | Turnstile secret for server-side verification |
+
+Both unset = Turnstile disabled (fine for local dev). In production, set both and add your domain plus `localhost` in the Turnstile dashboard hostnames.
+
 ### OpenAI (Priority inbox tab)
 
 | Variable | Description |

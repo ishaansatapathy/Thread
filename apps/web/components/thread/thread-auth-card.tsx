@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TRPCClientError } from "@repo/trpc/client";
 import { signInInputSchema, signUpInputSchema } from "@repo/services/auth/dtos";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
 import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
+import { env } from "~/env";
 import { trpc } from "~/trpc/client";
 import { ThreadLogoMark } from "./thread-logo";
 
@@ -58,9 +60,13 @@ export function ThreadAuthCard({
   pendingTwoFactorEmail,
 }: ThreadAuthCardProps) {
   const isLogin = mode === "sign-in";
+  const turnstileSiteKey = env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim();
+  const turnstileEnabled = Boolean(turnstileSiteKey);
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
   const [twoFactorStep, setTwoFactorStep] = useState<{
     email: string;
     displayEmail: string;
@@ -97,6 +103,23 @@ export function ThreadAuthCard({
     toast.info("Enter the verification code we sent to your email.");
   }, [pendingTwoFactorEmail]);
 
+  useEffect(() => {
+    setTurnstileToken(null);
+    turnstileRef.current?.reset();
+  }, [mode]);
+
+  const resetTurnstile = () => {
+    setTurnstileToken(null);
+    turnstileRef.current?.reset();
+  };
+
+  const requireTurnstileToken = () => {
+    if (!turnstileEnabled) return true;
+    if (turnstileToken) return true;
+    setError("Complete the security check and try again.");
+    return false;
+  };
+
   const getErrorMessage = (err: unknown) => {
     if (err instanceof TRPCClientError) return err.message;
     if (err instanceof Error) return err.message;
@@ -111,10 +134,14 @@ export function ThreadAuthCard({
 
   const handleSubmit = isLogin
     ? signInForm.handleSubmit(async (values) => {
+        if (!requireTurnstileToken()) return;
         setLoading(true);
         setError("");
         try {
-          const result = await signInMutation.mutateAsync(values);
+          const result = await signInMutation.mutateAsync({
+            ...values,
+            turnstileToken: turnstileToken ?? undefined,
+          });
           if (result.twoFactorRequired) {
             setTwoFactorStep({
               email: result.email,
@@ -127,20 +154,26 @@ export function ThreadAuthCard({
           await completeSignIn();
         } catch (err) {
           setError(getErrorMessage(err));
+          resetTurnstile();
         } finally {
           setLoading(false);
         }
       })
     : signUpForm.handleSubmit(async (values) => {
+        if (!requireTurnstileToken()) return;
         setLoading(true);
         setError("");
         try {
-          await signUpMutation.mutateAsync(values);
+          await signUpMutation.mutateAsync({
+            ...values,
+            turnstileToken: turnstileToken ?? undefined,
+          });
           toast.success("Account created — verify your email to continue");
           window.location.assign(`/check-email?email=${encodeURIComponent(values.email)}`);
         } catch (err) {
           const message = getErrorMessage(err);
           setError(message);
+          resetTurnstile();
           if (message.toLowerCase().includes("verify your email")) {
             window.location.assign(`/check-email?email=${encodeURIComponent(values.email)}`);
           }
@@ -298,6 +331,22 @@ export function ThreadAuthCard({
           </>
         )}
 
+        {turnstileEnabled && !twoFactorStep && (
+          <div className="thread-auth-turnstile">
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={turnstileSiteKey!}
+              onSuccess={setTurnstileToken}
+              onExpire={() => setTurnstileToken(null)}
+              onError={() => {
+                setTurnstileToken(null);
+                setError("Security check failed to load. Refresh and try again.");
+              }}
+              options={{ theme: "dark" }}
+            />
+          </div>
+        )}
+
         {(error ||
           signInForm.formState.errors.email?.message ||
           signInForm.formState.errors.password?.message ||
@@ -305,7 +354,7 @@ export function ThreadAuthCard({
           <p className="thread-auth-error">{error || "Check your details and try again."}</p>
         )}
 
-            <button type="submit" className="thread-auth-submit" disabled={loading}>
+            <button type="submit" className="thread-auth-submit" disabled={loading || (turnstileEnabled && !turnstileToken && !twoFactorStep)}>
               {loading ? "Please wait…" : twoFactorStep ? "Verify" : isLogin ? "Sign in" : "Create account"}
             </button>
           </form>
