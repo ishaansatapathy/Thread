@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: queue-workflow.spec.ts >> seeded pending item can be approved with mock Gmail
-- Location: e2e\queue-workflow.spec.ts:40:1
+- Name: gmail-authenticated.spec.ts >> demo user can complete queue workflow with mock Gmail
+- Location: e2e\gmail-authenticated.spec.ts:46:1
 
 # Error details
 
