@@ -13,6 +13,7 @@ import {
   Search,
   Sparkles,
   ListChecks,
+  Square,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -260,6 +261,7 @@ export default function AgentPage() {
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   const historyQuery = trpc.agent.getHistory.useQuery({}, { staleTime: Infinity });
   const saveHistoryMutation = trpc.agent.saveHistory.useMutation();
@@ -319,6 +321,18 @@ export default function AgentPage() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, isPending, streamStatus]);
 
+  useEffect(() => {
+    return () => streamAbortRef.current?.abort();
+  }, []);
+
+  const stopStream = () => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setIsPending(false);
+    setStreamStatus(null);
+    toast.message("Stopped.");
+  };
+
   const send = (text: string) => {
     const message = text.trim();
     if (!message || isPending) return;
@@ -326,6 +340,10 @@ export default function AgentPage() {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
       return;
     }
+    streamAbortRef.current?.abort();
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
     setInput("");
     setLastActions([]);
     setStreamStatus(null);
@@ -338,6 +356,7 @@ export default function AgentPage() {
       credentials: "include",
       headers: { "Content-Type": "application/json", "x-thread-csrf": "1" },
       body: JSON.stringify({ message, history, userEmail: meQuery.data?.email }),
+      signal: abortController.signal,
     })
       .then(async (res) => {
         if (!res.ok || !res.body) {
@@ -402,9 +421,14 @@ export default function AgentPage() {
         }
       })
       .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof Error && err.name === "AbortError") return;
         toast.error(err instanceof Error ? err.message : "Agent request failed");
       })
       .finally(() => {
+        if (streamAbortRef.current === abortController) {
+          streamAbortRef.current = null;
+        }
         setIsPending(false);
         setStreamStatus(null);
       });
@@ -426,7 +450,18 @@ export default function AgentPage() {
                   ? status.data?.model ?? "gpt-4o-mini"
                   : "OpenAI required"}
             </span>
-            {messages.length > 0 ? (
+            {isPending ? (
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6 }}
+                onClick={stopStream}
+                title="Stop current request"
+              >
+                <Square size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+                Stop
+              </button>
+            ) : messages.length > 0 ? (
               <button
                 type="button"
                 className="thread-btn-ghost"
@@ -478,12 +513,20 @@ export default function AgentPage() {
               </div>
             ))}
 
-            {isPending && messages[messages.length - 1]?.role !== "assistant" ? (
+            {isPending ? (
               <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
                 <Loader2 size={13} className="thread-spin" />
                 <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>
                   {streamStatus ?? "Thinking…"}
                 </span>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 11, padding: "4px 10px", marginLeft: "auto" }}
+                  onClick={stopStream}
+                >
+                  Stop
+                </button>
               </div>
             ) : null}
 
