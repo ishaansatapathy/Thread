@@ -107,6 +107,8 @@ _*_ref/
 
 # Videos & recordings
 
+ref_video/
+
 *.mp4
 
 *.mov
