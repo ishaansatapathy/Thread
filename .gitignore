@@ -123,6 +123,7 @@ Recording*
 apps/web/public/fonts/*.ttf
 apps/web/public/fonts/*.woff2
 *.ttf
+!apps/web/app/fonts/ThreadHero.ttf
 *.otf
 Readme.txt
 *Sigokae*
