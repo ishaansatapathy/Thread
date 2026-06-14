@@ -104,6 +104,17 @@ export interface InboxService {
    * Best-effort: implementations must not throw on failure.
    */
   archiveThread(tenantId: string, threadId: string): Promise<void>;
+  /** List all user-defined and system Gmail labels. */
+  listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>>;
+  /** Apply one or more label IDs to a thread. */
+  applyLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
+  /** Remove a label from a thread. */
+  removeLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
+  /**
+   * Revoke Gmail OAuth credentials for a tenant (disconnect Gmail).
+   * Best-effort — does not throw.
+   */
+  disconnect(tenantId: string): Promise<void>;
 }
 
 let inboxService: InboxService | null = null;

@@ -27,6 +27,7 @@ import { corsairAuthRouter } from "./routes/corsair-auth";
 import { webhooksRouter } from "./routes/webhooks";
 import { mcpRouter } from "./routes/mcp";
 import { agentStreamRouter } from "./routes/agent-stream";
+import { attachmentsRouter } from "./routes/attachments";
 
 export const app = express();
 
@@ -262,6 +263,7 @@ app.use("/auth/corsair", corsairAuthRouter);
 app.use("/webhooks", webhooksRouter);
 app.use("/mcp", mcpRouter);
 app.use("/agent/stream", agentStreamRouter);
+app.use("/inbox/attachments", attachmentsRouter);
 
 const trpcRateLimit = createTrpcRateLimitMiddleware();
 

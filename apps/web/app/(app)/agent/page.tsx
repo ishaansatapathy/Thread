@@ -191,7 +191,7 @@ function ActionPanel({
 const HISTORY_KEY = "thread:agent:history";
 const MAX_STORED_MESSAGES = 40;
 
-function loadHistory(): ChatMessage[] {
+function loadLocalHistory(): ChatMessage[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
@@ -201,10 +201,9 @@ function loadHistory(): ChatMessage[] {
   }
 }
 
-function saveHistory(messages: ChatMessage[]) {
+function saveLocalHistory(messages: ChatMessage[]) {
   try {
-    const trimmed = messages.slice(-MAX_STORED_MESSAGES);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
   } catch {
     // localStorage unavailable (SSR / private mode)
   }
@@ -219,19 +218,36 @@ export default function AgentPage() {
   const feedRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
 
-  // Restore history from localStorage on mount.
+  const historyQuery = trpc.agent.getHistory.useQuery({}, { staleTime: Infinity });
+  const saveHistoryMutation = trpc.agent.saveHistory.useMutation();
+  const clearHistoryMutation = trpc.agent.clearHistory.useMutation();
+
+  // Load from DB first; fall back to localStorage if DB is empty.
   useEffect(() => {
     if (historyLoaded.current) return;
+    if (historyQuery.isLoading) return;
     historyLoaded.current = true;
-    const saved = loadHistory();
-    if (saved.length > 0) setMessages(saved);
-  }, []);
-
-  // Persist messages whenever they change.
-  useEffect(() => {
-    if (historyLoaded.current && messages.length > 0) {
-      saveHistory(messages);
+    if (historyQuery.data && historyQuery.data.length > 0) {
+      setMessages(historyQuery.data as ChatMessage[]);
+      // Sync localStorage too
+      saveLocalHistory(historyQuery.data as ChatMessage[]);
+    } else {
+      const local = loadLocalHistory();
+      if (local.length > 0) {
+        setMessages(local);
+        // Back-fill DB from localStorage
+        saveHistoryMutation.mutate({ messages: local });
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyQuery.isLoading, historyQuery.data]);
+
+  // Persist to both DB and localStorage on every message change.
+  useEffect(() => {
+    if (!historyLoaded.current || messages.length === 0) return;
+    saveLocalHistory(messages);
+    saveHistoryMutation.mutate({ messages: messages.slice(-MAX_STORED_MESSAGES) });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
   const status = trpc.agent.status.useQuery({});
@@ -353,6 +369,7 @@ export default function AgentPage() {
                   setMessages([]);
                   setLastActions([]);
                   try { localStorage.removeItem(HISTORY_KEY); } catch { /* ignore */ }
+                  clearHistoryMutation.mutate({});
                 }}
                 title="Clear conversation history"
               >

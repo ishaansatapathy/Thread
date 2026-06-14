@@ -2,25 +2,41 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut, ListChecks } from "lucide-react";
+import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut, ListChecks, Unlink } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { useThreadUser, initials } from "~/components/app/use-thread-user";
 
-function ConnectionButton({
+function ConnectionRow({
   connected,
   connectHref,
   connectedLabel,
+  onDisconnect,
+  disconnecting,
 }: {
   connected: boolean;
   connectHref: string;
   connectedLabel: string;
+  onDisconnect: () => void;
+  disconnecting?: boolean;
 }) {
   if (connected) {
     return (
-      <span className="thread-set-status" data-on={true}>
-        {connectedLabel}
-      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="thread-set-status" data-on={true}>
+          {connectedLabel}
+        </span>
+        <button
+          type="button"
+          className="thread-btn-ghost"
+          style={{ fontSize: 12, padding: "6px 12px", color: "var(--thread-dim)" }}
+          disabled={disconnecting}
+          onClick={onDisconnect}
+        >
+          <Unlink size={12} />
+          {disconnecting ? "Disconnecting…" : "Disconnect"}
+        </button>
+      </div>
     );
   }
 
@@ -119,6 +135,22 @@ export default function SettingsPage() {
     },
   });
 
+  const disconnectGmail = trpc.inbox.disconnectGmail.useMutation({
+    onSuccess: async () => {
+      await utils.inbox.connectionStatus.invalidate();
+      toast.success("Gmail disconnected");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const disconnectCalendar = trpc.calendar.disconnectCalendar.useMutation({
+    onSuccess: async () => {
+      await utils.calendar.connectionStatus.invalidate();
+      toast.success("Google Calendar disconnected");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (!user) return null;
 
   const nameChanged = name.trim().length > 0 && name.trim() !== (user.displayName || user.fullName || "");
@@ -189,10 +221,12 @@ export default function SettingsPage() {
             <h4>Gmail</h4>
             <p>Sync threads, rank urgency, and draft replies.</p>
           </div>
-          <ConnectionButton
+          <ConnectionRow
             connected={inboxStatus.data?.gmail === "connected"}
             connectHref="/api-connect/gmail?state=/settings"
             connectedLabel="Connected"
+            onDisconnect={() => disconnectGmail.mutate({})}
+            disconnecting={disconnectGmail.isPending}
           />
         </div>
 
@@ -204,10 +238,12 @@ export default function SettingsPage() {
             <h4>Google Calendar</h4>
             <p>Find slots and send invites through Corsair.</p>
           </div>
-          <ConnectionButton
+          <ConnectionRow
             connected={calendarStatus.data?.googlecalendar === "connected"}
             connectHref="/api-connect/calendar?state=/settings"
             connectedLabel="Connected"
+            onDisconnect={() => disconnectCalendar.mutate({})}
+            disconnecting={disconnectCalendar.isPending}
           />
         </div>
       </section>

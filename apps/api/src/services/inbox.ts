@@ -716,4 +716,55 @@ export class CorsairInboxService implements InboxService {
       });
     }
   }
+
+  async listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>> {
+    try {
+      const corsair = getCorsair().withTenant(tenantId);
+      const result = await (corsair.gmail.api.users as {
+        labels: { list: (opts: { userId: string }) => Promise<{ labels?: Array<{ id?: string; name?: string; type?: string }> }> };
+      }).labels.list({ userId: "me" });
+      return (result.labels ?? [])
+        .filter((l) => l.id && l.name)
+        .map((l) => ({ id: l.id!, name: l.name!, type: l.type }));
+    } catch (error) {
+      logger.warn("listLabels failed", {
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return [];
+    }
+  }
+
+  async applyLabel(tenantId: string, threadId: string, labelId: string): Promise<void> {
+    try {
+      const corsair = getCorsair().withTenant(tenantId);
+      await corsair.gmail.api.threads.modify({ id: threadId, addLabelIds: [labelId] });
+    } catch (error) {
+      logger.warn("applyLabel failed", { tenantId, threadId, labelId, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async removeLabel(tenantId: string, threadId: string, labelId: string): Promise<void> {
+    try {
+      const corsair = getCorsair().withTenant(tenantId);
+      await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: [labelId] });
+    } catch (error) {
+      logger.warn("removeLabel failed", { tenantId, threadId, labelId, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  async disconnect(tenantId: string): Promise<void> {
+    try {
+      const corsair = getCorsair();
+      await (corsair.manage as {
+        connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
+      }).connections?.delete({ tenantId, provider: "gmail" });
+      invalidateConnectionCache(tenantId);
+    } catch (error) {
+      logger.warn("disconnect gmail failed (best-effort)", {
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
