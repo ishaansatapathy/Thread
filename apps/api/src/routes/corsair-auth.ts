@@ -199,6 +199,24 @@ corsairAuthRouter.get("/calendar/callback", async (req, res) => {
 
   try {
     await calendarService.completeCalendarOAuth({ code, state });
+
+    // Register a Calendar push-notification channel (webhook) if a base URL is configured.
+    // This is best-effort; failure should never block the OAuth redirect.
+    const webhooksBaseUrl = process.env.WEBHOOKS_BASE_URL?.trim() || env.BASE_URL;
+    if (webhooksBaseUrl) {
+      const user = await authService.resolveSession(req, res);
+      if (user) {
+        void calendarService.registerWebhook(user.id, `${webhooksBaseUrl}/webhooks/calendar`).catch(
+          (err: unknown) => {
+            logger.warn("Calendar webhook registration failed (non-critical)", {
+              userId: user.id,
+              message: err instanceof Error ? err.message : String(err),
+            });
+          },
+        );
+      }
+    }
+
     return res.redirect(`${env.CLIENT_URL}${returnTo}?calendar=connected`);
   } catch (error) {
     logger.error("Calendar OAuth callback failed", {

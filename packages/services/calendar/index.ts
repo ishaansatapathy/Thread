@@ -73,6 +73,13 @@ export interface CalendarService {
     tenantId: string,
     input: { startDateTime: string; endDateTime: string; timeZone?: string },
   ): Promise<{ conflicts: CalendarEvent[] }>;
+  /** Revoke Google Calendar OAuth credentials (disconnect). Best-effort, does not throw. */
+  disconnect(tenantId: string): Promise<void>;
+  /**
+   * Register a Google Calendar push-notification channel.
+   * Best-effort — does not throw on failure.
+   */
+  registerWebhook(tenantId: string, webhookUrl: string): Promise<void>;
 }
 
 let calendarService: CalendarService | null = null;

@@ -153,4 +153,14 @@ export const calendarRouter = router({
         mapServiceError(error);
       }
     }),
+
+  disconnectCalendar: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/disconnect"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const calendar = getCalendarService();
+      await calendar.disconnect(ctx.user.id);
+      return { ok: true };
+    }),
 });

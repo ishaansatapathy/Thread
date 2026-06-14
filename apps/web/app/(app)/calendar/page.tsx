@@ -90,7 +90,7 @@ type CalendarEventItem = {
   htmlLink?: string;
   status?: string;
   isRecurring?: boolean;
-  attendees?: Array<{ email?: string; displayName?: string; responseStatus?: string }>;
+  attendees?: Array<{ email?: string; displayName?: string; responseStatus?: string; organizer?: boolean }>;
   pending?: boolean;
   pendingArchive?: boolean;
   pendingDelete?: boolean;
@@ -621,11 +621,36 @@ export default function CalendarPage() {
                   <span className="thread-cal-event-tag">{selectedEvent.location}</span>
                 ) : null}
               </div>
-              {selectedEvent.isRecurring ? (
+                {selectedEvent.isRecurring ? (
                 <p className="thread-cal-event-detail-copy">
                   This is one occurrence of a recurring series. Reschedule or delete affects only
                   this occurrence in Google Calendar.
                 </p>
+              ) : null}
+              {selectedEvent.attendees && selectedEvent.attendees.length > 0 ? (
+                <ul className="thread-cal-attendee-list">
+                  {selectedEvent.attendees.map((attendee) => (
+                    <li key={attendee.email} className="thread-cal-attendee-item">
+                      <span className="thread-cal-attendee-name">
+                        {attendee.displayName || attendee.email}
+                        {attendee.organizer ? (
+                          <span style={{ fontSize: 10.5, color: "var(--thread-dim)", marginLeft: 4 }}>(organizer)</span>
+                        ) : null}
+                      </span>
+                      {attendee.responseStatus ? (
+                        <span className="thread-rsvp-badge" data-status={attendee.responseStatus}>
+                          {attendee.responseStatus === "accepted"
+                            ? "Accepted"
+                            : attendee.responseStatus === "declined"
+                              ? "Declined"
+                              : attendee.responseStatus === "tentative"
+                                ? "Maybe"
+                                : "Pending"}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
               <ul className="thread-cal-event-actions-legend">
                 <li>

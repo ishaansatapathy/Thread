@@ -227,4 +227,43 @@ export const inboxRouter = router({
       await inbox.archiveThread(ctx.user.id, input.threadId);
       return { ok: true };
     }),
+
+  listLabels: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/labels"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional() })))
+    .query(async ({ ctx }) => {
+      const inbox = getInboxService();
+      return inbox.listLabels(ctx.user.id);
+    }),
+
+  applyLabel: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/labels"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1), labelId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      await inbox.applyLabel(ctx.user.id, input.threadId, input.labelId);
+      return { ok: true };
+    }),
+
+  removeLabel: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/threads/{threadId}/labels/{labelId}"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1), labelId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      await inbox.removeLabel(ctx.user.id, input.threadId, input.labelId);
+      return { ok: true };
+    }),
+
+  disconnectGmail: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/disconnect"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      const inbox = getInboxService();
+      await inbox.disconnect(ctx.user.id);
+      return { ok: true };
+    }),
 });

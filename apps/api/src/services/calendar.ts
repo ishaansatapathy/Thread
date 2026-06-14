@@ -287,4 +287,49 @@ export class CorsairCalendarService implements CalendarService {
       return { conflicts: [] };
     }
   }
+
+  async disconnect(tenantId: string): Promise<void> {
+    try {
+      const corsair = getCorsair();
+      await (corsair.manage as {
+        connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
+      }).connections?.delete({ tenantId, provider: "googlecalendar" });
+    } catch (error) {
+      logger.warn("disconnect calendar failed (best-effort)", {
+        tenantId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async registerWebhook(tenantId: string, webhookUrl: string): Promise<void> {
+    try {
+      const status = await this.getConnectionStatus(tenantId);
+      if (status.googlecalendar !== "connected") return;
+
+      const corsair = getCorsair().withTenant(tenantId);
+      const channelId = `thread-calendar-${tenantId}-${Date.now()}`;
+      await (corsair.googlecalendar.api.events as {
+        watch?: (opts: {
+          calendarId: string;
+          channel: { id: string; type: string; address: string };
+        }) => Promise<unknown>;
+      }).watch?.({
+        calendarId: "primary",
+        channel: {
+          id: channelId,
+          type: "web_hook",
+          address: webhookUrl,
+        },
+      });
+
+      logger.info("Calendar webhook channel registered", { tenantId, channelId, webhookUrl });
+    } catch (error) {
+      logger.warn("registerWebhook failed (best-effort)", {
+        tenantId,
+        webhookUrl,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }

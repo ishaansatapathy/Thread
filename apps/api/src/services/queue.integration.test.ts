@@ -50,6 +50,10 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       createDraft,
       markThreadRead: vi.fn(async () => undefined),
       archiveThread: vi.fn(async () => undefined),
+      listLabels: vi.fn(async () => []),
+      applyLabel: vi.fn(async () => undefined),
+      removeLabel: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
     };
 
     registerInboxService(inboxStub);
@@ -67,6 +71,8 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       }),
       deleteEvent: async () => ({ success: true as const }),
       checkFreeBusy: async () => ({ conflicts: [] }),
+      disconnect: vi.fn(async () => undefined),
+      registerWebhook: vi.fn(async () => undefined),
     });
   });
 

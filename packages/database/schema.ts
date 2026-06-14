@@ -2,4 +2,5 @@ export * from "./models/user";
 export * from "./models/queue-item";
 export * from "./models/mail-cache";
 export * from "./models/thread-contact";
+export * from "./models/agent-chat-history";
 export * from "./relations";

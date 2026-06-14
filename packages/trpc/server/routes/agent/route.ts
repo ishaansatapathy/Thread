@@ -2,6 +2,9 @@ import { z } from "zod";
 
 import { logger } from "@repo/logger";
 import { isAgentConfigured, runAgentChat } from "@repo/services/ai/agent";
+import { eq } from "@repo/database";
+import db from "@repo/database";
+import { agentChatHistoryTable } from "@repo/database/schema";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -13,6 +16,8 @@ const historyMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().max(8000),
 });
+
+const MAX_STORED_MESSAGES = 40;
 
 const actionCardSchema = z.object({
   kind: z.enum(["email_queued", "calendar_queued", "inbox_search", "inbox_ranked", "queue_list", "thread"]),
@@ -67,6 +72,58 @@ export const agentRouter = router({
         });
       } catch (error) {
         mapServiceError(error);
+      }
+    }),
+
+  getHistory: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/history"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.array(historyMessageSchema))
+    .query(async ({ ctx }) => {
+      try {
+        const [row] = await db
+          .select({ messages: agentChatHistoryTable.messages })
+          .from(agentChatHistoryTable)
+          .where(eq(agentChatHistoryTable.userId, ctx.user.id))
+          .limit(1);
+        return (row?.messages ?? []).slice(-MAX_STORED_MESSAGES);
+      } catch {
+        return [];
+      }
+    }),
+
+  saveHistory: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/history"), tags: TAGS } })
+    .input(z.object({ messages: z.array(historyMessageSchema).max(MAX_STORED_MESSAGES) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const trimmed = input.messages.slice(-MAX_STORED_MESSAGES);
+        await db
+          .insert(agentChatHistoryTable)
+          .values({ userId: ctx.user.id, messages: trimmed, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: agentChatHistoryTable.userId,
+            set: { messages: trimmed, updatedAt: new Date() },
+          });
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    }),
+
+  clearHistory: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/history"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx }) => {
+      try {
+        await db
+          .delete(agentChatHistoryTable)
+          .where(eq(agentChatHistoryTable.userId, ctx.user.id));
+        return { ok: true };
+      } catch {
+        return { ok: false };
       }
     }),
 });

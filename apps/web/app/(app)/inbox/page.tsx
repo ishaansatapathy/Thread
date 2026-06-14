@@ -11,6 +11,7 @@ import {
   FilePenLine,
   FileText,
   Archive,
+  Tag,
   CalendarPlus,
   ListChecks,
   X,
@@ -207,6 +208,7 @@ export default function InboxPage() {
   );
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
+  const [showLabelPicker, setShowLabelPicker] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -255,6 +257,20 @@ export default function InboxPage() {
       toast.success("Thread archived");
     },
     onError: (error) => toast.error(error.message),
+  });
+
+  const labelsQuery = trpc.inbox.listLabels.useQuery({}, {
+    staleTime: 5 * 60_000,
+  });
+
+  const applyLabel = trpc.inbox.applyLabel.useMutation({
+    onSuccess: () => toast.success("Label applied"),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const removeLabel = trpc.inbox.removeLabel.useMutation({
+    onSuccess: () => toast.success("Label removed"),
+    onError: (e) => toast.error(e.message),
   });
 
   // Debounce the search box so each keystroke doesn't hit Gmail.
@@ -816,6 +832,39 @@ export default function InboxPage() {
                   <Archive size={14} />
                   {archiveThread.isPending ? "Archiving…" : "Archive"}
                 </button>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="thread-btn-ghost"
+                    style={{ fontSize: 12, padding: "7px 12px" }}
+                    onClick={() => setShowLabelPicker((v) => !v)}
+                    title="Apply a label"
+                  >
+                    <Tag size={14} />
+                    Label
+                  </button>
+                  {showLabelPicker && labelsQuery.data && labelsQuery.data.length > 0 ? (
+                    <div className="thread-label-picker">
+                      <p className="thread-label-picker-head">Apply label</p>
+                      {labelsQuery.data
+                        .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
+                        .slice(0, 15)
+                        .map((label) => (
+                          <button
+                            key={label.id}
+                            type="button"
+                            className="thread-label-picker-item"
+                            onClick={() => {
+                              if (selectedId) applyLabel.mutate({ threadId: selectedId, labelId: label.id });
+                              setShowLabelPicker(false);
+                            }}
+                          >
+                            {label.name}
+                          </button>
+                        ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
