@@ -14,6 +14,7 @@ import {
   PanelsTopLeft,
   ListChecks,
   Bot,
+  BarChart2,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -28,6 +29,7 @@ const NAV = [
   { label: "Queue", href: "/queue", icon: ListChecks },
   { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Agent", href: "/agent", icon: Bot },
+  { label: "Analytics", href: "/analytics", icon: BarChart2 },
 ];
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
@@ -35,6 +37,7 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
   "/agent": { title: "Agent", sub: "AI assistant — always through Queue" },
+  "/analytics": { title: "Analytics", sub: "Queue activity & trends" },
   "/settings": { title: "Settings", sub: "Account & connections" },
 };
 
