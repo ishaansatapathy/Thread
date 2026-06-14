@@ -247,6 +247,53 @@ Available at `http://localhost:8000/docs` (requires `DOCS_SECRET` env var or que
 
 ---
 
+## Demo
+
+### Quick demo login
+
+The app ships with a one-click demo login that bypasses the sign-up + email verification flow.
+
+**Step 1 — seed the demo user** (once, after migrations):
+
+```bash
+pnpm db:seed
+```
+
+This creates:
+
+| Field | Value |
+|-------|-------|
+| Email | `demo@thread.dev` (or `SEED_USER_EMAIL`) |
+| Password | `DemoPass123!` (or `SEED_DEMO_PASSWORD`) |
+
+**Step 2 — enable demo login** in `.env`:
+
+```env
+DEMO_LOGIN_ENABLED=true
+DEMO_USER_EMAIL=demo@thread.dev
+DEMO_USER_PASSWORD=DemoPass123!
+```
+
+**Step 3 — open the demo URL**:
+
+```
+http://localhost:3000/api-auth/demo?next=/inbox
+```
+
+This signs in automatically and redirects to the inbox. No email verification required.
+
+### Manual sign-in
+
+Alternatively, sign up normally at `http://localhost:3000/sign-up` with any email, verify it, then sign in.
+
+### Connecting Gmail + Calendar
+
+After signing in, go to `/inbox` → **Connect Gmail** (top right) and follow the OAuth flow. Repeat for Calendar at `/calendar`.
+
+Once connected, the agent and inbox are fully live against your real Gmail account.
+
+---
+
 ## Security notes
 
 - All outbound actions go through the human-in-the-loop queue — nothing sends without explicit approval
