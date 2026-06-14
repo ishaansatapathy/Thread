@@ -22,10 +22,25 @@
 
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { logger } from "@repo/logger";
 import { authService } from "@repo/trpc/server/services";
 import { runAgentChatStream } from "@repo/services/ai/agent-stream";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
+
+const agentStreamBodySchema = z.object({
+  message: z.string().trim().min(1, "message is required").max(4000),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().max(8000),
+      }),
+    )
+    .max(24)
+    .optional(),
+  userEmail: z.string().email().optional(),
+});
 
 export const agentStreamRouter = Router();
 
@@ -46,15 +61,14 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     }
   }
 
-  const { message, history, userEmail } = req.body as {
-    message?: string;
-    history?: Array<{ role: "user" | "assistant"; content: string }>;
-    userEmail?: string;
-  };
-
-  if (!message?.trim()) {
-    return res.status(400).json({ error: "message is required" });
+  const parsed = agentStreamBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: parsed.error.issues[0]?.message ?? "Invalid request body",
+    });
   }
+
+  const { message, history, userEmail } = parsed.data;
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");

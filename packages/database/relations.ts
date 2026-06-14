@@ -1,15 +1,45 @@
 import { relations } from "drizzle-orm";
 
+import { agentChatHistoryTable } from "./models/agent-chat-history";
+import { threadMailCacheTable } from "./models/mail-cache";
 import { threadQueueItemsTable } from "./models/queue-item";
+import { threadContactsTable } from "./models/thread-contact";
 import { usersTable } from "./models/user";
 
-export const usersRelations = relations(usersTable, ({ many }) => ({
+export const usersRelations = relations(usersTable, ({ many, one }) => ({
   queueItems: many(threadQueueItemsTable),
+  contacts: many(threadContactsTable),
+  mailCache: many(threadMailCacheTable),
+  agentChatHistory: one(agentChatHistoryTable, {
+    fields: [usersTable.id],
+    references: [agentChatHistoryTable.userId],
+  }),
 }));
 
 export const threadQueueItemsRelations = relations(threadQueueItemsTable, ({ one }) => ({
   user: one(usersTable, {
     fields: [threadQueueItemsTable.userId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const threadContactsRelations = relations(threadContactsTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [threadContactsTable.userId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const threadMailCacheRelations = relations(threadMailCacheTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [threadMailCacheTable.userId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const agentChatHistoryRelations = relations(agentChatHistoryTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [agentChatHistoryTable.userId],
     references: [usersTable.id],
   }),
 }));

@@ -13,15 +13,24 @@ export const emailQueuePayloadSchema = z.object({
   threadId: z.string().optional(),
 });
 
-export const calendarQueuePayloadSchema = z.object({
-  summary: z.string().min(1).max(200),
-  description: z.string().max(5000).optional(),
-  location: z.string().max(500).optional(),
-  startDateTime: z.string().min(1),
-  endDateTime: z.string().min(1),
-  timeZone: z.string().max(64).optional(),
-  attendeeEmails: z.array(z.string().email()).max(20).optional(),
-});
+export const calendarQueuePayloadSchema = z
+  .object({
+    summary: z.string().min(1).max(200),
+    description: z.string().max(5000).optional(),
+    location: z.string().max(500).optional(),
+    startDateTime: z.string().min(1).refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Invalid start date/time",
+    }),
+    endDateTime: z.string().min(1).refine((v) => !Number.isNaN(Date.parse(v)), {
+      message: "Invalid end date/time",
+    }),
+    timeZone: z.string().max(64).optional(),
+    attendeeEmails: z.array(z.string().email()).max(20).optional(),
+  })
+  .refine((d) => Date.parse(d.endDateTime) > Date.parse(d.startDateTime), {
+    message: "End date/time must be after start date/time",
+    path: ["endDateTime"],
+  });
 
 export const calendarArchivePayloadSchema = z.object({
   eventId: z.string().min(1),
