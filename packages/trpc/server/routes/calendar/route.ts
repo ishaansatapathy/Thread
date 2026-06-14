@@ -46,6 +46,16 @@ const isoDateTimeSchema = z
     message: "Invalid ISO date/time",
   });
 
+const dateRangeSchema = z
+  .object({
+    startDateTime: isoDateTimeSchema,
+    endDateTime: isoDateTimeSchema,
+  })
+  .refine((d) => Date.parse(d.endDateTime) > Date.parse(d.startDateTime), {
+    message: "End date/time must be after start date/time",
+    path: ["endDateTime"],
+  });
+
 export const calendarRouter = router({
   connectionStatus: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/connection-status"), tags: TAGS } })
@@ -89,15 +99,15 @@ export const calendarRouter = router({
   createEvent: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/events"), tags: TAGS } })
     .input(
-      z.object({
-        summary: z.string().min(1).max(200),
-        description: z.string().max(5000).optional(),
-        location: z.string().max(500).optional(),
-        startDateTime: isoDateTimeSchema,
-        endDateTime: isoDateTimeSchema,
-        timeZone: z.string().max(64).optional(),
-        attendeeEmails: z.array(z.string().email()).max(20).optional(),
-      }),
+      dateRangeSchema.and(
+        z.object({
+          summary: z.string().min(1).max(200),
+          description: z.string().max(5000).optional(),
+          location: z.string().max(500).optional(),
+          timeZone: z.string().max(64).optional(),
+          attendeeEmails: z.array(z.string().email()).max(20).optional(),
+        }),
+      ),
     )
     .output(calendarEventSchema)
     .mutation(async ({ ctx, input }) => {
@@ -138,11 +148,11 @@ export const calendarRouter = router({
   checkFreeBusy: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/free-busy"), tags: TAGS } })
     .input(
-      z.object({
-        startDateTime: isoDateTimeSchema,
-        endDateTime: isoDateTimeSchema,
-        timeZone: z.string().max(64).optional(),
-      }),
+      dateRangeSchema.and(
+        z.object({
+          timeZone: z.string().max(64).optional(),
+        }),
+      ),
     )
     .output(z.object({ conflicts: z.array(calendarEventSchema) }))
     .mutation(async ({ ctx, input }) => {
