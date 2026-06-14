@@ -634,18 +634,20 @@ export default function InboxPage() {
             Queue
             {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
           </Link>
-          {isConnected ? (
+        </div>
+
+        {isConnected ? (
+          <div className="thread-inbox-compose-cta">
             <button
               type="button"
-              className="thread-btn-accent"
-              style={{ marginLeft: "auto", fontSize: 11, padding: "5px 10px" }}
+              className="thread-inbox-compose-btn thread-btn-accent"
               onClick={() => setShowCompose(true)}
             >
-              <FilePenLine size={12} />
+              <FilePenLine size={14} />
               Compose
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {isConnected && showThreadList ? (
           <div className="thread-inbox-search">
