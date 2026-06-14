@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { caveat, threadHero } from "~/lib/fonts";
+import { caveat } from "~/lib/fonts";
 import { GlobalProviders } from "~/providers/global";
 
 const geistSans = localFont({
@@ -11,6 +11,11 @@ const geistSans = localFont({
 const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-geist-mono",
+});
+const threadHero = localFont({
+  src: "./fonts/ThreadHero.ttf",
+  variable: "--font-thread-hero",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
