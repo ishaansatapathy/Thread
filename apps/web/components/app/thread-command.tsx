@@ -13,6 +13,8 @@ import {
   ListChecks,
   CornerDownLeft,
   Bot,
+  BarChart2,
+  Keyboard,
 } from "lucide-react";
 
 type CommandAction = {
@@ -24,7 +26,15 @@ type CommandAction = {
   run: () => void;
 };
 
-export function ThreadCommand({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ThreadCommand({
+  open,
+  onClose,
+  onShowShortcuts,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onShowShortcuts?: () => void;
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -41,13 +51,19 @@ export function ThreadCommand({ open, onClose }: { open: boolean; onClose: () =>
       { id: "queue", group: "Navigate", label: "Open approval queue", icon: ListChecks, run: go("/queue") },
       { id: "calendar", group: "Navigate", label: "Go to Calendar", icon: Calendar, run: go("/calendar") },
       { id: "agent", group: "Navigate", label: "Open Thread Agent", icon: Bot, run: go("/agent") },
+      { id: "analytics", group: "Navigate", label: "Go to Analytics", icon: BarChart2, run: go("/analytics") },
       { id: "settings", group: "Navigate", label: "Go to Settings", icon: Settings, run: go("/settings") },
-      { id: "compose", group: "Actions", label: "Compose reply", hint: "Inbox", icon: PenLine, run: go("/inbox") },
+      { id: "compose", group: "Actions", label: "Compose new email", icon: PenLine, run: go("/inbox?compose=1") },
+      { id: "compose-reply", group: "Actions", label: "Open inbox to reply", hint: "Inbox", icon: PenLine, run: go("/inbox") },
       { id: "approve", group: "Actions", label: "Review approval queue", icon: ListChecks, run: go("/queue") },
       { id: "invite", group: "Actions", label: "Send calendar invite", hint: "Calendar", icon: Send, run: go("/calendar") },
       { id: "connect", group: "Actions", label: "Connect Gmail", icon: Mail, run: go("/settings") },
+      { id: "kbd-cmd", group: "Shortcuts", label: "Open command palette", hint: "Ctrl+K", icon: Search, run: onClose },
+      { id: "kbd-search", group: "Shortcuts", label: "Focus inbox search", hint: "/", icon: Search, run: go("/inbox?focus=search") },
+      { id: "kbd-queue", group: "Shortcuts", label: "Go to approval queue", hint: "From anywhere", icon: ListChecks, run: go("/queue") },
+      { id: "kbd-help", group: "Shortcuts", label: "Keyboard shortcuts", hint: "?", icon: Keyboard, run: () => { onClose(); onShowShortcuts?.(); } },
     ];
-  }, [router, onClose]);
+  }, [router, onClose, onShowShortcuts]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

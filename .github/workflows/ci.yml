@@ -35,7 +35,12 @@ jobs:
       API_INTERNAL_URL: http://localhost:8000
       SEED_USER_EMAIL: demo@thread.dev
       SEED_DEMO_PASSWORD: DemoPass123!
+      DEMO_LOGIN_ENABLED: "true"
+      DEMO_USER_EMAIL: demo@thread.dev
+      DEMO_USER_PASSWORD: DemoPass123!
+      THREAD_E2E_MOCK_GMAIL: "true"
       CI: true
+      CORSAIR_WEBHOOK_SECRET: ci-test-webhook-secret-min-16-chars
 
     steps:
       - uses: actions/checkout@v4
@@ -84,3 +89,4 @@ jobs:
           curl -fsS http://127.0.0.1:8000/health
           curl -fsS http://127.0.0.1:8000/ready
           curl -fsS http://127.0.0.1:8000/openapi.json >/dev/null
+          node scripts/load-test/health-smoke.mjs http://127.0.0.1:8000

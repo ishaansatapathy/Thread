@@ -11,6 +11,7 @@ export default defineConfig({
     testTimeout: 30_000,
     env: {
       HEALTH_CHECK_DATABASE: "false",
+      CORSAIR_WEBHOOK_SECRET: "ci-test-webhook-secret-min-16-chars",
     },
   },
 });

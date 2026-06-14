@@ -12,6 +12,8 @@
  * GET /metrics/json (structured JSON for dashboards / health pages).
  */
 
+import { incrementSharedCounter, getSharedCounters, getSharedCountersMerged } from "@repo/services/observability/counters";
+
 const LATENCY_BUCKET_COUNT = 512;
 
 type LatencyBucket = {
@@ -64,6 +66,7 @@ export function recordRequest(route: string, statusCode: number, durationMs: num
 
 export function incrementCounter(name: string, by = 1) {
   counters.set(name, (counters.get(name) ?? 0) + by);
+  incrementSharedCounter(name, by);
 }
 
 function percentile(samples: number[], count: number, p: number): number {
@@ -107,10 +110,12 @@ export function snapshot(): { routes: RouteSnapshot[]; counters: Record<string, 
   }
   routeSnaps.sort((a, b) => b.requests - a.requests);
 
-  const counterObj: Record<string, number> = {};
-  for (const [k, v] of counters) counterObj[k] = v;
+  return { routes: routeSnaps, counters: getSharedCounters() };
+}
 
-  return { routes: routeSnaps, counters: counterObj };
+export async function snapshotMerged(): Promise<{ routes: RouteSnapshot[]; counters: Record<string, number> }> {
+  const base = snapshot();
+  return { routes: base.routes, counters: await getSharedCountersMerged() };
 }
 
 /** Prometheus-compatible plaintext format. */

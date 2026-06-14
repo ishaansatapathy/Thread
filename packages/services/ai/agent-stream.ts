@@ -34,6 +34,7 @@ export async function runAgentChatStream(
   tenantId: string,
   input: { message: string; history?: AgentHistoryMessage[]; userEmail?: string },
   onToolCall: (toolName: string) => void,
+  onTokenDelta?: (delta: string) => void,
 ): Promise<AgentChatResult> {
   if (!isOpenAiConfigured()) {
     throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
@@ -166,6 +167,7 @@ export async function runAgentChatStream(
           detail: `To ${to}`,
           href: sent ? undefined : "/queue",
           disposition: sent ? "sent" : "queued",
+          queueItemId: sent ? undefined : item.id,
           lines: [`Subject: ${subject}`, body.slice(0, 400)],
         });
         return JSON.stringify({
@@ -187,6 +189,7 @@ export async function runAgentChatStream(
               location: typeof args.location === "string" ? args.location : undefined,
               timeZone: typeof args.timeZone === "string" ? args.timeZone : undefined,
               attendeeEmails: Array.isArray(args.attendeeEmails) ? args.attendeeEmails.map(String) : undefined,
+              recurrence: Array.isArray(args.recurrence) ? args.recurrence.map(String).slice(0, 5) : undefined,
             },
             title: `Invite: ${summary}`,
             preview: `${startDateTime} → ${endDateTime}`,
@@ -201,6 +204,7 @@ export async function runAgentChatStream(
           detail: summary,
           href: sent ? undefined : "/queue",
           disposition: sent ? "sent" : "queued",
+          queueItemId: sent ? undefined : item.id,
           lines: [`Start: ${startDateTime}`, `End: ${endDateTime}`],
         });
         return JSON.stringify({
@@ -225,6 +229,68 @@ export async function runAgentChatStream(
         return JSON.stringify({ events: result.events, count: result.events.length });
       }
 
+      case "approve_queue_item": {
+        const itemId = String(args.itemId ?? "").trim();
+        if (!itemId) return JSON.stringify({ success: false, error: "itemId is required" });
+        const result = await queue.approve(tenantId, itemId);
+        actions.push({
+          kind: "queue_list",
+          title: "Queue item approved",
+          detail: result.title,
+          href: "/queue",
+          lines: [`${result.kind}: ${result.title}`],
+        });
+        return JSON.stringify({ success: true, itemId, status: result.status });
+      }
+
+      case "dismiss_queue_item": {
+        const itemId = String(args.itemId ?? "").trim();
+        if (!itemId) return JSON.stringify({ success: false, error: "itemId is required" });
+        await queue.dismiss(tenantId, itemId);
+        actions.push({
+          kind: "queue_list",
+          title: "Queue item dismissed",
+          detail: itemId,
+          href: "/queue",
+        });
+        return JSON.stringify({ success: true, itemId });
+      }
+
+      case "list_labels": {
+        const labels = await inbox.listLabels(tenantId);
+        return JSON.stringify({ labels });
+      }
+
+      case "archive_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.archiveThread(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Thread archived", detail: threadId, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId });
+      }
+
+      case "apply_label": {
+        const threadId = String(args.threadId ?? "").trim();
+        const labelId = String(args.labelId ?? "").trim();
+        if (!threadId || !labelId) {
+          return JSON.stringify({ success: false, error: "threadId and labelId are required" });
+        }
+        await inbox.applyLabel(tenantId, threadId, labelId);
+        actions.push({ kind: "thread", title: "Label applied", detail: `${labelId} on ${threadId}`, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId, labelId });
+      }
+
+      case "remove_label": {
+        const threadId = String(args.threadId ?? "").trim();
+        const labelId = String(args.labelId ?? "").trim();
+        if (!threadId || !labelId) {
+          return JSON.stringify({ success: false, error: "threadId and labelId are required" });
+        }
+        await inbox.removeLabel(tenantId, threadId, labelId);
+        actions.push({ kind: "thread", title: "Label removed", detail: `${labelId} from ${threadId}`, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId, labelId });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -240,6 +306,7 @@ export async function runAgentChatStream(
   const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
     maxRounds: 6,
     timeoutMs: 120_000,
+    onToken: onTokenDelta,
   });
 
   return { reply: content, actions };

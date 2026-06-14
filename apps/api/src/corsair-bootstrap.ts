@@ -6,6 +6,7 @@ import {
   getCorsairCalendarRedirectUri,
   getCorsairGmailRedirectUri,
   isCorsairConfigured,
+  isCorsairDevKeyConfigured,
 } from "./corsair";
 import { getCorsairSetupModule } from "./corsair-imports";
 
@@ -13,6 +14,10 @@ export async function bootstrapCorsair() {
   if (!isCorsairConfigured()) {
     logger.warn("Corsair skipped — CORSAIR_KEK is not set");
     return;
+  }
+
+  if (!isCorsairDevKeyConfigured()) {
+    logger.info("CORSAIR_DEV_KEY not set — Corsair dashboard CLI features may be limited");
   }
 
   const google = getGoogleOAuthConfig();

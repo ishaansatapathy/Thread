@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectMessageHeaders, decodeHtmlEntities, extractHtmlBody, findHeaderInThreadMessages } from "./gmail-message";
+import { collectMessageHeaders, decodeHtmlEntities, extractHtmlBody, findHeaderInThreadMessages, buildRawEmail } from "./gmail-message";
 
 describe("collectMessageHeaders", () => {
   it("returns headers from the root payload", () => {
@@ -66,5 +66,26 @@ describe("extractHtmlBody", () => {
       ],
     });
     expect(html).toContain("<strong>world</strong>");
+  });
+});
+
+describe("buildRawEmail", () => {
+  it("builds multipart email when attachments are present", () => {
+    const raw = buildRawEmail({
+      to: "guest@example.com",
+      subject: "Files",
+      body: "See attached",
+      attachments: [
+        {
+          filename: "note.txt",
+          mimeType: "text/plain",
+          contentBase64: Buffer.from("hello").toString("base64"),
+        },
+      ],
+    });
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    expect(decoded).toContain("multipart/mixed");
+    expect(decoded).toContain("note.txt");
+    expect(decoded).toContain("See attached");
   });
 });

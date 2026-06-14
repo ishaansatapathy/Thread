@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { SkeletonList } from "~/components/app/skeleton-list";
 import {
   isoToLocalDateTimeInput,
   localDateTimeRangeToPayload,
@@ -263,10 +264,7 @@ export default function QueuePage() {
       </div>
 
       {itemsQuery.isLoading ? (
-        <div className="thread-empty-inbox" style={{ marginTop: 24 }}>
-          <Loader2 size={18} className="thread-spin" />
-          <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>Loading queue…</p>
-        </div>
+        <SkeletonList count={6} />
       ) : tab === "pending" && pending.length === 0 ? (
         <div className="thread-app-empty" style={{ marginTop: 24 }}>
           <div className="thread-app-empty-icon">

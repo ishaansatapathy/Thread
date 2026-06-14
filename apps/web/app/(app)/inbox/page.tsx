@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
+import { SkeletonList } from "~/components/app/skeleton-list";
 import { EmailMessageBody } from "~/components/app/email-message-body";
 import { queueResultMessage } from "~/lib/queue-toast";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
@@ -42,6 +43,24 @@ type InboxView = "inbox" | "priority" | "drafts";
 type ThreadRow = RouterOutputs["inbox"]["listThreads"]["threads"][number];
 
 const PAGE_SIZE = INBOX_PAGE_SIZE;
+
+type OutboundAttachment = {
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      resolve(result.includes(",") ? result.split(",")[1]! : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * Manual pagination + search accumulator. tRPC's useInfiniteQuery expects a
@@ -69,7 +88,11 @@ function useInboxThreads(query: string, enabled: boolean) {
       pageToken,
       refresh: refreshLive && isFirstPage ? true : undefined,
     },
-    { enabled, placeholderData: (prev) => prev },
+    {
+      enabled,
+      refetchInterval: enabled && isFirstPage ? 15_000 : false,
+      placeholderData: (prev) => prev,
+    },
   );
 
   useEffect(() => {
@@ -209,6 +232,12 @@ export default function InboxPage() {
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [showLabelPicker, setShowLabelPicker] = useState(false);
+  const [labelFilter, setLabelFilter] = useState("");
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [outboundAttachments, setOutboundAttachments] = useState<OutboundAttachment[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -221,6 +250,18 @@ export default function InboxPage() {
   const aiStatus = trpc.ai.status.useQuery({});
 
   const isConnected = statusQuery.data?.gmail === "connected";
+  const demoCacheQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 50 }, { staleTime: 120_000 });
+  const hasDemoFixtures = !isConnected && (demoCacheQuery.data?.threads.length ?? 0) > 0;
+  const canBrowseInbox = isConnected || hasDemoFixtures;
+
+  const approveQueueItem = trpc.queue.approve.useMutation({
+    onSuccess: async () => {
+      await utils.queue.pendingCount.invalidate();
+      await utils.queue.list.invalidate();
+      toast.success("Approved and sent");
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const markRead = trpc.inbox.markThreadRead.useMutation({
     onSuccess: (_data, variables) => {
@@ -238,6 +279,7 @@ export default function InboxPage() {
         },
       );
     },
+    onError: (error) => toast.error(error.message),
   });
 
   const archiveThread = trpc.inbox.archiveThread.useMutation({
@@ -284,10 +326,28 @@ export default function InboxPage() {
       setView("inbox");
       window.setTimeout(() => searchRef.current?.focus(), 50);
     }
+    if (searchParams.get("compose") === "1") {
+      setView("inbox");
+      setShowCompose(true);
+    }
   }, [searchParams]);
 
-  const inbox = useInboxThreads(appliedQuery, isConnected);
+  const effectiveQuery = useMemo(() => {
+    const parts: string[] = [];
+    if (appliedQuery) parts.push(appliedQuery);
+    if (labelFilter) {
+      const label = labelsQuery.data?.find((entry) => entry.id === labelFilter);
+      if (label?.name) {
+        parts.push(label.name.includes(" ") ? `label:"${label.name}"` : `label:${label.name}`);
+      }
+    }
+    return parts.join(" ").trim();
+  }, [appliedQuery, labelFilter, labelsQuery.data]);
+
+  const inbox = useInboxThreads(effectiveQuery, isConnected);
   const threads = inbox.threads;
+
+  const displayThreads = hasDemoFixtures ? (demoCacheQuery.data?.threads ?? []) : threads;
 
   const drafts = useDrafts(isConnected && view === "drafts");
 
@@ -299,8 +359,23 @@ export default function InboxPage() {
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
     onSuccess: async (item) => {
       await utils.queue.pendingCount.invalidate();
-      toast.success(queueResultMessage(item).title);
+      const msg = queueResultMessage(item);
+      if (item.status === "pending") {
+        toast.success(msg.title, {
+          action: {
+            label: "Approve",
+            onClick: () => approveQueueItem.mutate({ id: item.id }),
+          },
+        });
+      } else {
+        toast.success(msg.title);
+      }
       setReplyBody("");
+      setShowCompose(false);
+      setComposeTo("");
+      setComposeSubject("");
+      setComposeBody("");
+      setOutboundAttachments([]);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -338,30 +413,40 @@ export default function InboxPage() {
   const aiReady = aiStatus.data?.openai === true;
 
   const visibleThreads = useMemo(() => {
-    if (view !== "priority" || !priorityRankedIds?.length) return threads;
-    return sortThreadsByRank(threads, priorityRankedIds);
-  }, [threads, view, priorityRankedIds]);
+    const source = hasDemoFixtures ? displayThreads : threads;
+    if (view !== "priority" || !priorityRankedIds?.length) return source;
+    return sortThreadsByRank(source, priorityRankedIds);
+  }, [threads, displayThreads, hasDemoFixtures, view, priorityRankedIds]);
 
   useEffect(() => {
     setPriorityRankedIds(null);
   }, [inbox.dataUpdatedAt]);
 
-  const handleViewChange = (nextView: InboxView) => {
+  const handleViewChange = async (nextView: InboxView) => {
     setView(nextView);
     if (nextView !== "priority") return;
     if (!aiReady) {
       toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
       return;
     }
-    if (threads.length === 0) return;
-    rankThreads.mutate({
-      threads: threads.map((thread) => ({
-        id: thread.id,
-        snippet: thread.snippet,
-        subject: thread.subject,
-        from: thread.fromName ?? thread.from,
-      })),
-    });
+    try {
+      const batch = await utils.client.inbox.listThreads.query({
+        maxResults: 50,
+        query: effectiveQuery || undefined,
+        refresh: true,
+      });
+      if (batch.threads.length === 0) return;
+      rankThreads.mutate({
+        threads: batch.threads.map((thread) => ({
+          id: thread.id,
+          snippet: thread.snippet,
+          subject: thread.subject,
+          from: thread.fromName ?? thread.from,
+        })),
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load threads for ranking");
+    }
   };
 
   const banner = useMemo(() => {
@@ -439,6 +524,13 @@ export default function InboxPage() {
         );
         setSelectedId(visibleThreads[nextIndex]?.id ?? null);
       }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (!selectedId && visibleThreads[0]) {
+          setSelectedId(visibleThreads[0].id);
+        }
+        return;
+      }
       // e = archive selected thread
       if (event.key === "e" && selectedId) {
         event.preventDefault();
@@ -454,6 +546,11 @@ export default function InboxPage() {
   }, [visibleThreads, selectedId, view, archiveThread]);
 
   const threadMessages = selectedQuery.data?.messages ?? [];
+
+  const demoSelectedThread = useMemo(() => {
+    if (!hasDemoFixtures || !selectedId) return null;
+    return demoCacheQuery.data?.threads.find((thread) => thread.id === selectedId) ?? null;
+  }, [hasDemoFixtures, selectedId, demoCacheQuery.data?.threads]);
 
   const handleMessageClick = (message: (typeof threadMessages)[number]) => {
     setActiveMessageId(message.id);
@@ -477,6 +574,21 @@ export default function InboxPage() {
     subject: replySubjectValue,
     body: replyBody,
     threadId: selectedQuery.data?.id,
+    attachments: outboundAttachments.length ? outboundAttachments : undefined,
+  };
+
+  const pickAttachments = async (files: FileList | null) => {
+    if (!files) return;
+    const next = [...outboundAttachments];
+    for (const file of Array.from(files).slice(0, Math.max(0, 5 - next.length))) {
+      const contentBase64 = await fileToBase64(file);
+      next.push({
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        contentBase64,
+      });
+    }
+    setOutboundAttachments(next);
   };
 
   const showThreadList = view !== "drafts";
@@ -522,6 +634,17 @@ export default function InboxPage() {
             Queue
             {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
           </Link>
+          {isConnected ? (
+            <button
+              type="button"
+              className="thread-btn-accent"
+              style={{ marginLeft: "auto", fontSize: 11, padding: "5px 10px" }}
+              onClick={() => setShowCompose(true)}
+            >
+              <FilePenLine size={12} />
+              Compose
+            </button>
+          ) : null}
         </div>
 
         {isConnected && showThreadList ? (
@@ -547,6 +670,27 @@ export default function InboxPage() {
             ) : (
               <kbd className="thread-app-kbd">/</kbd>
             )}
+          </div>
+        ) : null}
+
+        {isConnected && showThreadList && labelsQuery.data && labelsQuery.data.length > 0 ? (
+          <div className="thread-inbox-label-filter">
+            <Tag size={12} />
+            <select
+              value={labelFilter}
+              onChange={(event) => setLabelFilter(event.target.value)}
+              aria-label="Filter by label"
+            >
+              <option value="">All labels</option>
+              {labelsQuery.data
+                .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
+                .slice(0, 20)
+                .map((label) => (
+                  <option key={label.id} value={label.id}>
+                    {label.name}
+                  </option>
+                ))}
+            </select>
           </div>
         ) : null}
 
@@ -581,6 +725,12 @@ export default function InboxPage() {
           </div>
         ) : null}
 
+        {hasDemoFixtures ? (
+          <div className="thread-inbox-banner" data-variant="info" style={{ margin: "10px 12px 0" }}>
+            Demo inbox — sample threads from seed data. Connect Gmail for live mail.
+          </div>
+        ) : null}
+
         {banner ? (
           <div
             className="thread-inbox-banner"
@@ -599,14 +749,14 @@ export default function InboxPage() {
                 Checking Gmail…
               </p>
             </div>
-          ) : !isConnected ? (
+          ) : !canBrowseInbox ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
               <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
                 No threads yet
               </p>
               <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
-                Connect Gmail via Corsair to sync your inbox here.
+                Connect Gmail via Corsair to sync your inbox here, or use demo login for sample threads.
               </p>
               <a
                 href={connectHref}
@@ -618,12 +768,7 @@ export default function InboxPage() {
             </div>
           ) : view === "drafts" ? (
             drafts.isLoading ? (
-              <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
-                <Loader2 size={18} className="thread-spin" />
-                <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
-                  Loading drafts…
-                </p>
-              </div>
+              <SkeletonList count={6} />
             ) : drafts.drafts.length === 0 ? (
               <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
                 <FileText size={20} style={{ opacity: 0.35 }} />
@@ -637,39 +782,74 @@ export default function InboxPage() {
             ) : (
               <>
               {drafts.drafts.map((draft) => (
-                <button
-                  key={draft.id}
-                  type="button"
-                  className="thread-inbox-row"
-                  data-active={Boolean(draft.threadId) && selectedId === draft.threadId}
-                  onClick={() => {
-                    if (draft.threadId) {
-                      setView("inbox");
-                      setSelectedId(draft.threadId);
-                    }
-                  }}
-                >
-                  <span className="thread-inbox-row-line">
-                    <span className="thread-inbox-row-sender">
-                      {draft.to ? `To ${draft.to}` : "Draft"}
+                <div key={draft.id} className="thread-inbox-row" style={{ display: "block", padding: 0 }}>
+                  <button
+                    type="button"
+                    className="thread-inbox-row"
+                    style={{ width: "100%", border: "none", background: "transparent" }}
+                    data-active={Boolean(draft.threadId) && selectedId === draft.threadId}
+                    onClick={() => {
+                      if (draft.threadId) {
+                        setView("inbox");
+                        setSelectedId(draft.threadId);
+                      }
+                    }}
+                  >
+                    <span className="thread-inbox-row-line">
+                      <span className="thread-inbox-row-sender">
+                        {draft.to ? `To ${draft.to}` : "Draft"}
+                      </span>
+                      <span className="thread-inbox-row-date">{formatListDate(draft.updatedAt)}</span>
                     </span>
-                    <span className="thread-inbox-row-date">{formatListDate(draft.updatedAt)}</span>
-                  </span>
-                  <span className="thread-inbox-row-subject">
-                    {draft.subject?.trim() || "(no subject)"}
-                  </span>
-                  <span className="thread-inbox-row-snippet">{draft.snippet}</span>
-                </button>
+                    <span className="thread-inbox-row-subject">
+                      {draft.subject?.trim() || "(no subject)"}
+                    </span>
+                    <span className="thread-inbox-row-snippet">{draft.snippet}</span>
+                  </button>
+                  <div style={{ display: "flex", gap: 6, padding: "0 12px 10px" }}>
+                    <button
+                      type="button"
+                      className="thread-btn-ghost"
+                      style={{ fontSize: 11, padding: "4px 8px" }}
+                      onClick={async () => {
+                        setComposeTo(draft.to ?? "");
+                        setComposeSubject(draft.subject ?? "");
+                        setComposeBody(draft.snippet ?? "");
+                        try {
+                          const full = await utils.client.inbox.getDraft.query({ draftId: draft.id });
+                          if (full?.body) setComposeBody(full.body);
+                          if (full?.subject) setComposeSubject(full.subject);
+                          if (full?.to) setComposeTo(full.to);
+                        } catch {
+                          // fall back to snippet metadata
+                        }
+                        setOutboundAttachments([]);
+                        setShowCompose(true);
+                        setView("inbox");
+                      }}
+                    >
+                      Edit in compose
+                    </button>
+                    {draft.threadId ? (
+                      <button
+                        type="button"
+                        className="thread-btn-ghost"
+                        style={{ fontSize: 11, padding: "4px 8px" }}
+                        onClick={() => {
+                          setView("inbox");
+                          setSelectedId(draft.threadId!);
+                        }}
+                      >
+                        Open thread
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               ))}
               </>
             )
           ) : inbox.isLoading ? (
-            <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
-              <Loader2 size={18} className="thread-spin" />
-              <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>
-                Loading threads…
-              </p>
-            </div>
+            <SkeletonList count={10} />
           ) : visibleThreads.length === 0 ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
@@ -768,7 +948,7 @@ export default function InboxPage() {
       </div>
 
       <div className="thread-inbox-reading">
-        {!isConnected ? (
+        {!isConnected && !hasDemoFixtures ? (
           <div className="thread-app-empty">
             <div className="thread-app-empty-icon">
               <Mail size={24} />
@@ -784,6 +964,24 @@ export default function InboxPage() {
             >
               Connect Gmail
             </a>
+          </div>
+        ) : demoSelectedThread && !isConnected ? (
+          <div className="thread-inbox-message">
+            <button type="button" className="thread-inbox-back-btn" onClick={() => setSelectedId(null)}>
+              ← Back
+            </button>
+            <div className="thread-inbox-message-head">
+              <h2>{demoSelectedThread.subject?.trim() || "No subject"}</h2>
+              <p style={{ fontSize: 12, color: "var(--thread-dim)", marginTop: 4 }}>
+                From {demoSelectedThread.fromName ?? demoSelectedThread.from ?? "Unknown"}
+              </p>
+            </div>
+            <div className="thread-inbox-message-body" style={{ padding: "16px 0", lineHeight: 1.6 }}>
+              {decodeHtmlEntities(demoSelectedThread.snippet)}
+            </div>
+            <p style={{ fontSize: 12, color: "var(--thread-dim)" }}>
+              Demo preview — connect Gmail to read full threads and reply.
+            </p>
           </div>
         ) : selectedQuery.isLoading ? (
           <div className="thread-app-empty">
@@ -851,11 +1049,31 @@ export default function InboxPage() {
                         .slice(0, 15)
                         .map((label) => (
                           <button
-                            key={label.id}
+                            key={`apply-${label.id}`}
                             type="button"
                             className="thread-label-picker-item"
                             onClick={() => {
                               if (selectedId) applyLabel.mutate({ threadId: selectedId, labelId: label.id });
+                              setShowLabelPicker(false);
+                            }}
+                          >
+                            {label.name}
+                          </button>
+                        ))}
+                      <p className="thread-label-picker-head" style={{ marginTop: 8 }}>
+                        Remove label
+                      </p>
+                      {labelsQuery.data
+                        .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
+                        .slice(0, 15)
+                        .map((label) => (
+                          <button
+                            key={`remove-${label.id}`}
+                            type="button"
+                            className="thread-label-picker-item"
+                            data-variant="remove"
+                            onClick={() => {
+                              if (selectedId) removeLabel.mutate({ threadId: selectedId, labelId: label.id });
                               setShowLabelPicker(false);
                             }}
                           >
@@ -928,21 +1146,38 @@ export default function InboxPage() {
                                   : `${message.attachments.length} attachments`}
                               </p>
                               <ul className="thread-inbox-attachment-list">
-                                {message.attachments.map((att) => (
-                                  <li key={att.attachmentId ?? att.filename} className="thread-inbox-attachment-item">
-                                    <FileText size={12} />
-                                    <span className="thread-inbox-attachment-name">{att.filename}</span>
-                                    {att.size > 0 ? (
-                                      <span className="thread-inbox-attachment-size">
-                                        {att.size < 1024
-                                          ? `${att.size} B`
-                                          : att.size < 1024 * 1024
-                                            ? `${Math.round(att.size / 1024)} KB`
-                                            : `${(att.size / (1024 * 1024)).toFixed(1)} MB`}
-                                      </span>
-                                    ) : null}
-                                  </li>
-                                ))}
+                                {message.attachments.map((att) => {
+                                  const sizeLabel = att.size > 0
+                                    ? att.size < 1024
+                                      ? `${att.size} B`
+                                      : att.size < 1024 * 1024
+                                        ? `${Math.round(att.size / 1024)} KB`
+                                        : `${(att.size / (1024 * 1024)).toFixed(1)} MB`
+                                    : null;
+                                  const downloadUrl = att.attachmentId && message.id
+                                    ? `/inbox/attachments/${message.id}/${att.attachmentId}?filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType ?? "application/octet-stream")}`
+                                    : null;
+                                  return (
+                                    <li key={att.attachmentId ?? att.filename} className="thread-inbox-attachment-item">
+                                      <FileText size={12} />
+                                      {downloadUrl ? (
+                                        <a
+                                          href={downloadUrl}
+                                          download={att.filename}
+                                          className="thread-inbox-attachment-name thread-inbox-attachment-link"
+                                          title={`Download ${att.filename}`}
+                                        >
+                                          {att.filename}
+                                        </a>
+                                      ) : (
+                                        <span className="thread-inbox-attachment-name">{att.filename}</span>
+                                      )}
+                                      {sizeLabel ? (
+                                        <span className="thread-inbox-attachment-size">{sizeLabel}</span>
+                                      ) : null}
+                                    </li>
+                                  );
+                                })}
                               </ul>
                             </div>
                           ) : null}
@@ -998,6 +1233,36 @@ export default function InboxPage() {
                 onChange={(event) => setReplyBody(event.target.value)}
                 placeholder="Write your reply…"
               />
+              <label className="thread-set-label" htmlFor="reply-attachments">
+                Attachments
+              </label>
+              <input
+                id="reply-attachments"
+                type="file"
+                multiple
+                className="thread-set-input"
+                onChange={(event) => void pickAttachments(event.target.files)}
+              />
+              {outboundAttachments.length > 0 ? (
+                <ul className="thread-inbox-attachment-list" style={{ marginBottom: 8 }}>
+                  {outboundAttachments.map((att, index) => (
+                    <li key={`${att.filename}-${index}`} className="thread-inbox-attachment-item">
+                      <FileText size={12} />
+                      <span className="thread-inbox-attachment-name">{att.filename}</span>
+                      <button
+                        type="button"
+                        className="thread-btn-ghost"
+                        style={{ marginLeft: "auto", fontSize: 11, padding: "2px 6px" }}
+                        onClick={() =>
+                          setOutboundAttachments((current) => current.filter((_, i) => i !== index))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="thread-inbox-compose-actions">
                 <button
                   type="button"
@@ -1157,6 +1422,123 @@ export default function InboxPage() {
                 Goes to the approval queue first. After you approve, it appears on Calendar for the date
                 you picked.
               </p>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {showCompose ? (
+        <div className="thread-modal-backdrop" onClick={() => !queueEmail.isPending && setShowCompose(false)}>
+          <div className="thread-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="thread-modal-head">
+              <h3>New message</h3>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                disabled={queueEmail.isPending}
+                onClick={() => setShowCompose(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <form
+              className="thread-modal-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!composeTo.trim() || !composeBody.trim()) return;
+                queueEmail.mutate({
+                  mode: "send",
+                  email: {
+                    to: composeTo.trim(),
+                    subject: composeSubject.trim() || "(no subject)",
+                    body: composeBody,
+                    attachments: outboundAttachments.length ? outboundAttachments : undefined,
+                  },
+                  title: `Send: ${composeSubject.trim() || "(no subject)"}`,
+                });
+              }}
+            >
+              <label className="thread-set-label" htmlFor="compose-to">
+                To
+              </label>
+              <input
+                id="compose-to"
+                className="thread-set-input"
+                type="email"
+                value={composeTo}
+                onChange={(event) => setComposeTo(event.target.value)}
+                required
+              />
+              <label className="thread-set-label" htmlFor="compose-subject">
+                Subject
+              </label>
+              <input
+                id="compose-subject"
+                className="thread-set-input"
+                value={composeSubject}
+                onChange={(event) => setComposeSubject(event.target.value)}
+              />
+              <label className="thread-set-label" htmlFor="compose-body">
+                Message
+              </label>
+              <textarea
+                id="compose-body"
+                className="thread-set-input thread-inbox-compose-body"
+                rows={8}
+                value={composeBody}
+                onChange={(event) => setComposeBody(event.target.value)}
+                placeholder="Write your message…"
+                required
+              />
+              <label className="thread-set-label" htmlFor="compose-attachments">
+                Attachments
+              </label>
+              <input
+                id="compose-attachments"
+                type="file"
+                multiple
+                className="thread-set-input"
+                onChange={(event) => void pickAttachments(event.target.files)}
+              />
+              {outboundAttachments.length > 0 ? (
+                <ul className="thread-inbox-attachment-list" style={{ marginBottom: 8 }}>
+                  {outboundAttachments.map((att, index) => (
+                    <li key={`${att.filename}-${index}`} className="thread-inbox-attachment-item">
+                      <FileText size={12} />
+                      <span className="thread-inbox-attachment-name">{att.filename}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className="thread-modal-actions">
+                <button type="button" className="thread-btn-ghost" onClick={() => setShowCompose(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  disabled={queueEmail.isPending || !composeBody.trim()}
+                  onClick={() =>
+                    queueEmail.mutate({
+                      mode: "draft",
+                      email: {
+                        to: composeTo.trim(),
+                        subject: composeSubject.trim() || "(no subject)",
+                        body: composeBody,
+                        attachments: outboundAttachments.length ? outboundAttachments : undefined,
+                      },
+                      title: "New draft",
+                    })
+                  }
+                >
+                  <FilePenLine size={14} />
+                  Save draft
+                </button>
+                <button type="submit" className="thread-btn-accent" disabled={queueEmail.isPending || !composeBody.trim()}>
+                  <Mail size={14} />
+                  {queueEmail.isPending ? "Queuing…" : "Queue send"}
+                </button>
+              </div>
             </form>
           </div>
         </div>

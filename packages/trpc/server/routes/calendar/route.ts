@@ -39,22 +39,7 @@ const calendarEventSchema = z.object({
   attendees: z.array(calendarAttendeeSchema).optional(),
 });
 
-const isoDateTimeSchema = z
-  .string()
-  .min(1)
-  .refine((value) => !Number.isNaN(Date.parse(value)), {
-    message: "Invalid ISO date/time",
-  });
-
-const dateRangeSchema = z
-  .object({
-    startDateTime: isoDateTimeSchema,
-    endDateTime: isoDateTimeSchema,
-  })
-  .refine((d) => Date.parse(d.endDateTime) > Date.parse(d.startDateTime), {
-    message: "End date/time must be after start date/time",
-    path: ["endDateTime"],
-  });
+const isoDateTimeSchema = z.string().min(1);
 
 export const calendarRouter = router({
   connectionStatus: protectedProcedure
@@ -99,19 +84,26 @@ export const calendarRouter = router({
   createEvent: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/events"), tags: TAGS } })
     .input(
-      dateRangeSchema.and(
-        z.object({
-          summary: z.string().min(1).max(200),
-          description: z.string().max(5000).optional(),
-          location: z.string().max(500).optional(),
-          timeZone: z.string().max(64).optional(),
-          attendeeEmails: z.array(z.string().email()).max(20).optional(),
-        }),
-      ),
+      z.object({
+        summary: z.string().min(1).max(200),
+        description: z.string().max(5000).optional(),
+        location: z.string().max(500).optional(),
+        startDateTime: isoDateTimeSchema,
+        endDateTime: isoDateTimeSchema,
+        timeZone: z.string().max(64).optional(),
+        attendeeEmails: z.array(z.string().email()).max(20).optional(),
+        allDay: z.boolean().optional(),
+      }),
     )
     .output(calendarEventSchema)
     .mutation(async ({ ctx, input }) => {
       try {
+        if (Number.isNaN(Date.parse(input.startDateTime)) || Number.isNaN(Date.parse(input.endDateTime))) {
+          throw new Error("Invalid ISO date/time");
+        }
+        if (Date.parse(input.endDateTime) <= Date.parse(input.startDateTime)) {
+          throw new Error("End date/time must be after start date/time");
+        }
         const calendar = getCalendarService();
         return await calendar.createEvent(ctx.user.id, input);
       } catch (error) {
@@ -148,17 +140,41 @@ export const calendarRouter = router({
   checkFreeBusy: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/free-busy"), tags: TAGS } })
     .input(
-      dateRangeSchema.and(
-        z.object({
-          timeZone: z.string().max(64).optional(),
-        }),
-      ),
+      z.object({
+        startDateTime: isoDateTimeSchema,
+        endDateTime: isoDateTimeSchema,
+        timeZone: z.string().max(64).optional(),
+      }),
     )
     .output(z.object({ conflicts: z.array(calendarEventSchema) }))
     .mutation(async ({ ctx, input }) => {
       try {
+        if (Number.isNaN(Date.parse(input.startDateTime)) || Number.isNaN(Date.parse(input.endDateTime))) {
+          throw new Error("Invalid ISO date/time");
+        }
+        if (Date.parse(input.endDateTime) <= Date.parse(input.startDateTime)) {
+          throw new Error("End date/time must be after start date/time");
+        }
         const calendar = getCalendarService();
         return await calendar.checkFreeBusy(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  respondToEvent: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/events/{eventId}/rsvp"), tags: TAGS } })
+    .input(
+      z.object({
+        eventId: z.string().min(1),
+        response: z.enum(["accepted", "declined", "tentative"]),
+      }),
+    )
+    .output(calendarEventSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const calendar = getCalendarService();
+        return await calendar.respondToEvent(ctx.user.id, input.eventId, input.response);
       } catch (error) {
         mapServiceError(error);
       }
@@ -169,8 +185,12 @@ export const calendarRouter = router({
     .input(z.object({}))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx }) => {
-      const calendar = getCalendarService();
-      await calendar.disconnect(ctx.user.id);
-      return { ok: true };
+      try {
+        const calendar = getCalendarService();
+        await calendar.disconnect(ctx.user.id);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 });

@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP server — exposes Gmail inbox, approval queue, and agent tools for AI assistants via the Model Context Protocol.",
-  "version": "1.0.0",
+  "description": "Thread MCP server — exposes Gmail inbox, approval queue, calendar, and agent tools for AI assistants via the Model Context Protocol.",
+  "version": "1.2.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -12,38 +12,25 @@
     }
   },
   "auth": {
-    "type": "cookie",
-    "note": "Authenticate by sending the 'jwt' and 'jwt_refresh' cookies returned by the Thread sign-in flow."
+    "type": "bearer_or_cookie",
+    "note": "Option A: jwt + jwt_refresh cookies from Thread sign-in. Option B: Authorization: Bearer <THREAD_MCP_API_KEY> — must match THREAD_MCP_USER_ID env (scoped; no arbitrary X-Thread-User-Id)."
   },
   "tools": [
-    {
-      "name": "list_inbox",
-      "description": "List recent Gmail inbox threads"
-    },
-    {
-      "name": "search_inbox",
-      "description": "Full-text search over Gmail inbox"
-    },
-    {
-      "name": "get_thread",
-      "description": "Retrieve a full Gmail thread including all messages"
-    },
-    {
-      "name": "list_queue",
-      "description": "List pending approval queue items"
-    },
-    {
-      "name": "approve_queue_item",
-      "description": "Approve a pending queue item (sends email / creates calendar event)"
-    },
-    {
-      "name": "dismiss_queue_item",
-      "description": "Dismiss a pending queue item"
-    },
-    {
-      "name": "get_gmail_connection_status",
-      "description": "Check Gmail connection status"
-    }
+    { "name": "list_inbox", "description": "List recent Gmail inbox threads" },
+    { "name": "search_inbox", "description": "Full-text search over Gmail inbox" },
+    { "name": "get_thread", "description": "Retrieve a full Gmail thread including all messages" },
+    { "name": "list_queue", "description": "List pending approval queue items" },
+    { "name": "approve_queue_item", "description": "Approve a pending queue item (sends email / creates calendar event)" },
+    { "name": "dismiss_queue_item", "description": "Dismiss a pending queue item" },
+    { "name": "get_gmail_connection_status", "description": "Check Gmail connection status" },
+    { "name": "rank_inbox", "description": "Rank inbox threads by AI urgency" },
+    { "name": "list_calendar_events", "description": "List Google Calendar events in a date range" },
+    { "name": "queue_email", "description": "Queue an email for human approval (send cap: 3/min)" },
+    { "name": "queue_calendar_invite", "description": "Queue a calendar invite for human approval (supports recurrence RRULE)" },
+    { "name": "list_labels", "description": "List Gmail labels (use before apply_label / remove_label)" },
+    { "name": "archive_thread", "description": "Archive a Gmail thread" },
+    { "name": "apply_label", "description": "Apply a Gmail label to a thread" },
+    { "name": "remove_label", "description": "Remove a Gmail label from a thread" }
   ],
   "examples": [
     {
@@ -56,7 +43,7 @@
       }
     },
     {
-      "description": "List 10 most recent inbox threads",
+      "description": "List 10 most recent inbox threads (API key auth)",
       "request": {
         "jsonrpc": "2.0",
         "id": 2,
@@ -65,17 +52,25 @@
           "name": "list_inbox",
           "arguments": { "maxResults": 10 }
         }
+      },
+      "headers": {
+        "Authorization": "Bearer ${THREAD_MCP_API_KEY}"
       }
     },
     {
-      "description": "Search inbox for unread emails",
+      "description": "Queue an email for approval",
       "request": {
         "jsonrpc": "2.0",
         "id": 3,
         "method": "tools/call",
         "params": {
-          "name": "search_inbox",
-          "arguments": { "query": "is:unread", "maxResults": 20 }
+          "name": "queue_email",
+          "arguments": {
+            "to": "guest@company.com",
+            "subject": "Follow up",
+            "body": "Hello — following up on our chat.",
+            "mode": "send"
+          }
         }
       }
     },
@@ -87,7 +82,7 @@
         "method": "tools/call",
         "params": {
           "name": "approve_queue_item",
-          "arguments": { "itemId": "<queue-item-id>" }
+          "arguments": { "itemId": "<queue-item-uuid>" }
         }
       }
     }

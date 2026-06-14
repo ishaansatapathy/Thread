@@ -18,6 +18,7 @@ import {
 import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { AgentMentionInput } from "~/components/app/agent-mention-input";
+import { SkeletonList } from "~/components/app/skeleton-list";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -106,6 +107,24 @@ function ActionPanel({
   actions: ActionCard[];
   agentAutoApprove: boolean;
 }) {
+  const utils = trpc.useUtils();
+  const approve = trpc.queue.approve.useMutation({
+    onSuccess: async () => {
+      await utils.queue.list.invalidate();
+      await utils.queue.pendingCount.invalidate();
+      toast.success("Approved from Agent panel");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const dismiss = trpc.queue.dismiss.useMutation({
+    onSuccess: async () => {
+      await utils.queue.list.invalidate();
+      await utils.queue.pendingCount.invalidate();
+      toast.success("Dismissed from Agent panel");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (actions.length === 0) {
     return (
       <div className="thread-agent-pane">
@@ -161,11 +180,35 @@ function ActionPanel({
         latest.disposition === "queued" ? (
           <div className="thread-inbox-banner" style={{ marginTop: 4 }}>
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-              Waiting in Queue — <strong>Approve</strong> before it sends.
+              Waiting in Queue — approve here or review all items.
             </p>
-            <Link href="/queue" className="thread-inbox-loadmore" style={{ marginTop: 10, display: "inline-flex" }}>
-              Review in Queue
-            </Link>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {latest.queueItemId ? (
+                <>
+                  <button
+                    type="button"
+                    className="thread-btn-accent"
+                    style={{ fontSize: 12, padding: "6px 12px" }}
+                    disabled={approve.isPending || dismiss.isPending}
+                    onClick={() => approve.mutate({ id: latest.queueItemId! })}
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    className="thread-btn-ghost"
+                    style={{ fontSize: 12, padding: "6px 12px" }}
+                    disabled={approve.isPending || dismiss.isPending}
+                    onClick={() => dismiss.mutate({ id: latest.queueItemId! })}
+                  >
+                    Dismiss
+                  </button>
+                </>
+              ) : null}
+              <Link href="/queue" className="thread-inbox-loadmore" style={{ display: "inline-flex" }}>
+                Open Queue
+              </Link>
+            </div>
           </div>
         ) : null}
         {(latest.kind === "email_queued" || latest.kind === "calendar_queued") &&
@@ -325,8 +368,24 @@ export default function AgentPage() {
                 const data = JSON.parse(dataStr) as Record<string, unknown>;
                 if (currentEvent === "status") {
                   setStreamStatus(String(data.label ?? "Working…"));
+                } else if (currentEvent === "token") {
+                  const text = String(data.text ?? "");
+                  setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === "assistant") {
+                      return [...prev.slice(0, -1), { role: "assistant", content: last.content + text }];
+                    }
+                    return [...prev, { role: "assistant", content: text }];
+                  });
                 } else if (currentEvent === "complete") {
-                  setMessages((prev) => [...prev, { role: "assistant", content: String(data.reply ?? "") }]);
+                  const reply = String(data.reply ?? "");
+                  setMessages((prev) => {
+                    const last = prev[prev.length - 1];
+                    if (last?.role === "assistant") {
+                      return [...prev.slice(0, -1), { role: "assistant", content: reply }];
+                    }
+                    return [...prev, { role: "assistant", content: reply }];
+                  });
                   setLastActions((data.actions as ActionCard[]) ?? []);
                   setStreamStatus(null);
                   void utils.queue.pendingCount.invalidate();
@@ -386,7 +445,10 @@ export default function AgentPage() {
           </div>
 
           <div className="thread-agent-feed" ref={feedRef}>
-            {messages.length === 0 ? (
+            {status.isLoading && messages.length === 0 ? (
+              <SkeletonList count={3} />
+            ) : null}
+            {messages.length === 0 && !status.isLoading ? (
               <div
                 className="thread-rotator-bubble"
                 data-approval={approvalSettingsReady ? (agentAutoApprove ? "on" : "off") : undefined}
@@ -416,7 +478,7 @@ export default function AgentPage() {
               </div>
             ))}
 
-            {isPending ? (
+            {isPending && messages[messages.length - 1]?.role !== "assistant" ? (
               <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
                 <Loader2 size={13} className="thread-spin" />
                 <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>

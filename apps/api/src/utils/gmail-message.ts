@@ -98,32 +98,68 @@ export function extractPlainBody(payload: MessagePart | undefined): string {
   return "";
 }
 
+export type EmailAttachmentInput = {
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+};
+
 export function buildRawEmail(input: {
   to: string;
   subject: string;
   body: string;
   inReplyTo?: string;
   references?: string;
+  attachments?: EmailAttachmentInput[];
 }) {
   const to = sanitizeEmailHeader(input.to);
   const subject = sanitizeEmailHeader(input.subject);
+  const attachments = (input.attachments ?? []).filter((a) => a.contentBase64?.trim());
 
-  const lines = [
+  const headers = [
     `To: ${to}`,
     `Subject: ${subject}`,
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=utf-8",
   ];
 
   if (input.inReplyTo) {
-    lines.push(`In-Reply-To: ${sanitizeEmailHeader(input.inReplyTo)}`);
+    headers.push(`In-Reply-To: ${sanitizeEmailHeader(input.inReplyTo)}`);
   }
   if (input.references) {
-    lines.push(`References: ${sanitizeEmailHeader(input.references)}`);
+    headers.push(`References: ${sanitizeEmailHeader(input.references)}`);
   }
 
-  lines.push("", input.body);
-  return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
+  if (attachments.length === 0) {
+    headers.push("Content-Type: text/plain; charset=utf-8", "", input.body);
+    return Buffer.from(headers.join("\r\n"), "utf8").toString("base64url");
+  }
+
+  const boundary = `thread_${Date.now().toString(36)}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, "");
+
+  const parts: string[] = [];
+  parts.push(
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    input.body,
+  );
+
+  for (const attachment of attachments) {
+    const filename = sanitizeEmailHeader(attachment.filename);
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${attachment.mimeType || "application/octet-stream"}; name="${filename}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${filename}"`,
+      "",
+      attachment.contentBase64.replace(/\s/g, ""),
+    );
+  }
+
+  parts.push(`--${boundary}--`, "");
+  return Buffer.from(`${headers.join("\r\n")}\r\n${parts.join("\r\n")}`, "utf8").toString("base64url");
 }
 
 export function parseEmailAddress(value: string | undefined) {

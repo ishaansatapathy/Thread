@@ -159,6 +159,29 @@ export const inboxRouter = router({
       }
     }),
 
+  getDraft: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/drafts/{draftId}"), tags: TAGS } })
+    .input(z.object({ draftId: z.string().min(1) }))
+    .output(
+      z
+        .object({
+          id: z.string(),
+          to: z.string().optional(),
+          subject: z.string().optional(),
+          body: z.string(),
+          threadId: z.string().optional(),
+        })
+        .nullable(),
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        return await inbox.getDraft(ctx.user.id, input.draftId);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   getThread: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/threads/{threadId}"), tags: TAGS } })
     .input(z.object({ threadId: z.string().min(1) }))
@@ -213,9 +236,13 @@ export const inboxRouter = router({
     .input(z.object({ threadId: z.string().min(1) }))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      await inbox.markThreadRead(ctx.user.id, input.threadId);
-      return { ok: true };
+      try {
+        const inbox = getInboxService();
+        await inbox.markThreadRead(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   archiveThread: protectedProcedure
@@ -223,9 +250,13 @@ export const inboxRouter = router({
     .input(z.object({ threadId: z.string().min(1) }))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      await inbox.archiveThread(ctx.user.id, input.threadId);
-      return { ok: true };
+      try {
+        const inbox = getInboxService();
+        await inbox.archiveThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   listLabels: protectedProcedure
@@ -242,9 +273,13 @@ export const inboxRouter = router({
     .input(z.object({ threadId: z.string().min(1), labelId: z.string().min(1) }))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      await inbox.applyLabel(ctx.user.id, input.threadId, input.labelId);
-      return { ok: true };
+      try {
+        const inbox = getInboxService();
+        await inbox.applyLabel(ctx.user.id, input.threadId, input.labelId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   removeLabel: protectedProcedure
@@ -252,9 +287,13 @@ export const inboxRouter = router({
     .input(z.object({ threadId: z.string().min(1), labelId: z.string().min(1) }))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const inbox = getInboxService();
-      await inbox.removeLabel(ctx.user.id, input.threadId, input.labelId);
-      return { ok: true };
+      try {
+        const inbox = getInboxService();
+        await inbox.removeLabel(ctx.user.id, input.threadId, input.labelId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 
   disconnectGmail: protectedProcedure
@@ -262,8 +301,12 @@ export const inboxRouter = router({
     .input(z.object({}))
     .output(z.object({ ok: z.boolean() }))
     .mutation(async ({ ctx }) => {
-      const inbox = getInboxService();
-      await inbox.disconnect(ctx.user.id);
-      return { ok: true };
+      try {
+        const inbox = getInboxService();
+        await inbox.disconnect(ctx.user.id);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
     }),
 });

@@ -1,13 +1,16 @@
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
-import type {
-  CalendarConnectionStatus,
-  CalendarEvent,
-  CalendarService,
+import {
+  resolveCalendarEventId,
+  type CalendarConnectionStatus,
+  type CalendarEditScope,
+  type CalendarEvent,
+  type CalendarService,
 } from "@repo/services/calendar";
-
 import { getCorsair, getCorsairCalendarRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
+import { env } from "../env";
+import { clearCalendarChannel, getCalendarChannel, setCalendarChannel } from "./calendar-state";
 import { ensureCorsairTenant } from "./corsair-tenant";
 
 function mapEvent(event: {
@@ -154,6 +157,8 @@ export class CorsairCalendarService implements CalendarService {
       endDateTime: string;
       timeZone?: string;
       attendeeEmails?: string[];
+      allDay?: boolean;
+      recurrence?: string[];
     },
   ) {
     const status = await this.getConnectionStatus(tenantId);
@@ -163,6 +168,13 @@ export class CorsairCalendarService implements CalendarService {
 
     const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
+    const start = input.allDay
+      ? { date: input.startDateTime.slice(0, 10) }
+      : { dateTime: input.startDateTime, timeZone };
+    const end = input.allDay
+      ? { date: input.endDateTime.slice(0, 10) }
+      : { dateTime: input.endDateTime, timeZone };
+
     const created = await corsair.googlecalendar.api.events.create({
       calendarId: "primary",
       sendUpdates: "all",
@@ -170,9 +182,10 @@ export class CorsairCalendarService implements CalendarService {
         summary: input.summary,
         description: input.description,
         location: input.location,
-        start: { dateTime: input.startDateTime, timeZone },
-        end: { dateTime: input.endDateTime, timeZone },
+        start,
+        end,
         attendees: input.attendeeEmails?.map((email) => ({ email })),
+        recurrence: input.recurrence?.length ? input.recurrence : undefined,
       },
     });
 
@@ -213,34 +226,142 @@ export class CorsairCalendarService implements CalendarService {
     return { success: true as const };
   }
 
+  private async listFollowingInstances(
+    tenantId: string,
+    eventId: string,
+    recurringEventId?: string,
+  ): Promise<CalendarEvent[]> {
+    const corsair = getCorsair().withTenant(tenantId);
+    const instance = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+
+    const masterId = recurringEventId ?? instance.recurringEventId;
+    const from = instance.start?.dateTime ?? instance.start?.date;
+    if (!masterId || !from) {
+      const mapped = mapEvent(instance);
+      return mapped ? [mapped] : [];
+    }
+
+    const twoYearsAhead = new Date(Date.now() + 730 * 24 * 60 * 60 * 1000).toISOString();
+    const listed = await this.listEvents(tenantId, {
+      timeMin: from,
+      timeMax: twoYearsAhead,
+      maxResults: 250,
+    });
+
+    return listed.events.filter((event: CalendarEvent) => event.recurringEventId === masterId);
+  }
+
+  private async deleteFollowingEvents(
+    tenantId: string,
+    eventId: string,
+    recurringEventId?: string,
+  ) {
+    const corsair = getCorsair().withTenant(tenantId);
+    const instances = await this.listFollowingInstances(tenantId, eventId, recurringEventId);
+    for (const event of instances) {
+      await corsair.googlecalendar.api.events.delete({
+        calendarId: "primary",
+        id: event.id,
+        sendUpdates: "all",
+      });
+    }
+    return { success: true as const };
+  }
+
+  private async updateFollowingEventTimes(
+    tenantId: string,
+    eventId: string,
+    input: { startDateTime: string; endDateTime: string; timeZone?: string; allDay?: boolean },
+    recurringEventId?: string,
+  ) {
+    const corsair = getCorsair().withTenant(tenantId);
+    const instance = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+    const masterId = recurringEventId ?? instance.recurringEventId;
+
+    const instances = await this.listFollowingInstances(tenantId, eventId, masterId ?? undefined);
+    for (const event of instances) {
+      await corsair.googlecalendar.api.events.delete({
+        calendarId: "primary",
+        id: event.id,
+        sendUpdates: "all",
+      });
+    }
+
+    let recurrence: string[] | undefined;
+    if (masterId) {
+      const master = await corsair.googlecalendar.api.events.get({
+        calendarId: "primary",
+        id: masterId,
+      });
+      recurrence = master.recurrence?.length ? master.recurrence : undefined;
+    }
+
+    const attendeeEmails = (instance.attendees ?? [])
+      .map((attendee: { email?: string }) => attendee.email?.trim())
+      .filter((email: string | undefined): email is string => Boolean(email));
+
+    return this.createEvent(tenantId, {
+      summary: instance.summary?.trim() || "Untitled event",
+      description: instance.description,
+      location: instance.location,
+      startDateTime: input.startDateTime,
+      endDateTime: input.endDateTime,
+      timeZone: input.timeZone,
+      allDay: input.allDay,
+      recurrence,
+      attendeeEmails: attendeeEmails.length ? attendeeEmails : undefined,
+    });
+  }
+
   async updateEventTimes(
     tenantId: string,
     eventId: string,
-    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+    input: { startDateTime: string; endDateTime: string; timeZone?: string; allDay?: boolean },
+    opts?: { editScope?: CalendarEditScope; recurringEventId?: string },
   ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.googlecalendar !== "connected") {
       throw new Error("Google Calendar is not connected");
     }
 
+    if (opts?.editScope === "following") {
+      return this.updateFollowingEventTimes(tenantId, eventId, input, opts.recurringEventId);
+    }
+
+    const scope = opts?.editScope === "series" ? "series" : "instance";
+    const targetId = resolveCalendarEventId(eventId, opts?.recurringEventId, scope);
     const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
     const existing = await corsair.googlecalendar.api.events.get({
       calendarId: "primary",
-      id: eventId,
+      id: targetId,
     });
+
+    const allDay = input.allDay ?? Boolean(existing.start?.date && !existing.start?.dateTime);
+    const start = allDay
+      ? { date: input.startDateTime.slice(0, 10) }
+      : { dateTime: input.startDateTime, timeZone };
+    const end = allDay
+      ? { date: input.endDateTime.slice(0, 10) }
+      : { dateTime: input.endDateTime, timeZone };
 
     const updated = await corsair.googlecalendar.api.events.update({
       calendarId: "primary",
-      id: eventId,
+      id: targetId,
       sendUpdates: "all",
       event: {
         summary: existing.summary,
         description: existing.description,
         location: existing.location,
         attendees: existing.attendees,
-        start: { dateTime: input.startDateTime, timeZone },
-        end: { dateTime: input.endDateTime, timeZone },
+        start,
+        end,
       },
     });
 
@@ -251,16 +372,26 @@ export class CorsairCalendarService implements CalendarService {
     return mapped;
   }
 
-  async deleteEvent(tenantId: string, eventId: string) {
+  async deleteEvent(
+    tenantId: string,
+    eventId: string,
+    opts?: { editScope?: CalendarEditScope; recurringEventId?: string },
+  ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.googlecalendar !== "connected") {
       throw new Error("Google Calendar is not connected");
     }
 
+    if (opts?.editScope === "following") {
+      return this.deleteFollowingEvents(tenantId, eventId, opts.recurringEventId);
+    }
+
+    const scope = opts?.editScope === "series" ? "series" : "instance";
+    const targetId = resolveCalendarEventId(eventId, opts?.recurringEventId, scope);
     const corsair = getCorsair().withTenant(tenantId);
     await corsair.googlecalendar.api.events.delete({
       calendarId: "primary",
-      id: eventId,
+      id: targetId,
       sendUpdates: "all",
     });
 
@@ -273,8 +404,49 @@ export class CorsairCalendarService implements CalendarService {
   ) {
     try {
       const status = await this.getConnectionStatus(tenantId);
-      if (status.googlecalendar !== "connected") return { conflicts: [] };
+      if (status.googlecalendar !== "connected") {
+        return { conflicts: [], unavailable: true as const };
+      }
 
+      const corsair = getCorsair().withTenant(tenantId);
+
+      // Attempt to use the real Google FreeBusy API first.
+      try {
+        const freeBusyResp = await (corsair.googlecalendar.api as {
+          freebusy?: {
+            query: (body: {
+              timeMin: string;
+              timeMax: string;
+              timeZone?: string;
+              items: Array<{ id: string }>;
+            }) => Promise<{
+              calendars?: Record<string, { busy?: Array<{ start: string; end: string }> }>;
+            }>;
+          };
+        }).freebusy?.query({
+          timeMin: input.startDateTime,
+          timeMax: input.endDateTime,
+          timeZone: input.timeZone?.trim() || "UTC",
+          items: [{ id: "primary" }],
+        });
+
+        if (freeBusyResp?.calendars?.primary) {
+          const busySlots = freeBusyResp.calendars.primary.busy ?? [];
+          // Convert busy slots to minimal CalendarEvent-like objects for the UI.
+          const conflicts: CalendarEvent[] = busySlots.map((slot, i) => ({
+            id: `busy-${i}`,
+            summary: "Busy",
+            start: slot.start,
+            end: slot.end,
+            allDay: false,
+          }));
+          return { conflicts };
+        }
+      } catch {
+        // FreeBusy API not available (older Corsair SDK) — fall back to listEvents.
+      }
+
+      // Fallback: list events and filter overlapping ones.
       const result = await this.listEvents(tenantId, {
         timeMin: input.startDateTime,
         timeMax: input.endDateTime,
@@ -284,22 +456,65 @@ export class CorsairCalendarService implements CalendarService {
 
       return { conflicts: result.events.filter((e: CalendarEvent) => e.status !== "cancelled") };
     } catch {
-      return { conflicts: [] };
+      return { conflicts: [], unavailable: true as const };
     }
   }
 
-  async disconnect(tenantId: string): Promise<void> {
-    try {
-      const corsair = getCorsair();
-      await (corsair.manage as {
-        connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
-      }).connections?.delete({ tenantId, provider: "googlecalendar" });
-    } catch (error) {
-      logger.warn("disconnect calendar failed (best-effort)", {
-        tenantId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+  async respondToEvent(
+    tenantId: string,
+    eventId: string,
+    response: "accepted" | "declined" | "tentative",
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") {
+      throw new Error("Google Calendar is not connected");
     }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const existing = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+
+    // Find the self-attendee (the user themselves) and update their response.
+    const selfEmail = (existing.attendees ?? []).find((a: { self?: boolean }) => a.self)?.email;
+    const updatedAttendees = (existing.attendees ?? []).map((a: { email?: string; self?: boolean; responseStatus?: string; displayName?: string; organizer?: boolean; optional?: boolean }) => {
+      if (a.self || (selfEmail && a.email === selfEmail)) {
+        return { ...a, responseStatus: response };
+      }
+      return a;
+    });
+
+    const updated = await corsair.googlecalendar.api.events.update({
+      calendarId: "primary",
+      id: eventId,
+      sendUpdates: "all",
+      event: {
+        summary: existing.summary,
+        description: existing.description,
+        location: existing.location,
+        start: existing.start,
+        end: existing.end,
+        attendees: updatedAttendees,
+      },
+    });
+
+    const mapped = mapEvent(updated);
+    if (!mapped) throw new Error("Event not found after RSVP update");
+    return mapped;
+  }
+
+  async disconnect(tenantId: string): Promise<void> {
+    const corsair = getCorsair();
+    const deleteFn = (corsair.manage as {
+      connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
+    }).connections?.delete;
+
+    if (!deleteFn) {
+      throw new Error("Corsair connections API is not available");
+    }
+
+    await deleteFn.call(corsair.manage.connections, { tenantId, provider: "googlecalendar" });
   }
 
   async registerWebhook(tenantId: string, webhookUrl: string): Promise<void> {
@@ -307,20 +522,32 @@ export class CorsairCalendarService implements CalendarService {
       const status = await this.getConnectionStatus(tenantId);
       if (status.googlecalendar !== "connected") return;
 
+      await this.stopCalendarChannel(tenantId);
+
       const corsair = getCorsair().withTenant(tenantId);
       const channelId = `thread-calendar-${tenantId}-${Date.now()}`;
-      await (corsair.googlecalendar.api.events as {
+      const channelToken = env.CORSAIR_WEBHOOK_SECRET?.trim();
+
+      const watchResp = await (corsair.googlecalendar.api.events as {
         watch?: (opts: {
           calendarId: string;
-          channel: { id: string; type: string; address: string };
-        }) => Promise<unknown>;
+          channel: { id: string; type: string; address: string; token?: string };
+        }) => Promise<{ resourceId?: string; expiration?: string }>;
       }).watch?.({
         calendarId: "primary",
         channel: {
           id: channelId,
           type: "web_hook",
           address: webhookUrl,
+          ...(channelToken ? { token: channelToken } : {}),
         },
+      });
+
+      const expirationMs = watchResp?.expiration ? Number(watchResp.expiration) : undefined;
+      await setCalendarChannel(tenantId, {
+        channelId,
+        resourceId: watchResp?.resourceId,
+        expiration: expirationMs && !Number.isNaN(expirationMs) ? new Date(expirationMs) : undefined,
       });
 
       logger.info("Calendar webhook channel registered", { tenantId, channelId, webhookUrl });
@@ -330,6 +557,29 @@ export class CorsairCalendarService implements CalendarService {
         webhookUrl,
         message: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  private async stopCalendarChannel(tenantId: string) {
+    const existing = await getCalendarChannel(tenantId);
+    if (!existing?.channelId) return;
+
+    try {
+      const corsair = getCorsair().withTenant(tenantId);
+      await (corsair.googlecalendar.api as {
+        channels?: { stop: (body: { id: string; resourceId: string }) => Promise<unknown> };
+      }).channels?.stop?.({
+        id: existing.channelId,
+        resourceId: existing.resourceId ?? "",
+      });
+    } catch (error) {
+      logger.warn("Calendar channel stop failed (continuing renewal)", {
+        tenantId,
+        channelId: existing.channelId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      await clearCalendarChannel(tenantId);
     }
   }
 }
