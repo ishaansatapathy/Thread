@@ -10,7 +10,10 @@ test.describe("Gmail-connected flows (optional)", () => {
   test.skip(!gmailAvailable, "Set E2E_GMAIL_AVAILABLE=true to run live Gmail E2E");
 
   test("Gmail OAuth connect URL is generated for authenticated session", async ({ request }) => {
-    test.skip(!sessionCookie, "Set E2E_SESSION_COOKIE with jwt cookies from a connected account");
+    if (!sessionCookie) {
+      test.skip(true, "Set E2E_SESSION_COOKIE with jwt cookies from a connected account");
+      return;
+    }
 
     const res = await request.get(`${API_URL}/trpc/inbox.getGmailConnectUrl`, {
       headers: { Cookie: sessionCookie },
@@ -21,7 +24,10 @@ test.describe("Gmail-connected flows (optional)", () => {
   });
 
   test("connected Gmail returns threads via tRPC", async ({ request }) => {
-    test.skip(!sessionCookie, "Set E2E_SESSION_COOKIE with jwt cookies from a connected account");
+    if (!sessionCookie) {
+      test.skip(true, "Set E2E_SESSION_COOKIE with jwt cookies from a connected account");
+      return;
+    }
 
     const res = await request.get(`${API_URL}/trpc/inbox.listThreads?batch=1&input=${encodeURIComponent(
       JSON.stringify({ 0: { json: { maxResults: 5 } } }),
