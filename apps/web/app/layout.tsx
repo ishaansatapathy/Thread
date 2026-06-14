@@ -45,6 +45,10 @@ export default function RootLayout({
           }}
         />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <meta
+          name="google-site-verification"
+          content="0-M21tVL5Opq0r0Ibk-8iE3aISFbUUgT3npGo7Lcu9A"
+        />
       </head>
       <body
         suppressHydrationWarning
