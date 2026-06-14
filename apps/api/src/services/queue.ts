@@ -192,6 +192,50 @@ export class ThreadQueueService implements QueueService {
     return Number(row?.value ?? 0);
   }
 
+  async getStats(userId: string) {
+    const rows = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(eq(threadQueueItemsTable.userId, userId))
+      .orderBy(desc(threadQueueItemsTable.createdAt))
+      .limit(500);
+
+    const total = rows.length;
+    const pending = rows.filter((r) => r.status === "pending").length;
+    const approved = rows.filter((r) => r.status === "approved").length;
+    const dismissed = rows.filter((r) => r.status === "dismissed").length;
+    const failed = rows.filter((r) => r.status === "failed").length;
+
+    // Action type breakdown
+    const byKind: Record<string, number> = {};
+    for (const row of rows) {
+      byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
+    }
+
+    // Last 14 days activity — bucket by date
+    const now = Date.now();
+    const DAY_MS = 86_400_000;
+    const days: { date: string; queued: number; approved: number; dismissed: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const dayStart = new Date(now - i * DAY_MS);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+      const label = dayStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const dayRows = rows.filter((r) => {
+        const t = r.createdAt?.getTime() ?? 0;
+        return t >= dayStart.getTime() && t < dayEnd.getTime();
+      });
+      days.push({
+        date: label,
+        queued: dayRows.length,
+        approved: dayRows.filter((r) => r.status === "approved").length,
+        dismissed: dayRows.filter((r) => r.status === "dismissed").length,
+      });
+    }
+
+    return { total, pending, approved, dismissed, failed, byKind, timeline: days };
+  }
+
   async enqueueEmail(
     userId: string,
     input: {

@@ -203,4 +203,34 @@ export const queueRouter = router({
         mapServiceError(error);
       }
     }),
+
+  stats: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/stats"), tags: TAGS } })
+    .input(z.object({}))
+    .output(
+      z.object({
+        total: z.number().int(),
+        pending: z.number().int(),
+        approved: z.number().int(),
+        dismissed: z.number().int(),
+        failed: z.number().int(),
+        byKind: z.record(z.string(), z.number().int()),
+        timeline: z.array(
+          z.object({
+            date: z.string(),
+            queued: z.number().int(),
+            approved: z.number().int(),
+            dismissed: z.number().int(),
+          }),
+        ),
+      }),
+    )
+    .query(async ({ ctx }) => {
+      try {
+        const queue = getQueueService();
+        return await queue.getStats(ctx.user.id);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
 });

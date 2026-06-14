@@ -122,6 +122,15 @@ export interface QueueService {
     },
   ): Promise<QueueItem>;
   dismiss(userId: string, itemId: string): Promise<QueueItem>;
+  getStats(userId: string): Promise<{
+    total: number;
+    pending: number;
+    approved: number;
+    dismissed: number;
+    failed: number;
+    byKind: Record<string, number>;
+    timeline: { date: string; queued: number; approved: number; dismissed: number }[];
+  }>;
 }
 
 let queueService: QueueService | null = null;
