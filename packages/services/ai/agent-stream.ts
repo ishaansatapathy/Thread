@@ -16,7 +16,7 @@ import { getQueueService } from "../queue";
 import { getSettingsService } from "../settings";
 import { isOpenAiConfigured } from "./openai";
 import { rankInboxThreads } from "./inbox-priority";
-import type { OpenAiConversationMessage, OpenAiToolDefinition } from "./openai-tools";
+import type { OpenAiConversationMessage } from "./openai-tools";
 import { runOpenAiToolLoop } from "./openai-tools";
 import {
   detectInjectionAttempt,

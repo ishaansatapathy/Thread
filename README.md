@@ -444,5 +444,5 @@ Sign in → Connect Gmail → send test queue item → approve → verify in Gma
 - All outbound actions go through the human-in-the-loop queue — nothing sends without explicit approval
 - Agent has 5 layers of guardrails: injection detection, email validation, per-session send cap (3), data fencing, token limit
 - Rate limiting: auth (40/15min), agent (20/min/user), MCP (60/min/user)
-- JWT with refresh rotation, account lockout after 5 failures
+- JWT with refresh token revocation on logout and password reset (tokenVersion bump), account lockout after 5 failures
 - CSRF protection via `requireTrustedOrigin` on all state-changing requests

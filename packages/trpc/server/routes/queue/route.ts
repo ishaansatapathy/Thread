@@ -21,7 +21,7 @@ const queueItemSchema = z.object({
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
   sourceThreadId: z.string().optional(),
-  status: z.enum(["pending", "approved", "dismissed", "failed"]),
+  status: z.enum(["pending", "processing", "approved", "dismissed", "failed"]),
   errorMessage: z.string().optional(),
   createdAt: z.string(),
   resolvedAt: z.string().optional(),
@@ -46,7 +46,7 @@ export const queueRouter = router({
     .meta({ openapi: { method: "GET", path: getPath("/items"), tags: TAGS } })
     .input(
       z.object({
-        status: z.enum(["pending", "approved", "dismissed", "failed", "all"]).optional(),
+        status: z.enum(["pending", "processing", "approved", "dismissed", "failed", "all"]).optional(),
       }),
     )
     .output(z.object({ items: z.array(queueItemSchema) }))

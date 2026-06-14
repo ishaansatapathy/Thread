@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
+import { authService } from "@repo/trpc/server/services";
 
 const skipInTests = () => process.env.VITEST === "true";
 
@@ -85,16 +86,13 @@ export function createTrpcRateLimitMiddleware() {
     }
 
     if (matchesProcedure(path, AGENT_CHAT_PROCS)) {
-      // Key on authenticated user ID (set by auth middleware in x-thread-user-id
-      // header) so the limit is per-user, not per-IP — shared NATs won't
-      // throttle unrelated users.  Fall back to IP if the header is absent.
+      const user = await authService.resolveSession(req, res);
       const ok = await applyRateLimit(req, res, {
         windowMs: 60 * 1000, // 1 minute
         max: 20, // 20 agent calls per user per minute
         message: "Too many agent requests. Please wait a moment before sending another message.",
         keyGenerator: (r) => {
-          const userId = r.headers["x-thread-user-id"];
-          if (typeof userId === "string" && userId.trim()) return `agent:${userId.trim()}`;
+          if (user?.id) return `agent:${user.id}`;
           return `agent:ip:${r.ip ?? r.socket.remoteAddress ?? "unknown"}`;
         },
       });

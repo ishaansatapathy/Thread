@@ -152,7 +152,7 @@ export default function QueuePage() {
   });
 
   const items = itemsQuery.data?.items ?? [];
-  const pending = items.filter((item) => item.status === "pending");
+  const pending = items.filter((item) => item.status === "pending" || item.status === "processing");
   const anyBusy = activeItemId !== null;
 
   const filtered = useMemo(() => {
@@ -286,7 +286,8 @@ export default function QueuePage() {
         <div className="thread-queue-list">
           {filtered.map((item) => {
             const Icon = kindIcon(item.kind);
-            const isPending = item.status === "pending";
+            const isPending = item.status === "pending" || item.status === "processing";
+            const isProcessing = item.status === "processing";
             return (
               <article key={item.id} className="thread-queue-card" data-status={item.status}>
                 <div className="thread-queue-card-head">
@@ -323,7 +324,7 @@ export default function QueuePage() {
                     <button
                       type="button"
                       className="thread-btn-ghost"
-                      disabled={anyBusy}
+                      disabled={anyBusy || isProcessing}
                       onClick={() => dismiss.mutate({ id: item.id })}
                     >
                       {activeItemId === item.id && activeAction === "dismiss" ? "Removing…" : "Dismiss"}
@@ -331,10 +332,10 @@ export default function QueuePage() {
                     <button
                       type="button"
                       className="thread-btn-accent"
-                      disabled={anyBusy}
+                      disabled={anyBusy || isProcessing}
                       onClick={() => handleApproveClick(item)}
                     >
-                      {approveLabel(item)}
+                      {isProcessing ? "Processing…" : approveLabel(item)}
                     </button>
                   </div>
                 ) : null}

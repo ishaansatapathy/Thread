@@ -6,7 +6,7 @@ export type QueueItemKind =
   | "calendar_archive"
   | "calendar_delete";
 
-export type QueueItemStatus = "pending" | "approved" | "dismissed" | "failed";
+export type QueueItemStatus = "pending" | "processing" | "approved" | "dismissed" | "failed";
 
 export type EmailQueuePayload = {
   to: string;

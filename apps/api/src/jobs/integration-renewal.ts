@@ -4,6 +4,7 @@
  */
 
 import { logger } from "@repo/logger";
+import { acquireLeaderLock } from "@repo/services/cache/leader-lock";
 
 import { env } from "../env";
 import { getCorsairPool, isCorsairConfigured } from "../corsair";
@@ -12,6 +13,8 @@ import { CorsairCalendarService } from "../services/calendar";
 
 const RENEWAL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const INITIAL_DELAY_MS = 60_000;
+const LEADER_LOCK_TTL_MS = 26 * 60 * 60 * 1000;
+const LEADER_LOCK_NAME = "integration-renewal";
 
 async function listConnectedTenantIds(): Promise<string[]> {
   try {
@@ -77,7 +80,15 @@ export function startIntegrationRenewalJob() {
   if (process.env.DISABLE_INTEGRATION_RENEWAL === "true") return;
 
   const tick = () => {
-    void renewIntegrationsForAllTenants().catch((error: unknown) => {
+    void (async () => {
+      const isLeader = await acquireLeaderLock(LEADER_LOCK_NAME, LEADER_LOCK_TTL_MS);
+      if (!isLeader) {
+        logger.debug("integration-renewal: skipped (another replica holds the lock)");
+        return;
+      }
+
+      await renewIntegrationsForAllTenants();
+    })().catch((error: unknown) => {
       logger.warn("integration-renewal: job error", {
         message: error instanceof Error ? error.message : String(error),
       });

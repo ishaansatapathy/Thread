@@ -13,6 +13,48 @@ import { env } from "../env";
 import { clearCalendarChannel, getCalendarChannel, setCalendarChannel } from "./calendar-state";
 import { ensureCorsairTenant } from "./corsair-tenant";
 
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatRruleUntilDateTime(isoStart: string) {
+  const end = new Date(isoStart);
+  end.setUTCSeconds(end.getUTCSeconds() - 1);
+  return [
+    end.getUTCFullYear(),
+    pad2(end.getUTCMonth() + 1),
+    pad2(end.getUTCDate()),
+    "T",
+    pad2(end.getUTCHours()),
+    pad2(end.getUTCMinutes()),
+    pad2(end.getUTCSeconds()),
+    "Z",
+  ].join("");
+}
+
+function formatRruleUntilDate(isoDate: string) {
+  const end = new Date(`${isoDate}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() - 1);
+  return [
+    end.getUTCFullYear(),
+    pad2(end.getUTCMonth() + 1),
+    pad2(end.getUTCDate()),
+  ].join("");
+}
+
+function truncateRecurrenceRules(recurrence: string[], splitStart: string, allDay: boolean) {
+  const until = allDay ? formatRruleUntilDate(splitStart) : formatRruleUntilDateTime(splitStart);
+  return recurrence.map((rule) => {
+    if (!rule.startsWith("RRULE:")) return rule;
+    const body = rule
+      .slice(6)
+      .split(";")
+      .filter((part) => !part.startsWith("UNTIL=") && !part.startsWith("COUNT="))
+      .join(";");
+    return `RRULE:${body};UNTIL=${until}`;
+  });
+}
+
 function mapEvent(event: {
   id?: string;
   summary?: string;
@@ -254,12 +296,47 @@ export class CorsairCalendarService implements CalendarService {
     return listed.events.filter((event: CalendarEvent) => event.recurringEventId === masterId);
   }
 
+  private async truncateMasterRecurrenceBefore(
+    tenantId: string,
+    eventId: string,
+    recurringEventId?: string,
+  ): Promise<string | undefined> {
+    const corsair = getCorsair().withTenant(tenantId);
+    const instance = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: eventId,
+    });
+
+    const masterId = recurringEventId ?? instance.recurringEventId;
+    const splitStart = instance.start?.dateTime ?? instance.start?.date;
+    if (!masterId || !splitStart) return masterId ?? undefined;
+
+    const master = await corsair.googlecalendar.api.events.get({
+      calendarId: "primary",
+      id: masterId,
+    });
+    if (!master.recurrence?.length) return masterId;
+
+    const allDay = Boolean(instance.start?.date && !instance.start?.dateTime);
+    await corsair.googlecalendar.api.events.patch({
+      calendarId: "primary",
+      id: masterId,
+      sendUpdates: "all",
+      event: {
+        recurrence: truncateRecurrenceRules(master.recurrence, splitStart, allDay),
+      },
+    });
+
+    return masterId;
+  }
+
   private async deleteFollowingEvents(
     tenantId: string,
     eventId: string,
     recurringEventId?: string,
   ) {
     const corsair = getCorsair().withTenant(tenantId);
+    await this.truncateMasterRecurrenceBefore(tenantId, eventId, recurringEventId);
     const instances = await this.listFollowingInstances(tenantId, eventId, recurringEventId);
     for (const event of instances) {
       await corsair.googlecalendar.api.events.delete({
@@ -283,6 +360,8 @@ export class CorsairCalendarService implements CalendarService {
       id: eventId,
     });
     const masterId = recurringEventId ?? instance.recurringEventId;
+
+    await this.truncateMasterRecurrenceBefore(tenantId, eventId, masterId ?? undefined);
 
     const instances = await this.listFollowingInstances(tenantId, eventId, masterId ?? undefined);
     for (const event of instances) {
