@@ -128,9 +128,17 @@ corsairAuthRouter.get("/gmail/callback", async (req, res) => {
 
   try {
     await inboxService.completeGmailOAuth({ code, state });
-    // Force fresh connection status after successful OAuth.
     const user = await authService.resolveSession(req, res);
-    if (user) invalidateConnectionCache(user.id);
+    if (user) {
+      invalidateConnectionCache(user.id);
+      // Register Gmail Pub/Sub watch when topic is configured (best-effort).
+      void inboxService.registerGmailWatch(user.id).catch((err: unknown) => {
+        logger.warn("Gmail watch registration failed (non-critical)", {
+          userId: user.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
     return res.redirect(`${env.CLIENT_URL}${returnTo}?gmail=connected`);
   } catch (error) {
     logger.error("Gmail OAuth callback failed", {

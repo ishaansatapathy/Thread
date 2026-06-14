@@ -229,6 +229,14 @@ export function ThreadAuthCard({
                 <GoogleIcon size={18} />
                 Continue with Google
               </a>
+              {isLogin ? (
+                <a
+                  href={`/api-auth/demo?next=${encodeURIComponent(sanitizeRedirectPath(nextPath))}`}
+                  className="thread-auth-demo-wide"
+                >
+                  Try demo — no signup
+                </a>
+              ) : null}
               <p className="thread-auth-or">or</p>
             </>
           )}

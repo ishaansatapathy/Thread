@@ -31,6 +31,10 @@ const nextConfig = {
         destination: `${apiInternalUrl}/agent/stream`,
       },
       {
+        source: "/sync/events",
+        destination: `${apiInternalUrl}/sync/events`,
+      },
+      {
         source: "/inbox/attachments/:path*",
         destination: `${apiInternalUrl}/inbox/attachments/:path*`,
       },

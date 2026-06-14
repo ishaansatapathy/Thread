@@ -92,6 +92,9 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
       (toolName) => {
         send("status", { tool: toolName, label: toolStatusLabel(toolName) });
       },
+      (delta) => {
+        send("token", { text: delta });
+      },
     );
 
     send("complete", { reply: result.reply, actions: result.actions });

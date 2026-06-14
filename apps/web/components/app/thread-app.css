@@ -29,7 +29,16 @@
   gap: 10px;
   padding: 0 18px;
   border-bottom: 1px solid var(--thread-line);
+}
+
+.thread-app-side-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
   text-decoration: none;
+  color: inherit;
 }
 
 .thread-app-nav {
@@ -1021,6 +1030,62 @@
   border-radius: 14px;
   overflow: hidden;
   background: var(--thread-surface);
+}
+
+.thread-cal-mobile-list {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.thread-cal-mobile-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--thread-line);
+  background: var(--thread-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-cal-mobile-item-when {
+  font-size: 11px;
+  color: var(--thread-dim);
+  font-family: var(--thread-mono);
+}
+
+.thread-cal-mobile-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--thread-text);
+}
+
+.thread-inbox-label-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  color: var(--thread-dim);
+}
+
+.thread-inbox-label-filter select {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--thread-line);
+  background: var(--thread-surface);
+  color: var(--thread-text);
+}
+
+.thread-label-picker-item[data-variant="remove"] {
+  opacity: 0.85;
+  font-style: italic;
 }
 
 .thread-cal-col {
@@ -2133,12 +2198,77 @@
 }
 
 /* ── Responsive ── */
+.thread-app-mobile-menu-btn {
+  display: none;
+}
+.thread-app-mobile-cmd {
+  display: none;
+}
+.thread-app-mobile-close {
+  display: none;
+}
+.thread-app-mobile-backdrop {
+  display: none;
+}
+
 @media (max-width: 880px) {
   .thread-app {
     grid-template-columns: 1fr;
   }
+  .thread-app-mobile-menu-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
   .thread-app-side {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(280px, 88vw);
+    z-index: 120;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: none;
+  }
+  .thread-app-side[data-open="true"] {
+    transform: translateX(0);
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+  }
+  .thread-app-mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    border: none;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
+  .thread-app-mobile-close {
+    display: inline-flex;
+    margin-left: auto;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--thread-line);
+    background: transparent;
+    color: var(--thread-muted);
+    cursor: pointer;
+  }
+  .thread-app-side-head {
+    position: relative;
+  }
+  .thread-app-search {
     display: none;
+  }
+  .thread-app-mobile-cmd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
   }
   .thread-inbox {
     grid-template-columns: 1fr;
@@ -2149,6 +2279,10 @@
   .thread-agent-page {
     grid-template-columns: 1fr;
     height: auto;
+  }
+  .thread-cal-grid {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -2170,7 +2304,13 @@
   .thread-queue-search {
     margin-bottom: 12px;
   }
-  /* Calendar week view — collapse to day tiles */
+  /* Calendar week view — collapse to day list on mobile */
+  .thread-cal-grid {
+    display: none;
+  }
+  .thread-cal-mobile-list {
+    display: flex;
+  }
   .thread-cal-week {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -2283,6 +2423,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.thread-inbox-attachment-link {
+  color: var(--thread-accent-bright, #60a5fa);
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.thread-inbox-attachment-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
 }
 .thread-inbox-attachment-size {
   color: var(--thread-muted);
@@ -2416,4 +2565,61 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* ── Skeleton loading pulses ──────────────────────────────────────────────── */
+@keyframes thread-skeleton-pulse {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 0.15; }
+  100% { opacity: 0.4; }
+}
+.thread-skeleton {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  animation: thread-skeleton-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.thread-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--thread-line);
+}
+.thread-skeleton-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.thread-skeleton-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.thread-skeleton-line {
+  height: 10px;
+  border-radius: 4px;
+}
+.thread-skeleton-line-short {
+  height: 10px;
+  border-radius: 4px;
+  width: 40%;
+}
+.thread-skeleton-line-medium {
+  height: 10px;
+  border-radius: 4px;
+  width: 70%;
+}
+.thread-skeleton-line-full {
+  height: 10px;
+  border-radius: 4px;
+  width: 100%;
+}
+.thread-skeleton-date {
+  width: 36px;
+  height: 10px;
+  border-radius: 4px;
+  flex-shrink: 0;
 }

@@ -6,6 +6,9 @@ node_modules
 
 .pnp.js
 
+# Local Corsair SDK clone / reference (install via npm — see package.json)
+corsair-sdk/
+
 
 
 # Local env files — NEVER commit secrets (.env.example stays tracked)

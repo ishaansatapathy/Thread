@@ -20,13 +20,14 @@ import { env } from "./env";
 
 import { createTrpcRateLimitMiddleware } from "./middleware/rate-limiters";
 import { metricsMiddleware } from "./middleware/observe";
-import { snapshot, toPrometheusText, incrementCounter } from "./metrics";
+import { snapshot, snapshotMerged, toPrometheusText, incrementCounter } from "./metrics";
 
 import { googleAuthRouter } from "./routes/google-auth";
 import { corsairAuthRouter } from "./routes/corsair-auth";
 import { webhooksRouter } from "./routes/webhooks";
 import { mcpRouter } from "./routes/mcp";
 import { agentStreamRouter } from "./routes/agent-stream";
+import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
 
 export const app = express();
@@ -154,6 +155,34 @@ async function getReadinessReport() {
     ? { ok: false, message: `Missing core env vars: ${missingCoreEnvs.join(", ")}` }
     : { ok: true, message: "Core env vars present" };
 
+  try {
+    const { isCorsairDevKeyConfigured } = await import("./corsair");
+    checks.corsairDevKey = {
+      ok: true,
+      message: isCorsairDevKeyConfigured()
+        ? "CORSAIR_DEV_KEY configured (Corsair CLI / dashboard)"
+        : "CORSAIR_DEV_KEY not set (optional — set for Corsair dashboard API / setup)",
+    };
+  } catch {
+    checks.corsairDevKey = { ok: true, message: "CORSAIR_DEV_KEY check skipped" };
+  }
+
+  const gmailTopic = process.env.CORSAIR_GMAIL_TOPIC_ID?.trim();
+  checks.gmailWatch = gmailTopic
+    ? { ok: true, message: "Gmail Pub/Sub topic configured for users.watch" }
+    : {
+        ok: true,
+        message: "CORSAIR_GMAIL_TOPIC_ID not set (optional — Gmail push watches disabled until set)",
+      };
+
+  const webhookSecret = env.CORSAIR_WEBHOOK_SECRET?.trim();
+  checks.webhooks = webhookSecret
+    ? { ok: true, message: "Webhook secret configured" }
+    : {
+        ok: true,
+        message: "CORSAIR_WEBHOOK_SECRET not set (optional — webhook endpoints return 503 until set)",
+      };
+
   const ready = Object.values(checks).every((check) => check.ok);
   return { ready, checks };
 }
@@ -234,8 +263,9 @@ app.get("/metrics", requireOpenApiDocsAuth, (_req, res) => {
 });
 
 /** JSON metrics for dashboards / health pages. */
-app.get("/metrics/json", requireOpenApiDocsAuth, (_req, res) => {
-  return res.json({ ok: true, timestamp: new Date().toISOString(), ...snapshot() });
+app.get("/metrics/json", requireOpenApiDocsAuth, async (_req, res) => {
+  const merged = await snapshotMerged();
+  return res.json({ ok: true, timestamp: new Date().toISOString(), ...merged });
 });
 
 export { incrementCounter };
@@ -263,6 +293,7 @@ app.use("/auth/corsair", corsairAuthRouter);
 app.use("/webhooks", webhooksRouter);
 app.use("/mcp", mcpRouter);
 app.use("/agent/stream", agentStreamRouter);
+app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);
 
 const trpcRateLimit = createTrpcRateLimitMiddleware();
@@ -292,3 +323,13 @@ app.use(
 );
 
 export default app;
+
+// Global error handler — catch unhandled errors outside tRPC.
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  logger.error("Unhandled Express error", {
+    path: req.path,
+    message: err.message,
+  });
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Internal server error" });
+});

@@ -56,14 +56,21 @@ export interface CalendarService {
       endDateTime: string;
       timeZone?: string;
       attendeeEmails?: string[];
+      allDay?: boolean;
+      recurrence?: string[];
     },
   ): Promise<CalendarEvent>;
   cancelEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
-  deleteEvent(tenantId: string, eventId: string): Promise<{ success: true }>;
+  deleteEvent(
+    tenantId: string,
+    eventId: string,
+    opts?: { editScope?: "instance" | "series" | "following"; recurringEventId?: string },
+  ): Promise<{ success: true }>;
   updateEventTimes(
     tenantId: string,
     eventId: string,
-    input: { startDateTime: string; endDateTime: string; timeZone?: string },
+    input: { startDateTime: string; endDateTime: string; timeZone?: string; allDay?: boolean },
+    opts?: { editScope?: "instance" | "series" | "following"; recurringEventId?: string },
   ): Promise<CalendarEvent>;
   /**
    * Check for free/busy conflicts in the given time range.
@@ -72,8 +79,17 @@ export interface CalendarService {
   checkFreeBusy(
     tenantId: string,
     input: { startDateTime: string; endDateTime: string; timeZone?: string },
-  ): Promise<{ conflicts: CalendarEvent[] }>;
-  /** Revoke Google Calendar OAuth credentials (disconnect). Best-effort, does not throw. */
+  ): Promise<{ conflicts: CalendarEvent[]; unavailable?: boolean }>;
+  /**
+   * Respond to a calendar event invitation (accept / decline / tentative).
+   * Updates the authenticated user's attendee status on the event.
+   */
+  respondToEvent(
+    tenantId: string,
+    eventId: string,
+    response: "accepted" | "declined" | "tentative",
+  ): Promise<CalendarEvent>;
+  /** Revoke Google Calendar OAuth credentials (disconnect). Throws on failure. */
   disconnect(tenantId: string): Promise<void>;
   /**
    * Register a Google Calendar push-notification channel.
@@ -94,3 +110,5 @@ export function getCalendarService(): CalendarService {
   }
   return calendarService;
 }
+
+export { resolveCalendarEventId, type CalendarEditScope } from "./scope";

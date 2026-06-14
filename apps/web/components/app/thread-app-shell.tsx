@@ -15,14 +15,18 @@ import {
   ListChecks,
   Bot,
   BarChart2,
+  Menu,
+  X,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { ThreadWordmark } from "~/components/thread/thread-logo";
 import { ThreadCommand } from "./thread-command";
+import { ShortcutsHelp } from "./shortcuts-help";
 import { ThreadGmailConnect, ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
 import { ThreadCalendarConnect } from "./thread-calendar-connect";
 import { useThreadUser, initials } from "./use-thread-user";
+import { useSyncEvents } from "~/hooks/use-sync-events";
 
 const NAV = [
   { label: "Inbox", href: "/inbox", icon: Inbox },
@@ -46,11 +50,14 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { user, isLoading, isError } = useThreadUser();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
   const queueCountQuery = trpc.queue.pendingCount.useQuery({});
   const queueCount = queueCountQuery.data?.count ?? 0;
+  useSyncEvents();
 
   const logout = trpc.auth.logout.useMutation({
     onSettled: async () => {
@@ -68,14 +75,30 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCmdOpen((v) => !v);
+        return;
+      }
+
+      if (e.key === "?" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -84,6 +107,48 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  const navLinks = (
+    <>
+      <span className="thread-app-nav-label">Workspace</span>
+      {NAV.map((item) => {
+        const active = pathname === item.href;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="thread-app-nav-item"
+            data-active={active}
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <item.icon size={16} />
+            {item.label}
+            {item.href === "/inbox" && queueCount > 0 && (
+              <span className="thread-app-nav-count">{queueCount}</span>
+            )}
+            {item.href === "/queue" && queueCount > 0 && (
+              <span className="thread-app-nav-count">{queueCount}</span>
+            )}
+          </Link>
+        );
+      })}
+
+      <span className="thread-app-nav-label">Account</span>
+      <Link
+        href="/settings"
+        className="thread-app-nav-item"
+        data-active={pathname === "/settings"}
+        onClick={() => setMobileNavOpen(false)}
+      >
+        <Settings size={16} />
+        Settings
+      </Link>
+      <Link href="/" className="thread-app-nav-item" onClick={() => setMobileNavOpen(false)}>
+        <PanelsTopLeft size={16} />
+        Landing page
+      </Link>
+    </>
+  );
 
   if (isLoading || isError || !user) {
     return (
@@ -97,40 +162,32 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="thread-page thread-app">
-      <aside className="thread-app-side">
-        <Link href="/inbox" className="thread-app-side-head">
-          <Image src="/thread-logo.svg" alt="Thread" width={24} height={24} priority />
-          <ThreadWordmark size="sm" />
-        </Link>
+      {mobileNavOpen ? (
+        <button
+          type="button"
+          className="thread-app-mobile-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      ) : null}
 
-        <nav className="thread-app-nav">
-          <span className="thread-app-nav-label">Workspace</span>
-          {NAV.map((item) => {
-            const active = pathname === item.href;
-            return (
-              <Link key={item.href} href={item.href} className="thread-app-nav-item" data-active={active}>
-                <item.icon size={16} />
-                {item.label}
-                {item.href === "/inbox" && queueCount > 0 && (
-                  <span className="thread-app-nav-count">{queueCount}</span>
-                )}
-                {item.href === "/queue" && queueCount > 0 && (
-                  <span className="thread-app-nav-count">{queueCount}</span>
-                )}
-              </Link>
-            );
-          })}
+      <aside className="thread-app-side" data-open={mobileNavOpen ? "true" : undefined}>
+        <div className="thread-app-side-head">
+          <Link href="/inbox" className="thread-app-side-brand" onClick={() => setMobileNavOpen(false)}>
+            <Image src="/thread-logo.svg" alt="Thread" width={24} height={24} priority />
+            <ThreadWordmark size="sm" />
+          </Link>
+          <button
+            type="button"
+            className="thread-app-mobile-close"
+            aria-label="Close menu"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <X size={16} />
+          </button>
+        </div>
 
-          <span className="thread-app-nav-label">Account</span>
-          <Link href="/settings" className="thread-app-nav-item" data-active={pathname === "/settings"}>
-            <Settings size={16} />
-            Settings
-          </Link>
-          <Link href="/" className="thread-app-nav-item">
-            <PanelsTopLeft size={16} />
-            Landing page
-          </Link>
-        </nav>
+        <nav className="thread-app-nav">{navLinks}</nav>
 
         <div className="thread-app-user" ref={menuRef}>
           {menuOpen && (
@@ -174,6 +231,24 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
 
       <div className="thread-app-main">
         <header className="thread-app-topbar">
+          <button
+            type="button"
+            className="thread-app-mobile-menu-btn thread-app-iconbtn"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu size={16} />
+          </button>
+
+          <button
+            type="button"
+            className="thread-app-mobile-cmd thread-app-iconbtn"
+            aria-label="Open command palette"
+            onClick={() => setCmdOpen(true)}
+          >
+            <Search size={16} />
+          </button>
+
           <span className="thread-app-title">
             {meta.title}
             {meta.sub && <span className="thread-app-title-sub">{meta.sub}</span>}
@@ -197,7 +272,12 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
         <main className="thread-app-content">{children}</main>
       </div>
 
-      <ThreadCommand open={cmdOpen} onClose={() => setCmdOpen(false)} />
+      <ThreadCommand
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        onShowShortcuts={() => setShortcutsOpen(true)}
+      />
+      <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

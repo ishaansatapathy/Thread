@@ -26,6 +26,7 @@ const actionCardSchema = z.object({
   href: z.string().optional(),
   lines: z.array(z.string()).optional(),
   disposition: z.enum(["sent", "queued"]).optional(),
+  queueItemId: z.string().uuid().optional(),
 });
 
 export const agentRouter = router({

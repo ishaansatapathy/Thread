@@ -13,6 +13,15 @@ export function isCorsairConfigured() {
   return Boolean(process.env.CORSAIR_KEK?.trim() && process.env.DATABASE_URL?.trim());
 }
 
+export function isCorsairDevKeyConfigured() {
+  return Boolean(process.env.CORSAIR_DEV_KEY?.trim());
+}
+
+/** API key for headless MCP clients (falls back to CORSAIR_DEV_KEY). */
+export function getThreadMcpApiKey() {
+  return process.env.THREAD_MCP_API_KEY?.trim() || process.env.CORSAIR_DEV_KEY?.trim() || null;
+}
+
 export function getCorsairPool() {
   if (!pool) {
     pool = createPgPool();
@@ -57,4 +66,4 @@ export function getCorsairCalendarRedirectUri() {
     `${env.CLIENT_URL}/api-connect/calendar/callback`
   );
 }
-
+

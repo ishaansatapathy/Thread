@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Calendar as CalIcon,
+  Check,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  HelpCircle,
   ListChecks,
   Loader2,
   Plus,
@@ -15,18 +17,39 @@ import {
   Trash2,
   Users,
   X,
+  XCircle,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { SkeletonList } from "~/components/app/skeleton-list";
 import { queueResultMessage } from "~/lib/queue-toast";
 import {
   eventDayKey,
   eventToArchivePayload,
   eventToDeletePayload,
+  isoToLocalDateTimeInput,
   localDateTimeRangeToPayload,
   localDayKey,
   toLocalDateTimeInput,
 } from "~/lib/calendar-datetime";
+
+function recurrenceToRrule(rule: string, custom?: string): string[] | undefined {
+  if (rule === "custom") {
+    const trimmed = custom?.trim();
+    if (!trimmed) return undefined;
+    return [trimmed.startsWith("RRULE:") ? trimmed : `RRULE:${trimmed}`];
+  }
+  switch (rule) {
+    case "daily":
+      return ["RRULE:FREQ=DAILY"];
+    case "weekly":
+      return ["RRULE:FREQ=WEEKLY"];
+    case "monthly":
+      return ["RRULE:FREQ=MONTHLY"];
+    default:
+      return undefined;
+  }
+}
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -86,10 +109,12 @@ type CalendarEventItem = {
   summary: string;
   start?: string;
   end?: string;
+  allDay?: boolean;
   location?: string;
   htmlLink?: string;
   status?: string;
   isRecurring?: boolean;
+  recurringEventId?: string;
   attendees?: Array<{ email?: string; displayName?: string; responseStatus?: string; organizer?: boolean }>;
   pending?: boolean;
   pendingArchive?: boolean;
@@ -132,6 +157,21 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [conflicts, setConflicts] = useState<CalendarEventItem[]>([]);
+  const [isAllDay, setIsAllDay] = useState(false);
+  // All-day event date pickers (date only, no time).
+  const [allDayStart, setAllDayStart] = useState(() => {
+    const d = new Date(Date.now() + 86_400_000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [allDayEnd, setAllDayEnd] = useState(() => {
+    const d = new Date(Date.now() + 2 * 86_400_000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [recurrenceRule, setRecurrenceRule] = useState("");
+  const [customRrule, setCustomRrule] = useState("FREQ=WEEKLY;BYDAY=MO");
+  const [rescheduleStart, setRescheduleStart] = useState("");
+  const [rescheduleEnd, setRescheduleEnd] = useState("");
+  const [recurringEditScope, setRecurringEditScope] = useState<"instance" | "series" | "following">("instance");
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -149,13 +189,33 @@ export default function CalendarPage() {
   const eventsQuery = trpc.calendar.listEvents.useQuery(eventQuery, {
     enabled: isConnected,
     refetchOnMount: "always",
+    refetchInterval: isConnected ? 30_000 : false,
     staleTime: 0,
   });
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+    setRecurringEditScope("instance");
+    if (selectedEvent.allDay) {
+      setRescheduleStart(selectedEvent.start?.slice(0, 10) ?? "");
+      setRescheduleEnd(selectedEvent.end?.slice(0, 10) ?? selectedEvent.start?.slice(0, 10) ?? "");
+    } else {
+      setRescheduleStart(isoToLocalDateTimeInput(selectedEvent.start));
+      setRescheduleEnd(isoToLocalDateTimeInput(selectedEvent.end) || isoToLocalDateTimeInput(selectedEvent.start));
+    }
+  }, [selectedEvent]);
 
   const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
 
   const checkFreeBusy = trpc.calendar.checkFreeBusy.useMutation({
-    onSuccess: (data) => setConflicts(data.conflicts as CalendarEventItem[]),
+    onSuccess: (data) => {
+      if ("unavailable" in data && data.unavailable) {
+        setConflicts([]);
+        toast.message("Could not verify conflicts — calendar busy check unavailable.");
+        return;
+      }
+      setConflicts(data.conflicts as CalendarEventItem[]);
+    },
   });
 
   const queueInvite = trpc.queue.enqueueCalendar.useMutation({
@@ -183,6 +243,15 @@ export default function CalendarPage() {
       await utils.queue.list.invalidate();
       setSelectedEvent(null);
       toast.success(queueResultMessage(item).title);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const respondToEvent = trpc.calendar.respondToEvent.useMutation({
+    onSuccess: async (updated) => {
+      toast.success("RSVP updated");
+      setSelectedEvent(updated as CalendarEventItem);
+      await utils.calendar.listEvents.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -286,6 +355,17 @@ export default function CalendarPage() {
 
   const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
+  const mobileWeekEvents = useMemo(() => {
+    const items: CalendarEventItem[] = [];
+    for (const day of week) {
+      const key = localDayKey(day);
+      for (const event of eventsByDay.get(key) ?? []) {
+        items.push(event);
+      }
+    }
+    return items;
+  }, [week, eventsByDay]);
+
   return (
     <div>
       {!isConnected ? (
@@ -373,11 +453,34 @@ export default function CalendarPage() {
       </div>
 
       {eventsQuery.isLoading && isConnected ? (
-        <div className="thread-empty-inbox" style={{ marginTop: 24 }}>
-          <Loader2 size={18} className="thread-spin" />
-          <p style={{ marginTop: 12, fontSize: 12, color: "var(--thread-dim)" }}>Loading events…</p>
-        </div>
+        <SkeletonList count={7} />
       ) : (
+        <>
+        <div className="thread-cal-mobile-list">
+          {mobileWeekEvents.length === 0 ? (
+            <div className="thread-cal-empty-note">No events this week</div>
+          ) : (
+            mobileWeekEvents.map((event) => (
+              <button
+                key={`mobile-${event.id}`}
+                type="button"
+                className="thread-cal-mobile-item"
+                onClick={() => {
+                  if (event.pending || event.pendingArchive || event.pendingDelete) {
+                    router.push("/queue");
+                    return;
+                  }
+                  setSelectedEvent(event);
+                }}
+              >
+                <span className="thread-cal-mobile-item-when">
+                  {formatEventWhen(event.start, event.end)}
+                </span>
+                <span className="thread-cal-mobile-item-title">{event.summary}</span>
+              </button>
+            ))
+          )}
+        </div>
         <div className="thread-cal-grid">
           {week.map((day) => {
             const key = localDayKey(day);
@@ -438,6 +541,7 @@ export default function CalendarPage() {
             );
           })}
         </div>
+        </>
       )}
 
       {showCreate ? (
@@ -458,17 +562,35 @@ export default function CalendarPage() {
               onSubmit={(event) => {
                 event.preventDefault();
                 try {
-                  const when = localDateTimeRangeToPayload(startAt, endAt);
+                  let startDateTime: string;
+                  let endDateTime: string;
+                  let timeZone: string;
+                  if (isAllDay) {
+                    // Google all-day events use date fields; end is exclusive.
+                    const endExclusive = new Date(`${allDayEnd}T12:00:00`);
+                    endExclusive.setDate(endExclusive.getDate() + 1);
+                    const endDateStr = `${endExclusive.getFullYear()}-${String(endExclusive.getMonth() + 1).padStart(2, "0")}-${String(endExclusive.getDate()).padStart(2, "0")}`;
+                    startDateTime = allDayStart;
+                    endDateTime = endDateStr;
+                    timeZone = "UTC";
+                  } else {
+                    const when = localDateTimeRangeToPayload(startAt, endAt);
+                    startDateTime = when.startDateTime;
+                    endDateTime = when.endDateTime;
+                    timeZone = when.timeZone;
+                  }
                   queueInvite.mutate({
-                  calendar: {
-                    summary,
-                    description: "Scheduled from Thread calendar.",
-                    startDateTime: when.startDateTime,
-                    endDateTime: when.endDateTime,
-                    timeZone: when.timeZone,
-                    attendeeEmails: attendee.trim() ? [attendee.trim()] : undefined,
-                  },
-                  title: summary,
+                    calendar: {
+                      summary,
+                      description: "Scheduled from Thread calendar.",
+                      startDateTime,
+                      endDateTime,
+                      timeZone,
+                      allDay: isAllDay || undefined,
+                      attendeeEmails: attendee.trim() ? [attendee.trim()] : undefined,
+                      recurrence: recurrenceToRrule(recurrenceRule, customRrule),
+                    },
+                    title: summary,
                   });
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : "Please review your dates");
@@ -499,7 +621,45 @@ export default function CalendarPage() {
                 placeholder="guest@company.com"
               />
 
-              <div className="thread-modal-row">
+              {/* All-day toggle */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={isAllDay}
+                  onChange={(e) => setIsAllDay(e.target.checked)}
+                  style={{ width: 14, height: 14, accentColor: "var(--thread-accent-bright, #60a5fa)" }}
+                />
+                <span className="thread-set-label" style={{ marginBottom: 0 }}>All-day event</span>
+              </label>
+
+              {isAllDay ? (
+                <div className="thread-modal-row">
+                  <div>
+                    <label className="thread-set-label" htmlFor="event-allday-start">Start date</label>
+                    <input
+                      id="event-allday-start"
+                      className="thread-set-input"
+                      type="date"
+                      value={allDayStart}
+                      onChange={(e) => setAllDayStart(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="thread-set-label" htmlFor="event-allday-end">End date</label>
+                    <input
+                      id="event-allday-end"
+                      className="thread-set-input"
+                      type="date"
+                      value={allDayEnd}
+                      min={allDayStart}
+                      onChange={(e) => setAllDayEnd(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="thread-modal-row">
                 <div>
                   <label className="thread-set-label" htmlFor="event-start">
                     Starts
@@ -541,6 +701,38 @@ export default function CalendarPage() {
                   />
                 </div>
               </div>
+              )}
+
+              <label className="thread-set-label" htmlFor="event-recurrence">
+                Repeat
+              </label>
+              <select
+                id="event-recurrence"
+                className="thread-set-input"
+                value={recurrenceRule}
+                onChange={(event) => setRecurrenceRule(event.target.value)}
+              >
+                <option value="">Does not repeat</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="custom">Custom RRULE…</option>
+              </select>
+
+              {recurrenceRule === "custom" ? (
+                <>
+                  <label className="thread-set-label" htmlFor="event-custom-rrule">
+                    Custom RRULE
+                  </label>
+                  <input
+                    id="event-custom-rrule"
+                    className="thread-set-input"
+                    value={customRrule}
+                    onChange={(event) => setCustomRrule(event.target.value)}
+                    placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR"
+                  />
+                </>
+              ) : null}
 
               {conflicts.length > 0 ? (
                 <div className="thread-cal-conflict-warning">
@@ -622,10 +814,43 @@ export default function CalendarPage() {
                 ) : null}
               </div>
                 {selectedEvent.isRecurring ? (
-                <p className="thread-cal-event-detail-copy">
-                  This is one occurrence of a recurring series. Reschedule or delete affects only
-                  this occurrence in Google Calendar.
-                </p>
+                <div className="thread-cal-recurring-scope" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span className="thread-set-label">Apply changes to</span>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-edit-scope"
+                      checked={recurringEditScope === "instance"}
+                      onChange={() => setRecurringEditScope("instance")}
+                    />
+                    This event only
+                  </label>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-edit-scope"
+                      checked={recurringEditScope === "series"}
+                      onChange={() => setRecurringEditScope("series")}
+                    />
+                    All events in the series
+                  </label>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-edit-scope"
+                      checked={recurringEditScope === "following"}
+                      onChange={() => setRecurringEditScope("following")}
+                    />
+                    This and following events
+                  </label>
+                  <p className="thread-cal-event-detail-copy" style={{ margin: 0 }}>
+                    {recurringEditScope === "series"
+                      ? "Reschedule or delete will update the entire recurring series on Google Calendar."
+                      : recurringEditScope === "following"
+                        ? "This occurrence and all future occurrences in the series will change."
+                        : "Only this occurrence changes — other events in the series stay the same."}
+                  </p>
+                </div>
               ) : null}
               {selectedEvent.attendees && selectedEvent.attendees.length > 0 ? (
                 <ul className="thread-cal-attendee-list">
@@ -652,6 +877,41 @@ export default function CalendarPage() {
                   ))}
                 </ul>
               ) : null}
+              {/* RSVP — only show if the user is an attendee (has a responseStatus) */}
+              {selectedEvent.attendees?.some((a) => a.responseStatus) ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--thread-muted)", fontFamily: "var(--thread-mono)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Your RSVP
+                  </span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {(["accepted", "tentative", "declined"] as const).map((resp) => {
+                      const Icon = resp === "accepted" ? Check : resp === "tentative" ? HelpCircle : XCircle;
+                      const label = resp === "accepted" ? "Accept" : resp === "tentative" ? "Maybe" : "Decline";
+                      const isCurrent = selectedEvent.attendees?.find((a) => a.responseStatus === resp && !a.organizer);
+                      return (
+                        <button
+                          key={resp}
+                          type="button"
+                          className="thread-btn-ghost"
+                          disabled={respondToEvent.isPending}
+                          data-active={isCurrent ? "true" : undefined}
+                          style={{
+                            fontSize: 12,
+                            padding: "5px 10px",
+                            opacity: isCurrent ? 1 : 0.7,
+                            border: isCurrent ? "1px solid var(--thread-accent-bright, #60a5fa)" : undefined,
+                          }}
+                          onClick={() => respondToEvent.mutate({ eventId: selectedEvent.id, response: resp })}
+                        >
+                          <Icon size={12} />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               <ul className="thread-cal-event-actions-legend">
                 <li>
                   <strong>Reschedule</strong> — queue new dates; nothing changes until you approve.
@@ -661,6 +921,32 @@ export default function CalendarPage() {
                   Queue.
                 </li>
               </ul>
+              <div className="thread-modal-row" style={{ marginTop: 8 }}>
+                <div>
+                  <label className="thread-set-label" htmlFor="reschedule-start">
+                    New start
+                  </label>
+                  <input
+                    id="reschedule-start"
+                    className="thread-set-input"
+                    type={selectedEvent.allDay ? "date" : "datetime-local"}
+                    value={rescheduleStart}
+                    onChange={(event) => setRescheduleStart(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="thread-set-label" htmlFor="reschedule-end">
+                    New end
+                  </label>
+                  <input
+                    id="reschedule-end"
+                    className="thread-set-input"
+                    type={selectedEvent.allDay ? "date" : "datetime-local"}
+                    value={rescheduleEnd}
+                    onChange={(event) => setRescheduleEnd(event.target.value)}
+                  />
+                </div>
+              </div>
               {selectedEvent.htmlLink ? (
                 <a
                   href={selectedEvent.htmlLink}
@@ -678,12 +964,32 @@ export default function CalendarPage() {
                 type="button"
                 className="thread-btn-ghost"
                 disabled={eventBusy}
-                onClick={() =>
-                  queueArchive.mutate({
-                    archive: eventToArchivePayload(selectedEvent),
-                    title: `Reschedule: ${selectedEvent.summary}`,
-                  })
-                }
+                onClick={() => {
+                  try {
+                    const when = selectedEvent.allDay
+                      ? {
+                          startDateTime: rescheduleStart || selectedEvent.start?.slice(0, 10) || "",
+                          endDateTime: rescheduleEnd || selectedEvent.end?.slice(0, 10) || "",
+                          timeZone: "UTC",
+                        }
+                      : localDateTimeRangeToPayload(
+                          rescheduleStart || isoToLocalDateTimeInput(selectedEvent.start),
+                          rescheduleEnd || isoToLocalDateTimeInput(selectedEvent.end),
+                        );
+                    queueArchive.mutate({
+                      archive: {
+                        ...eventToArchivePayload(selectedEvent, { editScope: recurringEditScope }),
+                        startDateTime: when.startDateTime,
+                        endDateTime: when.endDateTime,
+                        timeZone: when.timeZone,
+                        allDay: selectedEvent.allDay || undefined,
+                      },
+                      title: `Reschedule: ${selectedEvent.summary}`,
+                    });
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Please review your dates");
+                  }
+                }}
               >
                 <ListChecks size={14} />
                 {queueArchive.isPending ? "Queuing…" : "Reschedule"}
@@ -727,7 +1033,49 @@ export default function CalendarPage() {
               <p className="thread-cal-event-detail-copy">
                 This adds a delete request to your approval queue. The event stays on Google Calendar
                 until you approve.
+                {selectedEvent.isRecurring ? (
+                  <>
+                    {" "}
+                    {recurringEditScope === "series"
+                      ? "Approving removes the entire recurring series."
+                      : recurringEditScope === "following"
+                        ? "Approving removes this and all future occurrences."
+                        : "Approving removes only this occurrence."}
+                  </>
+                ) : null}
               </p>
+              {selectedEvent.isRecurring ? (
+                <div className="thread-cal-recurring-scope" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span className="thread-set-label">Delete scope</span>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-delete-scope"
+                      checked={recurringEditScope === "instance"}
+                      onChange={() => setRecurringEditScope("instance")}
+                    />
+                    This event only
+                  </label>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-delete-scope"
+                      checked={recurringEditScope === "series"}
+                      onChange={() => setRecurringEditScope("series")}
+                    />
+                    All events in the series
+                  </label>
+                  <label className="thread-cal-scope-option" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                    <input
+                      type="radio"
+                      name="recurring-delete-scope"
+                      checked={recurringEditScope === "following"}
+                      onChange={() => setRecurringEditScope("following")}
+                    />
+                    This and following events
+                  </label>
+                </div>
+              ) : null}
             </div>
             <div className="thread-modal-actions">
               <button
@@ -744,7 +1092,7 @@ export default function CalendarPage() {
                 disabled={queueDelete.isPending}
                 onClick={() =>
                   queueDelete.mutate({
-                    delete: eventToDeletePayload(selectedEvent),
+                    delete: eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
                     title: `Delete: ${selectedEvent.summary}`,
                   })
                 }

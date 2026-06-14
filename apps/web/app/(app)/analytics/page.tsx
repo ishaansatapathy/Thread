@@ -12,9 +12,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart2, CheckCircle2, Clock, Mail, Calendar, XCircle, AlertTriangle } from "lucide-react";
+import { BarChart2, CheckCircle2, Clock, Mail, Calendar, XCircle, AlertTriangle, Inbox as InboxIcon } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { SkeletonList } from "~/components/app/skeleton-list";
 
 const KIND_LABELS: Record<string, string> = {
   email_send: "Email send",
@@ -32,11 +33,13 @@ function StatCard({
   value,
   icon: Icon,
   accent,
+  suffix,
 }: {
   label: string;
   value: number;
   icon: React.ElementType;
   accent?: string;
+  suffix?: string;
 }) {
   return (
     <div
@@ -58,15 +61,21 @@ function StatCard({
       </div>
       <span style={{ fontSize: 28, fontWeight: 700, color: "var(--thread-text)", lineHeight: 1 }}>
         {value}
+        {suffix ? <span style={{ fontSize: 16, fontWeight: 600, marginLeft: 2 }}>{suffix}</span> : null}
       </span>
     </div>
   );
 }
 
 export default function AnalyticsPage() {
-  const stats = trpc.queue.stats.useQuery({}, { staleTime: 60_000 });
+  const stats = trpc.queue.stats.useQuery({}, { staleTime: 60_000, refetchInterval: 60_000 });
+  const observability = trpc.observability.summary.useQuery({}, { staleTime: 30_000, refetchInterval: 30_000 });
+  const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
+  const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
 
   const data = stats.data;
+  const resolved = (data?.approved ?? 0) + (data?.dismissed ?? 0);
+  const approvalRate = resolved > 0 ? Math.round(((data?.approved ?? 0) / resolved) * 100) : null;
 
   const pieData = data
     ? Object.entries(data.byKind).map(([kind, value]) => ({
@@ -88,22 +97,70 @@ export default function AnalyticsPage() {
 
         {/* Stat cards */}
         {stats.isLoading ? (
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="thread-rotator-bubble" style={{ flex: "1 1 130px", height: 80, opacity: 0.4 }} />
-            ))}
-          </div>
+          <SkeletonList count={4} />
         ) : (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <StatCard label="Total" value={data?.total ?? 0} icon={BarChart2} />
             <StatCard label="Pending" value={data?.pending ?? 0} icon={Clock} accent="#f59e0b" />
             <StatCard label="Approved" value={data?.approved ?? 0} icon={CheckCircle2} accent="#34d399" />
             <StatCard label="Dismissed" value={data?.dismissed ?? 0} icon={XCircle} accent="var(--thread-muted)" />
+            {approvalRate !== null ? (
+              <StatCard label="Approval rate" value={approvalRate} icon={CheckCircle2} accent="#60a5fa" suffix="%" />
+            ) : null}
             {(data?.failed ?? 0) > 0 && (
               <StatCard label="Failed" value={data?.failed ?? 0} icon={AlertTriangle} accent="#f87171" />
             )}
           </div>
         )}
+
+        {/* Integrations */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div className="thread-rotator-bubble" style={{ flex: "1 1 180px", padding: "12px 16px", gap: 6, flexDirection: "column", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--thread-muted)" }}>
+              <InboxIcon size={12} />
+              <span style={{ fontSize: 11, fontFamily: "var(--thread-mono)", textTransform: "uppercase" }}>Gmail</span>
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--thread-text)" }}>
+              {inboxStatus.data?.gmail === "connected" ? "Connected" : "Not connected"}
+            </span>
+          </div>
+          <div className="thread-rotator-bubble" style={{ flex: "1 1 180px", padding: "12px 16px", gap: 6, flexDirection: "column", alignItems: "flex-start" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--thread-muted)" }}>
+              <Calendar size={12} />
+              <span style={{ fontSize: 11, fontFamily: "var(--thread-mono)", textTransform: "uppercase" }}>Calendar</span>
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--thread-text)" }}>
+              {calendarStatus.data?.googlecalendar === "connected" ? "Connected" : "Not connected"}
+            </span>
+          </div>
+        </div>
+
+        <div
+          className="thread-rotator-bubble"
+          style={{ flexDirection: "column", alignItems: "stretch", gap: 10, padding: "16px 20px" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <InboxIcon size={13} style={{ opacity: 0.6 }} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--thread-text)" }}>Inbox performance</span>
+          </div>
+          {observability.isLoading ? (
+            <SkeletonList count={2} />
+          ) : (
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <StatCard
+                label="Cache hits"
+                value={observability.data?.inboxCacheHits ?? 0}
+                icon={InboxIcon}
+                accent="#60a5fa"
+              />
+              <StatCard
+                label="MCP tool calls"
+                value={observability.data?.mcpToolCalls ?? 0}
+                icon={BarChart2}
+              />
+            </div>
+          )}
+        </div>
 
         {/* Timeline chart */}
         <div

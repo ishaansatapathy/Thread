@@ -1,3 +1,7 @@
+// OpenTelemetry MUST be imported first — before any instrumented modules.
+import { initTracing } from "./tracing";
+initTracing();
+
 import http from "node:http";
 
 const PORT = Number(process.env.PORT ?? 8000);
@@ -56,7 +60,14 @@ async function bootstrap() {
   try {
     const { registerInboxService } = await import("@repo/services/inbox");
     const { CorsairInboxService } = await import("./services/inbox");
-    registerInboxService(new CorsairInboxService());
+    const inbox = new CorsairInboxService();
+    if (process.env.THREAD_E2E_MOCK_GMAIL === "true") {
+      const { createE2eMockInboxService } = await import("./services/inbox-e2e-mock");
+      registerInboxService(createE2eMockInboxService(inbox));
+      logger.info("Inbox: E2E mock Gmail enabled (compose → queue → approve without OAuth)");
+    } else {
+      registerInboxService(inbox);
+    }
   } catch (err) {
     logger.warn("Inbox service registration failed", {
       message: err instanceof Error ? err.message : String(err),
@@ -108,6 +119,24 @@ async function bootstrap() {
     await bootstrapCorsair();
   } catch (err) {
     logger.warn("Corsair bootstrap skipped", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    const { startIntegrationRenewalJob } = await import("./jobs/integration-renewal");
+    startIntegrationRenewalJob();
+  } catch (err) {
+    logger.warn("Integration renewal job skipped", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    const { startSyncEventRedisBridge } = await import("./services/sync-events");
+    await startSyncEventRedisBridge();
+  } catch (err) {
+    logger.warn("Sync event Redis bridge skipped", {
       message: err instanceof Error ? err.message : String(err),
     });
   }

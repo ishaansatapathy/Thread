@@ -6,11 +6,18 @@ import {
   singleRecipientSchema,
 } from "../validation/email";
 
+export const emailAttachmentSchema = z.object({
+  filename: z.string().min(1).max(200),
+  mimeType: z.string().min(1).max(100),
+  contentBase64: z.string().min(1).max(8_000_000),
+});
+
 export const emailQueuePayloadSchema = z.object({
   to: singleRecipientSchema,
   subject: safeEmailSubjectSchema,
   body: emailBodySchema,
   threadId: z.string().optional(),
+  attachments: z.array(emailAttachmentSchema).max(5).optional(),
 });
 
 export const calendarQueuePayloadSchema = z
@@ -26,6 +33,9 @@ export const calendarQueuePayloadSchema = z
     }),
     timeZone: z.string().max(64).optional(),
     attendeeEmails: z.array(z.string().email()).max(20).optional(),
+    allDay: z.boolean().optional(),
+    /** Google Calendar RRULE strings, e.g. ["RRULE:FREQ=WEEKLY"] */
+    recurrence: z.array(z.string().max(200)).max(5).optional(),
   })
   .refine((d) => Date.parse(d.endDateTime) > Date.parse(d.startDateTime), {
     message: "End date/time must be after start date/time",
@@ -38,13 +48,18 @@ export const calendarArchivePayloadSchema = z.object({
   startDateTime: z.string().min(1),
   endDateTime: z.string().min(1),
   timeZone: z.string().max(64).optional(),
+  allDay: z.boolean().optional(),
   htmlLink: z.string().optional(),
+  recurringEventId: z.string().optional(),
+  editScope: z.enum(["instance", "series", "following"]).optional(),
 });
 
 export const calendarDeletePayloadSchema = z.object({
   eventId: z.string().min(1),
   summary: z.string().min(1).max(200),
   htmlLink: z.string().optional(),
+  recurringEventId: z.string().optional(),
+  editScope: z.enum(["instance", "series", "following"]).optional(),
 });
 
 export const meetingBundlePayloadSchema = z.object({

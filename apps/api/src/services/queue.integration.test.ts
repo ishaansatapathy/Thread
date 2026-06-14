@@ -45,6 +45,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       listThreads: async () => ({ threads: [] }),
       listCachedThreads: async () => ({ threads: [] }),
       listDrafts: async () => ({ drafts: [] }),
+      getDraft: async () => null,
       getThread: async () => null,
       sendMessage,
       createDraft,
@@ -53,6 +54,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       listLabels: vi.fn(async () => []),
       applyLabel: vi.fn(async () => undefined),
       removeLabel: vi.fn(async () => undefined),
+      registerGmailWatch: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
     };
 
@@ -71,6 +73,12 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       }),
       deleteEvent: async () => ({ success: true as const }),
       checkFreeBusy: async () => ({ conflicts: [] }),
+      respondToEvent: vi.fn(async () => ({
+        id: "event-1",
+        summary: "Meeting",
+        start: "2026-06-15T10:00:00Z",
+        end: "2026-06-15T11:00:00Z",
+      })),
       disconnect: vi.fn(async () => undefined),
       registerWebhook: vi.fn(async () => undefined),
     });

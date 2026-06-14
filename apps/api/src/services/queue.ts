@@ -521,24 +521,28 @@ export class ThreadQueueService implements QueueService {
       }
       case "calendar_archive": {
         const archive = parseCalendarArchivePayload(payload);
-        const confirm = opts?.archive;
-        if (confirm) {
-          const datesChanged =
-            confirm.startDateTime !== archive.startDateTime ||
-            confirm.endDateTime !== archive.endDateTime;
-          if (datesChanged) {
-            await calendar.updateEventTimes(userId, archive.eventId, {
-              startDateTime: confirm.startDateTime,
-              endDateTime: confirm.endDateTime,
-              timeZone: confirm.timeZone ?? archive.timeZone,
-            });
-          }
-        }
+        const target = opts?.archive ?? {
+          startDateTime: archive.startDateTime,
+          endDateTime: archive.endDateTime,
+          timeZone: archive.timeZone,
+        };
+        await calendar.updateEventTimes(userId, archive.eventId, {
+          startDateTime: target.startDateTime,
+          endDateTime: target.endDateTime,
+          timeZone: target.timeZone ?? archive.timeZone,
+          allDay: archive.allDay,
+        }, {
+          editScope: archive.editScope,
+          recurringEventId: archive.recurringEventId,
+        });
         return;
       }
       case "calendar_delete": {
         const deletePayload = parseCalendarDeletePayload(payload);
-        await calendar.deleteEvent(userId, deletePayload.eventId);
+        await calendar.deleteEvent(userId, deletePayload.eventId, {
+          editScope: deletePayload.editScope,
+          recurringEventId: deletePayload.recurringEventId,
+        });
         return;
       }
       default:

@@ -587,6 +587,39 @@ export class CorsairInboxService implements InboxService {
     return { drafts, nextPageToken: result.nextPageToken };
   }
 
+  async getDraft(
+    tenantId: string,
+    draftId: string,
+  ): Promise<{ id: string; to?: string; subject?: string; body: string; threadId?: string } | null> {
+    if (!this.isConfigured()) return null;
+
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") return null;
+
+    const corsair = getCorsair().withTenant(tenantId);
+    try {
+      const detail = await corsair.gmail.api.drafts.get({ id: draftId, format: "full" });
+      const message = detail.message;
+      if (!message) return null;
+      const headers = collectMessageHeaders(message.payload as GmailMetadataMessage["payload"]);
+      const parsed = parseGmailMessage(message as Parameters<typeof parseGmailMessage>[0]);
+      return {
+        id: draftId,
+        to: parseEmailAddress(getHeader(headers, "To")) || undefined,
+        subject: getHeader(headers, "Subject")?.trim() || "(no subject)",
+        body: parsed?.body || message.snippet || "",
+        threadId: message.threadId,
+      };
+    } catch (error) {
+      logger.warn("Gmail draft fetch failed", {
+        tenantId,
+        draftId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   async getThread(
     tenantId: string,
     threadId: string,
@@ -633,7 +666,13 @@ export class CorsairInboxService implements InboxService {
 
   async sendMessage(
     tenantId: string,
-    input: { to: string; subject: string; body: string; threadId?: string },
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
+    },
   ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
@@ -652,7 +691,13 @@ export class CorsairInboxService implements InboxService {
 
   async createDraft(
     tenantId: string,
-    input: { to: string; subject: string; body: string; threadId?: string },
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
+    },
   ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
@@ -674,47 +719,33 @@ export class CorsairInboxService implements InboxService {
   }
 
   async markThreadRead(tenantId: string, threadId: string): Promise<void> {
-    try {
-      const status = getCachedConnectionStatus(tenantId);
-      if (status && status !== "connected") return;
-
-      const corsair = getCorsair().withTenant(tenantId);
-      await corsair.gmail.api.threads.modify({
-        id: threadId,
-        removeLabelIds: ["UNREAD"],
-      });
-
-      // Update the local cache unread flag so the UI reflects it instantly.
-      await mailCache.upsertMany(tenantId, [{ threadId, unread: false }]);
-    } catch (error) {
-      logger.warn("markThreadRead failed (best-effort)", {
-        tenantId,
-        threadId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
     }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({
+      id: threadId,
+      removeLabelIds: ["UNREAD"],
+    });
+
+    await mailCache.upsertMany(tenantId, [{ threadId, unread: false }]);
   }
 
   async archiveThread(tenantId: string, threadId: string): Promise<void> {
-    try {
-      const status = getCachedConnectionStatus(tenantId);
-      if (status && status !== "connected") return;
-
-      const corsair = getCorsair().withTenant(tenantId);
-      await corsair.gmail.api.threads.modify({
-        id: threadId,
-        removeLabelIds: ["INBOX"],
-      });
-
-      // Remove from local mail cache so it no longer appears in inbox list.
-      await mailCache.remove(tenantId, threadId);
-    } catch (error) {
-      logger.warn("archiveThread failed (best-effort)", {
-        tenantId,
-        threadId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
     }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({
+      id: threadId,
+      removeLabelIds: ["INBOX"],
+    });
+
+    await mailCache.remove(tenantId, threadId);
   }
 
   async listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>> {
@@ -736,35 +767,73 @@ export class CorsairInboxService implements InboxService {
   }
 
   async applyLabel(tenantId: string, threadId: string, labelId: string): Promise<void> {
-    try {
-      const corsair = getCorsair().withTenant(tenantId);
-      await corsair.gmail.api.threads.modify({ id: threadId, addLabelIds: [labelId] });
-    } catch (error) {
-      logger.warn("applyLabel failed", { tenantId, threadId, labelId, message: error instanceof Error ? error.message : String(error) });
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
     }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, addLabelIds: [labelId] });
   }
 
   async removeLabel(tenantId: string, threadId: string, labelId: string): Promise<void> {
-    try {
-      const corsair = getCorsair().withTenant(tenantId);
-      await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: [labelId] });
-    } catch (error) {
-      logger.warn("removeLabel failed", { tenantId, threadId, labelId, message: error instanceof Error ? error.message : String(error) });
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
     }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: [labelId] });
+  }
+
+  async registerGmailWatch(tenantId: string): Promise<void> {
+    const topicId = process.env.CORSAIR_GMAIL_TOPIC_ID?.trim();
+    if (!topicId) {
+      logger.info("CORSAIR_GMAIL_TOPIC_ID not set — skipping Gmail watch registration");
+      return;
+    }
+
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const result = await (corsair.gmail.api.users as {
+      watch?: (opts: {
+        userId: string;
+        topicName: string;
+        labelIds?: string[];
+      }) => Promise<{ historyId?: string }>;
+    }).watch?.({
+      userId: "me",
+      topicName: topicId,
+      labelIds: ["INBOX"],
+    });
+
+    if (!result) {
+      throw new Error("Gmail watch API is not available");
+    }
+
+    if (result.historyId) {
+      const { setLastHistoryId } = await import("./gmail-state");
+      await setLastHistoryId(tenantId, result.historyId);
+    }
+
+    logger.info("Gmail Pub/Sub watch registered", { tenantId, topicId });
   }
 
   async disconnect(tenantId: string): Promise<void> {
-    try {
-      const corsair = getCorsair();
-      await (corsair.manage as {
-        connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
-      }).connections?.delete({ tenantId, provider: "gmail" });
-      invalidateConnectionCache(tenantId);
-    } catch (error) {
-      logger.warn("disconnect gmail failed (best-effort)", {
-        tenantId,
-        message: error instanceof Error ? error.message : String(error),
-      });
+    const corsair = getCorsair();
+    const deleteFn = (corsair.manage as {
+      connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
+    }).connections?.delete;
+
+    if (!deleteFn) {
+      throw new Error("Corsair connections API is not available");
     }
+
+    await deleteFn.call(corsair.manage.connections, { tenantId, provider: "gmail" });
+    invalidateConnectionCache(tenantId);
   }
 }

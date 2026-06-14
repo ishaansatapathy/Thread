@@ -23,6 +23,8 @@ export type CalendarQueuePayload = {
   endDateTime: string;
   timeZone?: string;
   attendeeEmails?: string[];
+  allDay?: boolean;
+  recurrence?: string[];
 };
 
 export type MeetingBundlePayload = {
@@ -36,13 +38,18 @@ export type CalendarArchivePayload = {
   startDateTime: string;
   endDateTime: string;
   timeZone?: string;
+  allDay?: boolean;
   htmlLink?: string;
+  recurringEventId?: string;
+  editScope?: "instance" | "series" | "following";
 };
 
 export type CalendarDeletePayload = {
   eventId: string;
   summary: string;
   htmlLink?: string;
+  recurringEventId?: string;
+  editScope?: "instance" | "series" | "following";
 };
 
 export type QueueItem = {

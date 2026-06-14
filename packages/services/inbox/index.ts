@@ -81,6 +81,10 @@ export interface InboxService {
     tenantId: string,
     opts?: { maxResults?: number; pageToken?: string },
   ): Promise<{ drafts: InboxDraft[]; nextPageToken?: string }>;
+  getDraft(
+    tenantId: string,
+    draftId: string,
+  ): Promise<{ id: string; to?: string; subject?: string; body: string; threadId?: string } | null>;
   getThread(
     tenantId: string,
     threadId: string,
@@ -88,31 +92,48 @@ export interface InboxService {
   ): Promise<InboxThread | null>;
   sendMessage(
     tenantId: string,
-    input: { to: string; subject: string; body: string; threadId?: string },
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
+    },
   ): Promise<{ id?: string; threadId?: string }>;
   createDraft(
     tenantId: string,
-    input: { to: string; subject: string; body: string; threadId?: string },
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
+    },
   ): Promise<{ id?: string }>;
   /**
    * Remove the UNREAD label from a Gmail thread.
-   * Best-effort: implementations must not throw on failure.
+   * Throws if Gmail is not connected or the API call fails.
    */
   markThreadRead(tenantId: string, threadId: string): Promise<void>;
   /**
-   * Move a thread to Trash by removing INBOX label and adding TRASH label.
-   * Best-effort: implementations must not throw on failure.
+   * Archive a thread by removing the INBOX label.
+   * Throws if Gmail is not connected or the API call fails.
    */
   archiveThread(tenantId: string, threadId: string): Promise<void>;
   /** List all user-defined and system Gmail labels. */
   listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>>;
-  /** Apply one or more label IDs to a thread. */
+  /** Apply a label to a thread. Throws on failure. */
   applyLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
-  /** Remove a label from a thread. */
+  /** Remove a label from a thread. Throws on failure. */
   removeLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
   /**
+   * Register Gmail Pub/Sub push notifications (users.watch).
+   * Best-effort when CORSAIR_GMAIL_TOPIC_ID is unset; throws on API failure.
+   */
+  registerGmailWatch(tenantId: string): Promise<void>;
+  /**
    * Revoke Gmail OAuth credentials for a tenant (disconnect Gmail).
-   * Best-effort — does not throw.
+   * Throws if the disconnect API call fails.
    */
   disconnect(tenantId: string): Promise<void>;
 }

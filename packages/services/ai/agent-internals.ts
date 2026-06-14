@@ -82,6 +82,11 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
           location: { type: "string" },
           attendeeEmails: { type: "array", items: { type: "string" } },
           timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata" },
+          recurrence: {
+            type: "array",
+            items: { type: "string" },
+            description: 'Google RRULE strings e.g. ["RRULE:FREQ=WEEKLY"]',
+          },
         },
         required: ["summary", "startDateTime", "endDateTime"],
       },
@@ -116,6 +121,86 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "approve_queue_item",
+      description: "Approve a pending queue item (sends email or creates calendar event).",
+      parameters: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "Queue item UUID" },
+        },
+        required: ["itemId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "dismiss_queue_item",
+      description: "Dismiss (reject) a pending queue item without executing it.",
+      parameters: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "Queue item UUID" },
+        },
+        required: ["itemId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_labels",
+      description: "List Gmail labels (system and user-defined). Call before apply_label to get label ids.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "archive_thread",
+      description: "Archive a Gmail thread (remove from inbox). Requires explicit user intent.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "apply_label",
+      description: "Apply a Gmail label to a thread by label id (call list_labels first).",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string" },
+          labelId: { type: "string", description: "Gmail label id e.g. STARRED or a custom label id" },
+        },
+        required: ["threadId", "labelId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_label",
+      description: "Remove a Gmail label from a thread by label id (call list_labels first).",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string" },
+          labelId: { type: "string", description: "Gmail label id to remove" },
+        },
+        required: ["threadId", "labelId"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {
@@ -143,6 +228,7 @@ export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefa
     agentEmailMode,
     calendarMode,
     "When the user asks to send mail, write a professional plain-text email and call queue_email with mode send.",
+    "Use approve_queue_item / dismiss_queue_item only when the user explicitly asks to approve or reject a specific queue item.",
     "Call queue_email at most once per user message unless they explicitly ask for multiple different emails.",
     "Use search_inbox / get_thread before drafting replies to existing threads.",
     "Be concise and friendly. Match your wording to what actually happened (sent vs queued).",

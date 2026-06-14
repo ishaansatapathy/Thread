@@ -88,13 +88,17 @@ export function isoToLocalDateTimeInput(value?: string) {
   return toLocalDateTimeInput(parsed);
 }
 
-export function eventToArchivePayload(event: {
-  id: string;
-  summary: string;
-  start?: string;
-  end?: string;
-  htmlLink?: string;
-}) {
+export function eventToArchivePayload(
+  event: {
+    id: string;
+    summary: string;
+    start?: string;
+    end?: string;
+    htmlLink?: string;
+    recurringEventId?: string;
+  },
+  opts?: { editScope?: "instance" | "series" | "following" },
+) {
   const startInput = isoToLocalDateTimeInput(event.start);
   const endInput = isoToLocalDateTimeInput(event.end) || startInput;
   const start = localDateTimeInputToPayload(startInput || toLocalDateTimeInput(new Date()));
@@ -109,13 +113,20 @@ export function eventToArchivePayload(event: {
     endDateTime: end.startDateTime,
     timeZone: start.timeZone,
     htmlLink: event.htmlLink,
+    recurringEventId: event.recurringEventId,
+    editScope: opts?.editScope ?? "instance",
   };
 }
 
-export function eventToDeletePayload(event: { id: string; summary: string; htmlLink?: string }) {
+export function eventToDeletePayload(
+  event: { id: string; summary: string; htmlLink?: string; recurringEventId?: string },
+  opts?: { editScope?: "instance" | "series" | "following" },
+) {
   return {
     eventId: event.id,
     summary: event.summary,
     htmlLink: event.htmlLink,
+    recurringEventId: event.recurringEventId,
+    editScope: opts?.editScope ?? "instance",
   };
 }
