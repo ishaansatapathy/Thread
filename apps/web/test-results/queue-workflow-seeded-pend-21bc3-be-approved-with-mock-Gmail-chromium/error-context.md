@@ -12,7 +12,11 @@
 # Error details
 
 ```
-TimeoutError: page.waitForURL: Timeout 20000ms exceeded.
+Test timeout of 30000ms exceeded.
+```
+
+```
+Error: page.waitForURL: Test timeout of 30000ms exceeded.
 =========================== logs ===========================
 waiting for navigation until "load"
   navigated to "http://localhost:3000/sign-in?error=Demo+login+failed.+Run+the+production+seed+and+try+again."
@@ -78,7 +82,7 @@ waiting for navigation until "load"
   3  | export async function demoLogin(page: Page, next = "/inbox") {
   4  |   await page.goto(`/api-auth/demo?next=${encodeURIComponent(next)}`);
 > 5  |   await page.waitForURL(new RegExp(next.replace("/", "\\/")), { timeout: 20_000 });
-     |              ^ TimeoutError: page.waitForURL: Timeout 20000ms exceeded.
+     |              ^ Error: page.waitForURL: Test timeout of 30000ms exceeded.
   6  | }
   7  | 
   8  | export function skipUnlessDemoLogin(test: { skip: (condition: boolean, reason: string) => void }) {
