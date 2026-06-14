@@ -1,5 +1,12 @@
 import localFont from "next/font/local";
 
+/** Landing hero headline — bundled via next/font so Vercel gets the file (public/fonts is gitignored). */
+export const threadHero = localFont({
+  src: "../app/fonts/ThreadHero.ttf",
+  variable: "--font-thread-hero",
+  display: "swap",
+});
+
 /** Handwritten annotations for callouts */
 export const caveat = localFont({
   src: [
