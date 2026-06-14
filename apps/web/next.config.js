@@ -26,6 +26,14 @@ const nextConfig = {
         source: "/api-connect/:path*",
         destination: `${apiInternalUrl}/auth/corsair/:path*`,
       },
+      {
+        source: "/agent/stream",
+        destination: `${apiInternalUrl}/agent/stream`,
+      },
+      {
+        source: "/inbox/attachments/:path*",
+        destination: `${apiInternalUrl}/inbox/attachments/:path*`,
+      },
     ];
   },
   async headers() {

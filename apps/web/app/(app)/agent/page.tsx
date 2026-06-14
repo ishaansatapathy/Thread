@@ -227,15 +227,24 @@ export default function AgentPage() {
     if (historyLoaded.current) return;
     if (historyQuery.isLoading) return;
     historyLoaded.current = true;
+    const sanitize = (msgs: unknown[]): ChatMessage[] =>
+      msgs.filter((m): m is ChatMessage => {
+        if (typeof m !== "object" || m === null) return false;
+        const msg = m as Record<string, unknown>;
+        return (
+          (msg.role === "user" || msg.role === "assistant") &&
+          typeof msg.content === "string" &&
+          msg.content !== "[object Object]"
+        );
+      });
     if (historyQuery.data && historyQuery.data.length > 0) {
-      setMessages(historyQuery.data as ChatMessage[]);
-      // Sync localStorage too
-      saveLocalHistory(historyQuery.data as ChatMessage[]);
+      const clean = sanitize(historyQuery.data);
+      setMessages(clean);
+      saveLocalHistory(clean);
     } else {
-      const local = loadLocalHistory();
+      const local = sanitize(loadLocalHistory());
       if (local.length > 0) {
         setMessages(local);
-        // Back-fill DB from localStorage
         saveHistoryMutation.mutate({ messages: local });
       }
     }
@@ -281,12 +290,10 @@ export default function AgentPage() {
     setMessages((prev) => [...prev, { role: "user", content: message }]);
     setIsPending(true);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-    fetch(`${API_URL}/agent/stream`, {
+    fetch(`/agent/stream`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-thread-csrf": "1" },
       body: JSON.stringify({ message, history, userEmail: meQuery.data?.email }),
     })
       .then(async (res) => {
@@ -403,7 +410,9 @@ export default function AgentPage() {
                 }}
               >
                 {msg.role === "assistant" ? <Bot size={13} style={{ opacity: 0.55, flexShrink: 0 }} /> : null}
-                <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                <span style={{ whiteSpace: "pre-wrap" }}>
+                  {typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)}
+                </span>
               </div>
             ))}
 
