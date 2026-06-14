@@ -31,13 +31,26 @@ import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
 
 const skipInTests = () => process.env.VITEST === "true";
 
-async function applyMcpRateLimit(req: Request, res: Response): Promise<boolean> {
+async function applyMcpIpRateLimit(req: Request, res: Response): Promise<boolean> {
   if (skipInTests()) return true;
-  // 60 tool calls per user per minute. Keyed on userId if authenticated, else IP.
-  const userId = req.headers["x-mcp-user-id"] as string | undefined;
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
-  const key = userId ? `mcp:user:${userId}` : `mcp:ip:${ip}`;
-  const result = await checkDistributedRateLimit(key, 60, 60_000);
+  const result = await checkDistributedRateLimit(`mcp:ip:${ip}`, 120, 60_000);
+  res.setHeader("RateLimit-Limit", "120");
+  res.setHeader("RateLimit-Remaining", String(result.remaining));
+  if (!result.allowed) {
+    res.status(429).json(rpcError(null, -32000, "Too many requests. Please slow down."));
+    return false;
+  }
+  return true;
+}
+
+async function applyMcpUserRateLimit(
+  req: Request,
+  res: Response,
+  userId: string,
+): Promise<boolean> {
+  if (skipInTests()) return true;
+  const result = await checkDistributedRateLimit(`mcp:user:${userId}`, 60, 60_000);
   res.setHeader("RateLimit-Limit", "60");
   res.setHeader("RateLimit-Remaining", String(result.remaining));
   if (!result.allowed) {
@@ -571,12 +584,15 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
       .json(rpcError(body?.id ?? null, -32600, "Invalid JSON-RPC request"));
   }
 
-  // Apply rate limit early (before auth so unauthenticated flood is also throttled).
-  const rateLimitOk = await applyMcpRateLimit(req, res);
-  if (!rateLimitOk) return;
-
   const id = body.id ?? null;
   const method = body.method;
+
+  // Throttle unauthenticated discovery traffic by IP only (never trust client user headers).
+  const publicMethods = new Set(["initialize", "tools/list", "notifications/initialized"]);
+  if (publicMethods.has(method)) {
+    const ipLimitOk = await applyMcpIpRateLimit(req, res);
+    if (!ipLimitOk) return;
+  }
 
   try {
     if (method === "initialize") {
@@ -608,8 +624,8 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
         return res.status(401).json(rpcError(id, -32001, "Authentication required"));
       }
 
-      // Re-key rate limit on userId now that we know it.
-      req.headers["x-mcp-user-id"] = userId;
+      const userLimitOk = await applyMcpUserRateLimit(req, res, userId);
+      if (!userLimitOk) return;
 
       const result = await callTool(toolName, toolArgs, userId);
       return res.json(ok(id, result));

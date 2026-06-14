@@ -25,7 +25,7 @@ function memoryIncr(key: string, ttlMs: number): number {
 
 type RedisClient = {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, options?: { EX?: number }): Promise<unknown>;
+  set(key: string, value: string, options?: { EX?: number; NX?: boolean }): Promise<string | null>;
   del(key: string): Promise<unknown>;
   incr(key: string): Promise<number>;
   expire(key: string, seconds: number): Promise<unknown>;
@@ -109,6 +109,26 @@ export async function cacheSet(key: string, value: string, ttlMs: number): Promi
     }
   }
   memorySet(key, value, ttlMs);
+}
+
+export async function cacheSetIfAbsent(key: string, value: string, ttlMs: number): Promise<boolean> {
+  const redis = await getRedisClient();
+  if (redis) {
+    try {
+      const ttlSec = Math.max(1, Math.ceil(ttlMs / 1000));
+      const result = await redis.set(key, value, { NX: true, EX: ttlSec });
+      return result === "OK";
+    } catch {
+      return tryMemorySetIfAbsent(key, value, ttlMs);
+    }
+  }
+  return tryMemorySetIfAbsent(key, value, ttlMs);
+}
+
+function tryMemorySetIfAbsent(key: string, value: string, ttlMs: number): boolean {
+  if (memoryGet(key)) return false;
+  memorySet(key, value, ttlMs);
+  return true;
 }
 
 export async function cacheIncr(key: string, ttlMs: number): Promise<number> {

@@ -46,7 +46,8 @@ export const authRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "Passwords do not match" });
         }
         await assertTurnstileToken(input.turnstileToken, getClientIp(ctx.req));
-        const { turnstileToken: _token, ...signUpInput } = input;
+        const { turnstileToken, ...signUpInput } = input;
+        void turnstileToken;
         return await authService.signUp(signUpInput);
       } catch (error) {
         mapAuthError(error);
@@ -60,7 +61,8 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       try {
         await assertTurnstileToken(input.turnstileToken, getClientIp(ctx.req));
-        const { turnstileToken: _token, ...signInInput } = input;
+        const { turnstileToken, ...signInInput } = input;
+        void turnstileToken;
         return await authService.signIn(signInInput, ctx.res);
       } catch (error) {
         mapAuthError(error);

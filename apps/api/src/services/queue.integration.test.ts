@@ -146,4 +146,30 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     expect(dismissed.status).toBe("dismissed");
     expect(sendMessage).not.toHaveBeenCalled();
   });
+
+  it("marks failed when execution throws after claim", async () => {
+    sendMessage.mockClear();
+    sendMessage.mockRejectedValueOnce(new Error("Gmail unavailable"));
+
+    const item = await queue.enqueueEmail(userId, {
+      mode: "send",
+      email: {
+        to: "fail@company.com",
+        subject: "Failure test",
+        body: "Should not stay approved.",
+      },
+    });
+
+    await expect(queue.approve(userId, item.id)).rejects.toBeInstanceOf(ServiceError);
+
+    const [row] = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(eq(threadQueueItemsTable.id, item.id))
+      .limit(1);
+
+    expect(row?.status).toBe("failed");
+    expect(row?.errorMessage).toBeTruthy();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "@repo/database";
+import { and, count, desc, eq, inArray, lt } from "@repo/database";
 import db from "@repo/database";
 import { threadQueueItemsTable, usersTable, type SelectQueueItem } from "@repo/database/schema";
 import { logger } from "@repo/logger";
@@ -53,6 +53,8 @@ function emailQueueFingerprint(kind: QueueItemKind, email: EmailQueuePayload): s
 }
 
 const DUPLICATE_QUEUE_WINDOW_MS = 10 * 60 * 1000;
+const STALE_PROCESSING_MS = 15 * 60 * 1000;
+const ACTIVE_QUEUE_STATUSES = ["pending", "processing", "approved"] as const;
 
 function userFacingApproveError(error: unknown): string {
   if (error instanceof ServiceError) return error.message;
@@ -124,7 +126,9 @@ export class ThreadQueueService implements QueueService {
 
     return rows.find((row) => {
       if (!row.createdAt || row.createdAt < since) return false;
-      if (row.status !== "pending" && row.status !== "approved") return false;
+      if (!ACTIVE_QUEUE_STATUSES.includes(row.status as (typeof ACTIVE_QUEUE_STATUSES)[number])) {
+        return false;
+      }
       try {
         return emailQueueFingerprint(row.kind, parseEmailQueuePayload(row.payload)) === fingerprint;
       } catch {
@@ -156,7 +160,22 @@ export class ThreadQueueService implements QueueService {
     }
   }
 
+  private async recoverStaleProcessing(userId: string) {
+    const cutoff = new Date(Date.now() - STALE_PROCESSING_MS);
+    await db
+      .update(threadQueueItemsTable)
+      .set({ status: "pending", processingAt: null })
+      .where(
+        and(
+          eq(threadQueueItemsTable.userId, userId),
+          eq(threadQueueItemsTable.status, "processing"),
+          lt(threadQueueItemsTable.processingAt, cutoff),
+        ),
+      );
+  }
+
   async listItems(userId: string, opts?: { status?: QueueItemStatus | "pending" | "all"; limit?: number }) {
+    await this.recoverStaleProcessing(userId);
     const status = opts?.status ?? "pending";
     const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
     const rows =
@@ -167,27 +186,40 @@ export class ThreadQueueService implements QueueService {
             .where(eq(threadQueueItemsTable.userId, userId))
             .orderBy(desc(threadQueueItemsTable.createdAt))
             .limit(limit)
-        : await db
-            .select()
-            .from(threadQueueItemsTable)
-            .where(
-              and(
-                eq(threadQueueItemsTable.userId, userId),
-                eq(threadQueueItemsTable.status, status === "pending" ? "pending" : status),
-              ),
-            )
-            .orderBy(desc(threadQueueItemsTable.createdAt))
-            .limit(limit);
+        : status === "pending"
+          ? await db
+              .select()
+              .from(threadQueueItemsTable)
+              .where(
+                and(
+                  eq(threadQueueItemsTable.userId, userId),
+                  inArray(threadQueueItemsTable.status, ["pending", "processing"]),
+                ),
+              )
+              .orderBy(desc(threadQueueItemsTable.createdAt))
+              .limit(limit)
+          : await db
+              .select()
+              .from(threadQueueItemsTable)
+              .where(
+                and(eq(threadQueueItemsTable.userId, userId), eq(threadQueueItemsTable.status, status)),
+              )
+              .orderBy(desc(threadQueueItemsTable.createdAt))
+              .limit(limit);
 
     return rows.map(mapRow);
   }
 
   async pendingCount(userId: string) {
+    await this.recoverStaleProcessing(userId);
     const [row] = await db
       .select({ value: count() })
       .from(threadQueueItemsTable)
       .where(
-        and(eq(threadQueueItemsTable.userId, userId), eq(threadQueueItemsTable.status, "pending")),
+        and(
+          eq(threadQueueItemsTable.userId, userId),
+          inArray(threadQueueItemsTable.status, ["pending", "processing"]),
+        ),
       );
     return Number(row?.value ?? 0);
   }
@@ -201,7 +233,7 @@ export class ThreadQueueService implements QueueService {
       .limit(500);
 
     const total = rows.length;
-    const pending = rows.filter((r) => r.status === "pending").length;
+    const pending = rows.filter((r) => r.status === "pending" || r.status === "processing").length;
     const approved = rows.filter((r) => r.status === "approved").length;
     const dismissed = rows.filter((r) => r.status === "dismissed").length;
     const failed = rows.filter((r) => r.status === "failed").length;
@@ -418,7 +450,7 @@ export class ThreadQueueService implements QueueService {
   ) {
     const [claimed] = await db
       .update(threadQueueItemsTable)
-      .set({ status: "approved", resolvedAt: new Date(), errorMessage: null })
+      .set({ status: "processing", processingAt: new Date(), errorMessage: null, resolvedAt: null })
       .where(
         and(
           eq(threadQueueItemsTable.id, itemId),
@@ -434,9 +466,26 @@ export class ThreadQueueService implements QueueService {
 
     try {
       await this.executeItem(userId, claimed.kind, claimed.payload, opts);
+
+      const [approved] = await db
+        .update(threadQueueItemsTable)
+        .set({ status: "approved", resolvedAt: new Date(), processingAt: null, errorMessage: null })
+        .where(
+          and(
+            eq(threadQueueItemsTable.id, itemId),
+            eq(threadQueueItemsTable.userId, userId),
+            eq(threadQueueItemsTable.status, "processing"),
+          ),
+        )
+        .returning();
+
+      if (!approved) {
+        throw serviceError("INTERNAL", "Queue item state changed during approval");
+      }
+
       incrementCounter(`queue.approved.${claimed.kind}`);
       incrementCounter("queue.approved.total");
-      return mapRow(claimed);
+      return mapRow(approved);
     } catch (error) {
       const userMessage = userFacingApproveError(error);
       logger.error("Queue approve failed", {
@@ -448,8 +497,19 @@ export class ThreadQueueService implements QueueService {
 
       await db
         .update(threadQueueItemsTable)
-        .set({ status: "failed", resolvedAt: new Date(), errorMessage: userMessage })
-        .where(eq(threadQueueItemsTable.id, itemId));
+        .set({
+          status: "failed",
+          resolvedAt: new Date(),
+          processingAt: null,
+          errorMessage: userMessage,
+        })
+        .where(
+          and(
+            eq(threadQueueItemsTable.id, itemId),
+            eq(threadQueueItemsTable.userId, userId),
+            eq(threadQueueItemsTable.status, "processing"),
+          ),
+        );
 
       throw serviceError("PRECONDITION_FAILED", userMessage);
     }

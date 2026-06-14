@@ -479,6 +479,8 @@ class AuthService {
       })
       .where(eq(usersTable.id, user.id));
 
+    await this.revokeRefreshTokens(user.id);
+
     return { message: "Password reset successfully." };
   }
 

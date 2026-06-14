@@ -13,7 +13,7 @@ export const queueItemKindEnum = [
 ] as const;
 export type QueueItemKind = (typeof queueItemKindEnum)[number];
 
-export const queueItemStatusEnum = ["pending", "approved", "dismissed", "failed"] as const;
+export const queueItemStatusEnum = ["pending", "processing", "approved", "dismissed", "failed"] as const;
 export type QueueItemStatus = (typeof queueItemStatusEnum)[number];
 
 export const threadQueueItemsTable = pgTable(
@@ -30,6 +30,7 @@ export const threadQueueItemsTable = pgTable(
     sourceThreadId: varchar("source_thread_id", { length: 128 }),
     status: varchar("status", { length: 20 }).$type<QueueItemStatus>().notNull().default("pending"),
     errorMessage: text("error_message"),
+    processingAt: timestamp("processing_at"),
     createdAt: timestamp("created_at").defaultNow(),
     resolvedAt: timestamp("resolved_at"),
   },
@@ -40,7 +41,7 @@ export const threadQueueItemsTable = pgTable(
     ),
     statusCheck: check(
       "thread_queue_items_status_check",
-      sql`${table.status} in ('pending', 'approved', 'dismissed', 'failed')`,
+      sql`${table.status} in ('pending', 'processing', 'approved', 'dismissed', 'failed')`,
     ),
   }),
 );
