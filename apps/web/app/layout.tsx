@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { caveat } from "~/lib/fonts";
+import { caveat, threadHero } from "~/lib/fonts";
 import { GlobalProviders } from "~/providers/global";
 
 const geistSans = localFont({
@@ -43,7 +43,7 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} ${caveat.variable} bg-(--landing-bg) text-white antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${caveat.variable} ${threadHero.variable} bg-(--landing-bg) text-white antialiased`}
       >
         <GlobalProviders>{children}</GlobalProviders>
       </body>

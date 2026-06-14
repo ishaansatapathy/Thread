@@ -1,9 +1,7 @@
 # Landing hero font
 
-The marketing homepage loads **`hero.ttf`** (see `thread.css` → `ThreadHero`).
+The marketing homepage uses **`apps/web/app/fonts/ThreadHero.ttf`** (bundled via `next/font` for Vercel).
 
-- Keep `hero.ttf` in this folder locally — it is **gitignored** (font licenses / binaries are not committed).
-- After replacing the file, hard refresh the browser (`Ctrl+Shift+R`).
+- To change the hero font, replace `app/fonts/ThreadHero.ttf` and redeploy.
+- Optional local override: drop `hero.ttf` here (gitignored) — production uses `app/fonts/` only.
 - App pages (Inbox, Queue, Calendar) use Geist — they do not depend on this font.
-
-If `hero.ttf` is missing, the hero headline falls back to system sans-serif.
