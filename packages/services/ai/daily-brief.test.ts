@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { findFocusWindows, zonedDayRange } from "./daily-brief-time";
+import { findFocusWindows, timeOfDayGreeting, zonedDayRange } from "./daily-brief-time";
 
 describe("daily-brief-time", () => {
   it("computes a day range for a timezone", () => {
@@ -37,5 +37,10 @@ describe("daily-brief-time", () => {
     });
 
     expect(windows).toEqual([]);
+  });
+
+  it("uses afternoon greeting outside morning hours", () => {
+    const greeting = timeOfDayGreeting("Ishaan", "UTC", new Date("2026-06-14T14:00:00.000Z"));
+    expect(greeting).toBe("Good afternoon, Ishaan");
   });
 });

@@ -1,6 +1,6 @@
 import { ServiceError } from "../errors";
 import { gatherDailyBriefContext, serializeGatherForModel, type BriefGatherResult } from "./daily-brief-gather";
-import { formatLocalTimeRange } from "./daily-brief-time";
+import { formatLocalTimeRange, timeOfDayGreeting } from "./daily-brief-time";
 import {
   dailyBriefModelSchema,
   dailyBriefSchema,
@@ -11,7 +11,8 @@ import {
 import { createChatCompletion, isOpenAiConfigured } from "./openai";
 
 const SYSTEM_PROMPT = [
-  "You are a personal chief of staff preparing a morning brief for a busy professional.",
+  "You are a personal chief of staff preparing a daily brief for a busy professional.",
+  "Use a time-appropriate greeting (morning / afternoon / evening) — never assume it is morning.",
   "Use ONLY the facts provided in the user message — never invent emails, meetings, or deadlines.",
   "Do NOT lead with counts (e.g. 'you have 10 emails' or '3 meetings').",
   "Be decisive: tell the user what matters and what to do first.",
@@ -189,7 +190,7 @@ function buildFallbackBrief(context: BriefGatherResult): DailyBrief {
   if (summaryParts.length === 0) summaryParts.push("you have a lighter day ahead");
 
   return dailyBriefSchema.parse({
-    greeting: `Good morning, ${context.userName}`,
+    greeting: timeOfDayGreeting(context.userName, context.timeZone),
     summary: `Today ${summaryParts.join(" and ")} — start with your highest-impact move.`,
     todaysFocus: {
       headline: topThread
@@ -257,10 +258,17 @@ async function synthesizeBrief(context: BriefGatherResult): Promise<DailyBrief> 
       },
     });
 
-    return sanitizeIds(context, withMeta);
+    return applyGreeting(context, sanitizeIds(context, withMeta));
   } catch {
     return buildFallbackBrief(context);
   }
+}
+
+function applyGreeting(context: BriefGatherResult, brief: DailyBrief): DailyBrief {
+  return {
+    ...brief,
+    greeting: timeOfDayGreeting(context.userName, context.timeZone),
+  };
 }
 
 export async function generateDailyBrief(input: {

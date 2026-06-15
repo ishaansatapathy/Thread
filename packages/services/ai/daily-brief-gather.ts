@@ -149,25 +149,22 @@ export async function gatherDailyBriefContext(input: {
 
   const day = zonedDayRange(timeZone);
 
-  const inboxListPromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, { maxResults: 20, query: "in:inbox" })
-    : Promise.resolve({ threads: [] as InboxThread[] });
-
   const unreadPromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, { maxResults: 15, query: "in:inbox is:unread" })
+    ? inbox.listThreads(input.tenantId, { maxResults: 25, query: "in:inbox is:unread" })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const deadlinePromise = gmailConnected
     ? inbox.listThreads(input.tenantId, {
         maxResults: 10,
-        query: 'newer_than:14d (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
+        query:
+          'in:inbox is:unread newer_than:14d (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
       })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const invoicePromise = gmailConnected
     ? inbox.listThreads(input.tenantId, {
         maxResults: 10,
-        query: 'newer_than:30d (invoice OR unpaid OR "payment due")',
+        query: 'in:inbox is:unread newer_than:30d (invoice OR unpaid OR "payment due")',
       })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
@@ -188,15 +185,7 @@ export async function gatherDailyBriefContext(input: {
       })
     : Promise.resolve({ conflicts: [] as CalendarEvent[] });
 
-  const [
-    inboxList,
-    unreadList,
-    deadlineList,
-    invoiceList,
-    eventsResult,
-    freeBusyResult,
-  ] = await Promise.all([
-    inboxListPromise,
+  const [unreadList, deadlineList, invoiceList, eventsResult, freeBusyResult] = await Promise.all([
     unreadPromise,
     deadlinePromise,
     invoicePromise,
@@ -204,11 +193,11 @@ export async function gatherDailyBriefContext(input: {
     freeBusyPromise,
   ]);
 
+  // Unread-only for email signals — read mail (e.g. opened from notification) drops off the brief.
   const merged = dedupeThreads([
     ...unreadList.threads,
     ...deadlineList.threads,
     ...invoiceList.threads,
-    ...inboxList.threads,
   ]);
 
   let rankedThreadIds = merged.map((t) => t.id);
@@ -240,7 +229,7 @@ export async function gatherDailyBriefContext(input: {
 
   const threadSnapshots: BriefThreadSnapshot[] = [];
   for (const thread of detailThreads) {
-    if (!thread) continue;
+    if (!thread || !thread.unread) continue;
     const reply = isAwaitingUserReply(thread, input.userEmail);
     threadSnapshots.push(
       threadSnapshot(thread, {
