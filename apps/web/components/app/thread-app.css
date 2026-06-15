@@ -2641,3 +2641,236 @@
   border-radius: 4px;
   flex-shrink: 0;
 }
+
+/* ── Daily Brief ───────────────────────────────────────────────────────────── */
+.thread-brief-page {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.thread-brief-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.thread-brief-header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.thread-brief-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.thread-brief-header p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--thread-muted);
+  line-height: 1.5;
+}
+
+.thread-brief-empty {
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.thread-brief-hero {
+  padding: 4px 0 8px;
+}
+
+.thread-brief-greeting {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--thread-text);
+}
+
+.thread-brief-summary {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--thread-muted);
+  max-width: 640px;
+}
+
+.thread-brief-focus-card {
+  border: 1px solid var(--thread-line-strong);
+  border-radius: 14px;
+  padding: 20px 22px;
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.thread-brief-focus-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-family: var(--thread-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--thread-accent-bright);
+  margin-bottom: 10px;
+}
+
+.thread-brief-focus-card h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.02em;
+}
+
+.thread-brief-focus-card p {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--thread-muted);
+}
+
+.thread-brief-focus-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.thread-brief-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--thread-line);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 13px;
+  color: var(--thread-muted);
+}
+
+.thread-brief-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.thread-brief-section {
+  border: 1px solid var(--thread-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.thread-brief-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--thread-line);
+}
+
+.thread-brief-section-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.thread-brief-section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-brief-item-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.thread-brief-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--thread-line);
+  transition: background 0.15s ease;
+}
+
+.thread-brief-item:last-child {
+  border-bottom: none;
+}
+
+.thread-brief-item-link:hover .thread-brief-item {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.thread-brief-item-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.thread-brief-item-copy strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.thread-brief-item-copy p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--thread-dim);
+}
+
+.thread-brief-actions {
+  border: 1px solid var(--thread-line);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.thread-brief-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.thread-brief-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--thread-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--thread-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.thread-brief-action-btn:hover {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+@media (min-width: 720px) {
+  .thread-brief-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .thread-brief-grid .thread-brief-section:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}

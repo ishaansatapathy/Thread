@@ -17,6 +17,7 @@ import {
   BarChart2,
   Menu,
   X,
+  Sun,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -29,6 +30,7 @@ import { useThreadUser, initials } from "./use-thread-user";
 import { useSyncEvents } from "~/hooks/use-sync-events";
 
 const NAV = [
+  { label: "Brief", href: "/brief", icon: Sun },
   { label: "Inbox", href: "/inbox", icon: Inbox },
   { label: "Queue", href: "/queue", icon: ListChecks },
   { label: "Calendar", href: "/calendar", icon: Calendar },
@@ -37,6 +39,7 @@ const NAV = [
 ];
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
+  "/brief": { title: "Daily Brief", sub: "What to do today — at a glance" },
   "/inbox": { title: "Inbox", sub: "Triage what matters" },
   "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },

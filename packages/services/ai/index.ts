@@ -16,3 +16,7 @@ export {
   MAX_AGENT_CONTEXT_TOKENS,
 } from "./agent-guard";
 export type { InjectionCheckResult, SendCounter, ValidatedEmailArgs } from "./agent-guard";
+export { generateDailyBrief, gatherDailyBriefContext } from "./daily-brief";
+export type { BriefGatherResult } from "./daily-brief";
+export type { DailyBrief, DailyBriefAction, DailyBriefItem } from "./daily-brief-types";
+export { dailyBriefSchema } from "./daily-brief-types";

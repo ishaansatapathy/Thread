@@ -10,6 +10,7 @@ import { agentRouter } from "./routes/agent/route";
 import { contactsRouter } from "./routes/contacts/route";
 import { settingsRouter } from "./routes/settings/route";
 import { observabilityRouter } from "./routes/observability/route";
+import { briefRouter } from "./routes/brief/route";
 
 export const serverRouter = router({
   health: healthRouter,
@@ -22,6 +23,7 @@ export const serverRouter = router({
   contacts: contactsRouter,
   settings: settingsRouter,
   observability: observabilityRouter,
+  brief: briefRouter,
 });
 
 export const openApiRouter = serverRouter;
