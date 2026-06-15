@@ -330,6 +330,11 @@ export default function InboxPage() {
       setView("inbox");
       setShowCompose(true);
     }
+    const threadId = searchParams.get("thread");
+    if (threadId) {
+      setView("inbox");
+      setSelectedId(threadId);
+    }
   }, [searchParams]);
 
   const effectiveQuery = useMemo(() => {

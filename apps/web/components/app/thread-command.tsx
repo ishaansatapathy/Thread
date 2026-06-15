@@ -15,6 +15,7 @@ import {
   Bot,
   BarChart2,
   Keyboard,
+  Sun,
 } from "lucide-react";
 
 type CommandAction = {
@@ -46,6 +47,7 @@ export function ThreadCommand({
       onClose();
     };
     return [
+      { id: "brief", group: "Navigate", label: "Open daily brief", icon: Sun, run: go("/brief") },
       { id: "inbox", group: "Navigate", label: "Go to Inbox", icon: Inbox, run: go("/inbox") },
       { id: "search", group: "Navigate", label: "Search inbox", hint: "Press /", icon: Search, run: go("/inbox?focus=search") },
       { id: "queue", group: "Navigate", label: "Open approval queue", icon: ListChecks, run: go("/queue") },

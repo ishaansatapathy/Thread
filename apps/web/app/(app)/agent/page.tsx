@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Bot,
@@ -316,6 +317,8 @@ export default function AgentPage() {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery({});
+  const searchParams = useSearchParams();
+  const promptHandled = useRef(false);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
@@ -433,6 +436,15 @@ export default function AgentPage() {
         setStreamStatus(null);
       });
   };
+
+  useEffect(() => {
+    if (promptHandled.current) return;
+    const prompt = searchParams.get("prompt")?.trim();
+    if (!prompt || !ready || isPending) return;
+    promptHandled.current = true;
+    send(prompt);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, ready, isPending]);
 
   return (
     <div className="thread-app-page">
