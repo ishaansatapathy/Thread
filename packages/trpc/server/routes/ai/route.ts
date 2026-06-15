@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
+import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -48,6 +48,28 @@ export const aiRouter = router({
       try {
         const rankedIds = await rankInboxThreads(input.threads);
         return { rankedIds };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Daily brief — also exposed here so older API bundles pick it up under `ai.*`. */
+  dailyBrief: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/daily-brief"), tags: TAGS } })
+    .input(
+      z.object({
+        timeZone: z.string().max(64).optional(),
+      }),
+    )
+    .output(dailyBriefSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await generateDailyBrief({
+          tenantId: ctx.user.id,
+          userEmail: ctx.user.email,
+          displayName: ctx.user.displayName ?? ctx.user.fullName,
+          timeZone: input.timeZone,
+        });
       } catch (error) {
         mapServiceError(error);
       }

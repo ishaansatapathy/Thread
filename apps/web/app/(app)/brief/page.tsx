@@ -21,7 +21,7 @@ import type { RouterOutputs } from "@repo/trpc/client";
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 
-type DailyBrief = RouterOutputs["brief"]["get"];
+type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
 type BriefAction = DailyBrief["recommendedActions"][number];
 
@@ -123,7 +123,7 @@ export default function BriefPage() {
     [],
   );
 
-  const briefQuery = trpc.brief.get.useQuery(
+  const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
     {
       staleTime: 5 * 60_000,
@@ -148,7 +148,7 @@ export default function BriefPage() {
             <Sun size={18} style={{ opacity: 0.75 }} />
             <div>
               <h1>Daily Brief</h1>
-              <p>Your morning plan — what matters and what to do first.</p>
+              <p>Your plan for today — what matters and what to do first.</p>
             </div>
           </div>
           <button
