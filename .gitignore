@@ -114,6 +114,7 @@ ref_video/
 *.mov
 
 *.webm
+!apps/web/public/mascot.webm
 
 Recording*
 
