@@ -236,6 +236,17 @@ export default function InboxPage() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [labelFilter, setLabelFilter] = useState("");
+  const labelPickerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showLabelPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (labelPickerRef.current && !labelPickerRef.current.contains(e.target as Node)) {
+        setShowLabelPicker(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showLabelPicker]);
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState("");
@@ -307,6 +318,7 @@ export default function InboxPage() {
 
   const labelsQuery = trpc.inbox.listLabels.useQuery({}, {
     staleTime: 5 * 60_000,
+    enabled: isConnected,
   });
 
   const applyLabel = trpc.inbox.applyLabel.useMutation({
@@ -1060,7 +1072,7 @@ export default function InboxPage() {
                   <PanelRight size={14} />
                   {showContextPanel ? "Hide AI" : "AI Context"}
                 </button>
-                <div style={{ position: "relative", flexShrink: 0 }}>
+                <div ref={labelPickerRef} style={{ position: "relative", flexShrink: 0 }}>
                   <button
                     type="button"
                     className="thread-btn-ghost"
@@ -1071,8 +1083,16 @@ export default function InboxPage() {
                     <Tag size={14} />
                     Label
                   </button>
-                  {showLabelPicker && labelsQuery.data && labelsQuery.data.length > 0 ? (
+                  {showLabelPicker ? (
                     <div className="thread-label-picker">
+                      {labelsQuery.isLoading ? (
+                        <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>Loading labels…</p>
+                      ) : labelsQuery.isError ? (
+                        <p className="thread-label-picker-head" style={{ padding: "8px 12px", color: "var(--thread-danger, #f87171)" }}>Failed to load labels</p>
+                      ) : !labelsQuery.data?.length ? (
+                        <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>No labels found</p>
+                      ) : (
+                        <>
                       <p className="thread-label-picker-head">Apply label</p>
                       {labelsQuery.data
                         .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
@@ -1110,6 +1130,8 @@ export default function InboxPage() {
                             {label.name}
                           </button>
                         ))}
+                        </>
+                      )}
                     </div>
                   ) : null}
                 </div>
