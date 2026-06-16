@@ -446,7 +446,7 @@ export default function InboxPage() {
       });
       if (batch.threads.length === 0) return;
       rankThreads.mutate({
-        threads: batch.threads.slice(0, 100).map((thread) => ({
+        threads: batch.threads.slice(0, 40).map((thread) => ({
           id: thread.id,
           snippet: thread.snippet,
           subject: thread.subject,

@@ -15,11 +15,11 @@ const rankResponseSchema = z.object({
 });
 
 function buildRankPrompt(threads: InboxRankInput[]) {
-  const lines = threads.map((thread, index) => {
-    const subject = thread.subject?.trim() || "No subject";
-    const from = thread.from?.trim() || "Unknown sender";
-    const snippet = thread.snippet.trim() || "(empty)";
-    return `${index + 1}. id=${thread.id}\n   from=${from}\n   subject=${subject}\n   snippet=${snippet}`;
+  const lines = threads.slice(0, 40).map((thread, index) => {
+    const subject = (thread.subject?.trim() || "No subject").slice(0, 80);
+    const from = (thread.from?.trim() || "Unknown sender").slice(0, 40);
+    const snippet = (thread.snippet.trim() || "(empty)").slice(0, 120);
+    return `${index + 1}. id=${thread.id} | from=${from} | subject=${subject} | ${snippet}`;
   });
 
   return [
