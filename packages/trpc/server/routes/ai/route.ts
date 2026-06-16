@@ -38,7 +38,7 @@ export const aiRouter = router({
     .meta({ openapi: { method: "POST", path: getPath("/inbox/rank"), tags: TAGS } })
     .input(
       z.object({
-        threads: z.array(inboxRankThreadSchema).min(1).max(25),
+        threads: z.array(inboxRankThreadSchema).min(1).max(100),
       }),
     )
     .output(
