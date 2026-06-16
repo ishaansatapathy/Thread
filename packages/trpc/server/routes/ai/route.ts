@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
 import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
 import { getThreadContext } from "@repo/services/ai/thread-context";
+import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -78,6 +79,21 @@ export const aiRouter = router({
         return await getMeetingPrep({
           tenantId: ctx.user.id,
           eventId: input.eventId,
+          timeZone: input.timeZone,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Missed follow-ups — meetings with no follow-up email sent. */
+  missedFollowUps: protectedProcedure
+    .input(z.object({ timeZone: z.string().max(64).optional() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getMissedFollowUps({
+          tenantId: ctx.user.id,
+          userEmail: ctx.user.email,
           timeZone: input.timeZone,
         });
       } catch (error) {

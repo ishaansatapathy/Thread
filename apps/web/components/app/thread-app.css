@@ -3133,3 +3133,162 @@
   font-size: 11px;
   color: var(--thread-dim);
 }
+
+/* ── Brief enhancements ─────────────────────────────────── */
+
+/* Badge */
+.thread-brief-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.thread-brief-badge--amber {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+}
+
+/* While You Were Away banner */
+.thread-brief-away-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  font-size: 13px;
+  color: var(--thread-text);
+  margin-bottom: 16px;
+}
+
+.thread-brief-away-banner strong {
+  color: #a78bfa;
+}
+
+/* Expandable brief item */
+.thread-brief-item-wrap {
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.15s ease;
+}
+
+.thread-brief-item-wrap[data-expanded="true"] {
+  box-shadow: 0 0 0 1.5px rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.thread-brief-item-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 13px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.thread-brief-item-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.thread-brief-item-expand-icon {
+  margin-left: auto;
+  color: var(--thread-accent);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* Inline context panel in Brief */
+.thread-brief-inline-context {
+  border-top: 1px solid var(--thread-line);
+  background: var(--thread-surface);
+  padding: 0;
+}
+
+.thread-brief-inline-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--thread-line);
+}
+
+/* Missed follow-ups section */
+.thread-brief-followups-section {
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  background: rgba(167, 139, 250, 0.04);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 4px;
+}
+
+.thread-brief-followup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--thread-line);
+}
+
+.thread-brief-followup-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.thread-brief-followup-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.thread-brief-followup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--thread-text);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-brief-followup-sub {
+  font-size: 11.5px;
+  color: var(--thread-dim);
+  margin: 2px 0 0;
+}
+
+.thread-brief-followup-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  background: rgba(167, 139, 250, 0.08);
+  color: #a78bfa;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease;
+}
+
+.thread-brief-followup-btn:hover {
+  background: rgba(167, 139, 250, 0.16);
+}

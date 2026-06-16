@@ -24,3 +24,5 @@ export { getThreadContext } from "./thread-context";
 export type { ThreadContextResult } from "./thread-context";
 export { getMeetingPrep } from "./meeting-prep";
 export type { MeetingPrepResult } from "./meeting-prep";
+export { getMissedFollowUps } from "./missed-followups";
+export type { MissedFollowUp } from "./missed-followups";
