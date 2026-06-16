@@ -14,6 +14,7 @@ import {
   Loader2,
   Plus,
   Repeat,
+  Sparkles,
   Trash2,
   Users,
   X,
@@ -22,6 +23,7 @@ import {
 
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
 import { queueResultMessage } from "~/lib/queue-toast";
 import {
   eventDayKey,
@@ -155,6 +157,7 @@ export default function CalendarPage() {
     toLocalDateTimeInput(new Date(Date.now() + 86_400_000 + 3_600_000)),
   );
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
+  const [showPrep, setShowPrep] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [conflicts, setConflicts] = useState<CalendarEventItem[]>([]);
   const [isAllDay, setIsAllDay] = useState(false);
@@ -471,6 +474,7 @@ export default function CalendarPage() {
                     return;
                   }
                   setSelectedEvent(event);
+                  setShowPrep(false);
                 }}
               >
                 <span className="thread-cal-mobile-item-when">
@@ -515,6 +519,7 @@ export default function CalendarPage() {
                             return;
                           }
                           setSelectedEvent(event);
+                          setShowPrep(false);
                         }}
                       >
                         <span className="thread-cal-event-time">
@@ -784,6 +789,20 @@ export default function CalendarPage() {
               <h3>{selectedEvent.summary}</h3>
               <button
                 type="button"
+                className="thread-btn-ghost"
+                style={{
+                  fontSize: 12,
+                  padding: "5px 10px",
+                  marginLeft: "auto",
+                  color: showPrep ? "var(--thread-accent)" : undefined,
+                }}
+                onClick={() => setShowPrep((v) => !v)}
+              >
+                <Sparkles size={13} style={{ marginRight: 4, verticalAlign: -1 }} />
+                {showPrep ? "Hide prep" : "Meeting Prep"}
+              </button>
+              <button
+                type="button"
                 className="thread-app-iconbtn"
                 disabled={eventBusy}
                 onClick={() => setSelectedEvent(null)}
@@ -791,6 +810,16 @@ export default function CalendarPage() {
                 <X size={14} />
               </button>
             </div>
+            {showPrep ? (
+              <MeetingPrepPanel
+                eventId={selectedEvent.id}
+                timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+                onOpenThread={(threadId) => {
+                  setSelectedEvent(null);
+                  window.location.href = `/inbox?thread=${encodeURIComponent(threadId)}`;
+                }}
+              />
+            ) : null}
             <div className="thread-cal-event-detail">
               <p className="thread-cal-event-when">
                 {formatEventWhen(selectedEvent.start, selectedEvent.end)}

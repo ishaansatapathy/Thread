@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
+import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
+import { getThreadContext } from "@repo/services/ai/thread-context";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -48,6 +50,36 @@ export const aiRouter = router({
       try {
         const rankedIds = await rankInboxThreads(input.threads);
         return { rankedIds };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Smart Context Panel — why this email matters, related threads/events, follow-up. */
+  threadContext: protectedProcedure
+    .input(z.object({ threadId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getThreadContext({
+          tenantId: ctx.user.id,
+          threadId: input.threadId,
+          userEmail: ctx.user.email,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Meeting Prep AI — agenda, talking points, risks, related emails. */
+  meetingPrep: protectedProcedure
+    .input(z.object({ eventId: z.string().min(1), timeZone: z.string().max(64).optional() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getMeetingPrep({
+          tenantId: ctx.user.id,
+          eventId: input.eventId,
+          timeZone: input.timeZone,
+        });
       } catch (error) {
         mapServiceError(error);
       }

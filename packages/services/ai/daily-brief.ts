@@ -13,10 +13,15 @@ import { createChatCompletion, isOpenAiConfigured } from "./openai";
 const SYSTEM_PROMPT = [
   "You are a personal chief of staff preparing a daily brief for a busy professional.",
   "Use a time-appropriate greeting (morning / afternoon / evening) — never assume it is morning.",
-  "Use ONLY the facts provided in the user message — never invent emails, meetings, or deadlines.",
-  "Do NOT lead with counts (e.g. 'you have 10 emails' or '3 meetings').",
-  "Be decisive: tell the user what matters and what to do first.",
-  "Reference threadId and eventId from the data when attaching items.",
+  "Use ONLY the facts provided — never invent emails, meetings, or deadlines.",
+  "Rules:",
+  "- DO NOT count things ('you have X emails'). Tell the user WHAT to do.",
+  "- Pick the single most important action for todaysFocus — be specific (name, subject, deadline).",
+  "- needsAttention: only truly actionable unread items. Skip if nothing real.",
+  "- If waitingOn data exists, surface the most important one in risks or needsAttention.",
+  "- summary: 1 sentence — decisive, not generic. Reference the actual top item.",
+  "- Be concise. No fluff. Think Superhuman, not Gmail.",
+  "Reference threadId/eventId from the data for every item that has one.",
   "Respond with valid JSON only — no markdown.",
   "",
   "JSON shape:",
@@ -154,6 +159,16 @@ function buildFallbackBrief(context: BriefGatherResult): DailyBrief {
       detail: stale.subject,
       urgency: "high",
       threadId: stale.id,
+    });
+  }
+
+  const topWaiting = context.waitingOn[0];
+  if (topWaiting && topWaiting.sentDaysAgo >= 2) {
+    risks.push({
+      headline: `No reply from ${topWaiting.to} yet`,
+      detail: `${topWaiting.subject} — sent ${topWaiting.sentDaysAgo} day${topWaiting.sentDaysAgo === 1 ? "" : "s"} ago`,
+      urgency: topWaiting.sentDaysAgo >= 3 ? "high" : "medium",
+      threadId: topWaiting.id,
     });
   }
 

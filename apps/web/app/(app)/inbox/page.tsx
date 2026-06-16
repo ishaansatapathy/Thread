@@ -17,7 +17,10 @@ import {
   X,
   Search,
   Sparkles,
+  PanelRight,
 } from "lucide-react";
+
+import { SmartContextPanel } from "~/components/app/smart-context-panel";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -233,6 +236,7 @@ export default function InboxPage() {
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [labelFilter, setLabelFilter] = useState("");
+  const [showContextPanel, setShowContextPanel] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
@@ -998,7 +1002,11 @@ export default function InboxPage() {
             </p>
           </div>
         ) : selectedQuery.data ? (
-          <div className="thread-inbox-message">
+          <div
+            className="thread-inbox-message"
+            style={{ display: "flex", flexDirection: "row", gap: 0, overflow: "hidden" }}
+          >
+          <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
             <button
               type="button"
               className="thread-inbox-back-btn"
@@ -1036,6 +1044,21 @@ export default function InboxPage() {
                 >
                   <Archive size={14} />
                   {archiveThread.isPending ? "Archiving…" : "Archive"}
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{
+                    fontSize: 12,
+                    padding: "7px 12px",
+                    flexShrink: 0,
+                    color: showContextPanel ? "var(--thread-accent)" : undefined,
+                  }}
+                  onClick={() => setShowContextPanel((v) => !v)}
+                  title="AI context panel"
+                >
+                  <PanelRight size={14} />
+                  {showContextPanel ? "Hide AI" : "AI Context"}
                 </button>
                 <div style={{ position: "relative", flexShrink: 0 }}>
                   <button
@@ -1299,6 +1322,16 @@ export default function InboxPage() {
                 approve.
               </p>
             </div>
+          </div>
+          {/* Smart Context Panel */}
+          {showContextPanel && selectedId ? (
+            <div className="scp-sidebar">
+              <SmartContextPanel
+                threadId={selectedId}
+                onOpenThread={(id) => setSelectedId(id)}
+              />
+            </div>
+          ) : null}
           </div>
         ) : (
           <div className="thread-app-empty">

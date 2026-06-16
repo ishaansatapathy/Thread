@@ -38,6 +38,13 @@ export type BriefMeetingSnapshot = {
   attendeeNames: string[];
 };
 
+export type BriefWaitingThread = {
+  id: string;
+  subject: string;
+  to: string;
+  sentDaysAgo: number;
+};
+
 export type BriefGatherResult = {
   userName: string;
   userEmail?: string;
@@ -52,6 +59,7 @@ export type BriefGatherResult = {
   pendingQueue: Array<{ id: string; title: string; kind: string }>;
   deadlineThreadIds: string[];
   invoiceThreadIds: string[];
+  waitingOn: BriefWaitingThread[];
 };
 
 const DETAIL_THREAD_LIMIT = 6;
@@ -149,22 +157,28 @@ export async function gatherDailyBriefContext(input: {
 
   const day = zonedDayRange(timeZone);
 
+  // Recent unread personal mail only — promotions/social/notifications excluded.
   const unreadPromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, { maxResults: 25, query: "in:inbox is:unread" })
+    ? inbox.listThreads(input.tenantId, {
+        maxResults: 20,
+        query:
+          "in:inbox is:unread newer_than:3d -category:promotions -category:social -category:updates -category:forums",
+      })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const deadlinePromise = gmailConnected
     ? inbox.listThreads(input.tenantId, {
-        maxResults: 10,
+        maxResults: 8,
         query:
-          'in:inbox is:unread newer_than:14d (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
+          'in:inbox is:unread newer_than:7d -category:promotions -category:social (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
       })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const invoicePromise = gmailConnected
     ? inbox.listThreads(input.tenantId, {
-        maxResults: 10,
-        query: 'in:inbox is:unread newer_than:30d (invoice OR unpaid OR "payment due")',
+        maxResults: 5,
+        query:
+          'in:inbox is:unread newer_than:14d -category:promotions (invoice OR unpaid OR "payment due")',
       })
     : Promise.resolve({ threads: [] as InboxThread[] });
 
@@ -185,13 +199,25 @@ export async function gatherDailyBriefContext(input: {
       })
     : Promise.resolve({ conflicts: [] as CalendarEvent[] });
 
-  const [unreadList, deadlineList, invoiceList, eventsResult, freeBusyResult] = await Promise.all([
-    unreadPromise,
-    deadlinePromise,
-    invoicePromise,
-    eventsPromise,
-    freeBusyPromise,
-  ]);
+  // Waiting on others — sent mail with no reply in last 5 days.
+  const waitingOnPromise = gmailConnected
+    ? inbox
+        .listThreads(input.tenantId, {
+          maxResults: 8,
+          query: "in:sent newer_than:5d -category:promotions",
+        })
+        .catch(() => ({ threads: [] as InboxThread[] }))
+    : Promise.resolve({ threads: [] as InboxThread[] });
+
+  const [unreadList, deadlineList, invoiceList, eventsResult, freeBusyResult, waitingOnList] =
+    await Promise.all([
+      unreadPromise,
+      deadlinePromise,
+      invoicePromise,
+      eventsPromise,
+      freeBusyPromise,
+      waitingOnPromise,
+    ]);
 
   // Unread-only for email signals — read mail (e.g. opened from notification) drops off the brief.
   const merged = dedupeThreads([
@@ -307,6 +333,23 @@ export async function gatherDailyBriefContext(input: {
     })),
     deadlineThreadIds: deadlineList.threads.map((t) => t.id),
     invoiceThreadIds: invoiceList.threads.map((t) => t.id),
+    waitingOn: waitingOnList.threads
+      .filter((t) => {
+        // Only include if the last message was from us (i.e. they haven't replied).
+        const messages = t.messages ?? [];
+        if (messages.length === 0) return daysSince(t.date) != null;
+        const last = messages[messages.length - 1]!;
+        const lastFrom = extractEmailAddress(last.from) ?? "";
+        const user = normalizeEmail(input.userEmail) ?? "";
+        return user && lastFrom.includes(user);
+      })
+      .slice(0, 5)
+      .map((t) => ({
+        id: t.id,
+        subject: t.subject?.trim() || "No subject",
+        to: t.to?.trim() || "Unknown",
+        sentDaysAgo: daysSince(t.date) ?? 0,
+      })),
   };
 }
 
@@ -357,6 +400,13 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
       if (meeting.attendeeNames.length > 0) {
         lines.push(`  attendees: ${meeting.attendeeNames.join(", ")}`);
       }
+    }
+  }
+
+  if (context.waitingOn.length > 0) {
+    lines.push("", "Waiting on replies (user sent, no response yet):");
+    for (const w of context.waitingOn) {
+      lines.push(`- id=${w.id} | to=${w.to} | subject=${w.subject} | sent ${w.sentDaysAgo}d ago`);
     }
   }
 
