@@ -26,6 +26,7 @@ import type { RouterOutputs } from "@repo/trpc/client";
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
+import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
 
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
@@ -67,23 +68,35 @@ function BriefSection({
 function BriefItemRow({
   item,
   expandedId,
+  expandedEventId,
   onToggle,
+  onToggleEvent,
+  timeZone,
 }: {
   item: BriefItem;
   expandedId: string | null;
+  expandedEventId: string | null;
   onToggle: (id: string | null) => void;
+  onToggleEvent: (id: string | null) => void;
+  timeZone: string;
 }) {
   const router = useRouter();
-  const isExpanded = Boolean(item.threadId && expandedId === item.threadId);
-  const canExpand = Boolean(item.threadId);
+  const isThreadExpanded = Boolean(item.threadId && expandedId === item.threadId);
+  const isEventExpanded = Boolean(item.eventId && expandedEventId === item.eventId);
+  const isExpanded = isThreadExpanded || isEventExpanded;
 
   const handleClick = () => {
-    if (canExpand) {
-      onToggle(isExpanded ? null : item.threadId!);
+    if (item.threadId) {
+      onToggle(isThreadExpanded ? null : item.threadId);
     } else if (item.eventId) {
-      router.push("/calendar");
+      onToggleEvent(isEventExpanded ? null : item.eventId);
     } else if (item.queueItemId) {
       router.push("/queue");
+    } else {
+      // Fallback: open agent with context about this item
+      router.push(
+        `/agent?prompt=${encodeURIComponent(`Help me with: "${item.headline}". ${item.detail ?? ""}`)}`,
+      );
     }
   };
 
@@ -100,16 +113,13 @@ function BriefItemRow({
           <strong>{item.headline}</strong>
           {item.detail ? <p>{item.detail}</p> : null}
         </div>
-        {canExpand ? (
-          <span className="thread-brief-item-expand-icon">
-            {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </span>
-        ) : (
-          <ArrowRight size={12} style={{ opacity: 0.35, flexShrink: 0 }} />
-        )}
+        <span className="thread-brief-item-expand-icon">
+          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </span>
       </button>
 
-      {isExpanded && item.threadId ? (
+      {/* Inline thread context */}
+      {isThreadExpanded && item.threadId ? (
         <div className="thread-brief-inline-context">
           <SmartContextPanel
             threadId={item.threadId}
@@ -123,6 +133,27 @@ function BriefItemRow({
             >
               <Mail size={12} />
               Open in inbox
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Inline meeting prep */}
+      {isEventExpanded && item.eventId ? (
+        <div className="thread-brief-inline-context">
+          <MeetingPrepPanel
+            eventId={item.eventId}
+            timeZone={timeZone}
+            onOpenThread={(id) => router.push(`/inbox?thread=${encodeURIComponent(id)}`)}
+          />
+          <div className="thread-brief-inline-actions">
+            <Link
+              href={`/calendar?event=${encodeURIComponent(item.eventId)}`}
+              className="thread-btn-accent"
+              style={{ fontSize: 12, padding: "7px 14px" }}
+            >
+              <Calendar size={12} />
+              Open in calendar
             </Link>
           </div>
         </div>
@@ -182,15 +213,26 @@ function runBriefAction(action: BriefAction, router: ReturnType<typeof useRouter
         router.push(`/inbox?thread=${encodeURIComponent(action.threadId)}`);
         return;
       }
-      break;
+      // No threadId → at least open inbox, not agent
+      router.push("/inbox");
+      return;
     case "prepare_meeting":
+      if (action.eventId) {
+        router.push(`/calendar?event=${encodeURIComponent(action.eventId)}`);
+        return;
+      }
+      if (action.agentPrompt) {
+        router.push(`/agent?prompt=${encodeURIComponent(action.agentPrompt)}`);
+        return;
+      }
+      router.push("/calendar");
+      return;
     case "follow_up":
     case "agent":
       if (action.agentPrompt) {
         router.push(`/agent?prompt=${encodeURIComponent(action.agentPrompt)}`);
         return;
       }
-      if (action.eventId) { router.push("/calendar"); return; }
       break;
     case "open_queue":
       router.push("/queue"); return;
@@ -206,6 +248,7 @@ export default function BriefPage() {
 
   // Inline expansion state
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   // "While you were away" detection via localStorage
   const [awayHours, setAwayHours] = useState<number | null>(null);
@@ -381,7 +424,10 @@ export default function BriefPage() {
                     key={`need-${i}`}
                     item={item}
                     expandedId={expandedId}
+                    expandedEventId={expandedEventId}
                     onToggle={setExpandedId}
+                    onToggleEvent={setExpandedEventId}
+                    timeZone={timeZone}
                   />
                 ))}
               </BriefSection>
@@ -396,7 +442,10 @@ export default function BriefPage() {
                     key={`meet-${i}`}
                     item={item}
                     expandedId={expandedId}
+                    expandedEventId={expandedEventId}
                     onToggle={setExpandedId}
+                    onToggleEvent={setExpandedEventId}
+                    timeZone={timeZone}
                   />
                 ))}
               </BriefSection>
@@ -407,7 +456,10 @@ export default function BriefPage() {
                     key={`risk-${i}`}
                     item={item}
                     expandedId={expandedId}
+                    expandedEventId={expandedEventId}
                     onToggle={setExpandedId}
+                    onToggleEvent={setExpandedEventId}
+                    timeZone={timeZone}
                   />
                 ))}
               </BriefSection>

@@ -285,6 +285,17 @@ export default function CalendarPage() {
     }
   }, [searchParams, utils]);
 
+  // Deep-link: ?event=ID auto-opens the event modal
+  useEffect(() => {
+    const eventId = searchParams.get("event");
+    if (!eventId || !eventsQuery.data?.events) return;
+    const found = eventsQuery.data.events.find((e) => e.id === eventId);
+    if (found) {
+      setSelectedEvent(found as CalendarEventItem);
+      setShowPrep(true);
+    }
+  }, [searchParams, eventsQuery.data]);
+
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
     for (const day of week) {
