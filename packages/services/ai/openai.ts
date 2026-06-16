@@ -1,7 +1,7 @@
 import { ServiceError } from "../errors";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
