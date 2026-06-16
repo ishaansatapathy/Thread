@@ -39,7 +39,7 @@ const SUGGESTIONS = [
     label: "Draft sick leave email",
     icon: PenLine,
     prompt:
-      "Send an email to my manager at manager@company.com saying I was sick on 29-30 May and need leave. Keep it professional and queue it for approval.",
+      "Draft a sick leave email to my manager for 29-30 May. Keep it professional and queue it for my approval before sending.",
   },
   {
     label: "Search contract emails",
@@ -55,7 +55,7 @@ const SUGGESTIONS = [
     label: "Schedule a meeting",
     icon: Calendar,
     prompt:
-      "Queue a 30-minute calendar invite tomorrow at 3pm IST titled Team sync with guest@company.com. Queue for approval.",
+      "Queue a 30-minute calendar invite tomorrow at 3pm titled Team sync. Queue for my approval before it goes out.",
   },
 ];
 

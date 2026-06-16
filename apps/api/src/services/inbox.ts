@@ -751,10 +751,11 @@ export class CorsairInboxService implements InboxService {
   async listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>> {
     try {
       const corsair = getCorsair().withTenant(tenantId);
-      const result = await (corsair.gmail.api.users as {
-        labels: { list: (opts: { userId: string }) => Promise<{ labels?: Array<{ id?: string; name?: string; type?: string }> }> };
-      }).labels.list({ userId: "me" });
-      return (result.labels ?? [])
+      const result = await (corsair.gmail.api.labels as {
+        list: (opts?: Record<string, unknown>) => Promise<{ labels?: Array<{ id?: string; name?: string; type?: string }> } | Array<{ id?: string; name?: string; type?: string }>>;
+      }).list({});
+      const labels = Array.isArray(result) ? result : (result.labels ?? []);
+      return labels
         .filter((l) => l.id && l.name)
         .map((l) => ({ id: l.id!, name: l.name!, type: l.type }));
     } catch (error) {

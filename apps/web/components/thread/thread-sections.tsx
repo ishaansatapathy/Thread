@@ -320,9 +320,9 @@ export function ThreadCta() {
       <div className="thread-frame" style={{ padding: "80px 32px", textAlign: "center" }}>
         <div className="thread-cta-wrap" style={{ marginBottom: 0 }}>
           <video className="thread-mascot" src="/mascot.webm" autoPlay loop muted playsInline aria-hidden />
-          <span className="thread-btn-primary" style={{ cursor: "default", opacity: 0.85 }}>
-            Connect Gmail — coming soon
-          </span>
+          <a href="/sign-in" className="thread-btn-primary">
+            Get started free
+          </a>
         </div>
 
         <p style={{ marginTop: 28, fontSize: 13, color: "var(--thread-dim)" }}>
