@@ -4,6 +4,7 @@ import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThr
 import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
 import { getThreadContext } from "@repo/services/ai/thread-context";
 import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
+import { getSmartReplies } from "@repo/services/ai/smart-reply";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -95,6 +96,21 @@ export const aiRouter = router({
           tenantId: ctx.user.id,
           userEmail: ctx.user.email,
           timeZone: input.timeZone,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Smart Reply — 3 AI-generated reply suggestions for an open thread. */
+  smartReplies: protectedProcedure
+    .input(z.object({ threadId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getSmartReplies({
+          tenantId: ctx.user.id,
+          threadId: input.threadId,
+          userEmail: ctx.user.email,
         });
       } catch (error) {
         mapServiceError(error);
