@@ -66,7 +66,6 @@ export function ThreadAuthCard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileFailed, setTurnstileFailed] = useState(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const [twoFactorStep, setTwoFactorStep] = useState<{
     email: string;
@@ -117,9 +116,6 @@ export function ThreadAuthCard({
   const requireTurnstileToken = () => {
     if (!turnstileEnabled) return true;
     if (turnstileToken) return true;
-    // If CAPTCHA failed to load (network/CSP issue), allow the request through —
-    // the server-side token validation will handle it gracefully.
-    if (turnstileFailed) return true;
     setError("Complete the security check and try again.");
     return false;
   };
@@ -350,7 +346,7 @@ export function ThreadAuthCard({
           <p className="thread-auth-error">{error || "Check your details and try again."}</p>
         )}
 
-            <button type="submit" className="thread-auth-submit" disabled={loading || (turnstileEnabled && !turnstileToken && !turnstileFailed && !twoFactorStep)}>
+            <button type="submit" className="thread-auth-submit" disabled={loading || (turnstileEnabled && !turnstileToken && !twoFactorStep)}>
               {loading ? "Please wait…" : twoFactorStep ? "Verify" : isLogin ? "Sign in" : "Create account"}
             </button>
           </form>
@@ -384,7 +380,7 @@ export function ThreadAuthCard({
             onExpire={() => setTurnstileToken(null)}
             onError={() => {
               setTurnstileToken(null);
-              setTurnstileFailed(true);
+              setError("Security check failed to load. Refresh and try again.");
             }}
             options={{ theme: "dark", size: "normal", appearance: "always" }}
           />
