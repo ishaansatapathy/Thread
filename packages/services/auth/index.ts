@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { db, and, eq, gt, or } from "@repo/database";
+import { db, and, eq, gt } from "@repo/database";
 import { usersTable, type SelectUser } from "@repo/database/schema";
 import { logger } from "@repo/logger";
 import { cacheGet, cacheSet, cacheIncr } from "../cache/kv-store";
@@ -317,10 +317,7 @@ class AuthService {
       .where(
         and(
           eq(usersTable.email, sanitizedEmail),
-          or(
-            eq(usersTable.twoFactorOtp, hashAuthSecret(input.otp)),
-            eq(usersTable.twoFactorOtp, input.otp),
-          ),
+          eq(usersTable.twoFactorOtp, hashAuthSecret(input.otp)),
           gt(usersTable.twoFactorOtpExpire, now),
         ),
       )
@@ -423,10 +420,7 @@ class AuthService {
       .where(
         and(
           eq(usersTable.email, sanitizedEmail),
-          or(
-            eq(usersTable.resetPasswordOtp, hashAuthSecret(input.otp)),
-            eq(usersTable.resetPasswordOtp, input.otp),
-          ),
+          eq(usersTable.resetPasswordOtp, hashAuthSecret(input.otp)),
           gt(usersTable.resetPasswordExpire, now),
         ),
       )
@@ -446,18 +440,12 @@ class AuthService {
     const whereClause = input.otp
       ? and(
           eq(usersTable.email, sanitizedEmail),
-          or(
-            eq(usersTable.resetPasswordOtp, hashAuthSecret(input.otp)),
-            eq(usersTable.resetPasswordOtp, input.otp),
-          ),
+          eq(usersTable.resetPasswordOtp, hashAuthSecret(input.otp)),
           gt(usersTable.resetPasswordExpire, now),
         )
       : and(
           eq(usersTable.email, sanitizedEmail),
-          or(
-            eq(usersTable.resetPasswordToken, hashAuthSecret(input.token!)),
-            eq(usersTable.resetPasswordToken, input.token!),
-          ),
+          eq(usersTable.resetPasswordToken, hashAuthSecret(input.token!)),
           gt(usersTable.resetPasswordExpire, now),
         );
 
@@ -490,12 +478,7 @@ class AuthService {
     const [user] = await db
       .select()
       .from(usersTable)
-      .where(
-        or(
-          eq(usersTable.verificationToken, hashAuthSecret(input.token)),
-          eq(usersTable.verificationToken, input.token),
-        ),
-      )
+      .where(eq(usersTable.verificationToken, hashAuthSecret(input.token)))
       .limit(1);
 
     if (!user) {

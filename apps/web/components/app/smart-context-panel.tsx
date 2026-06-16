@@ -44,7 +44,21 @@ export function SmartContextPanel({ threadId, onOpenThread }: Props) {
     );
   }
 
-  if (ctx.error || !ctx.data) return null;
+  if (ctx.error) {
+    return (
+      <div className="scp-root">
+        <div className="scp-header"><Sparkles size={13} /><span>AI Context</span></div>
+        <p className="scp-text" style={{ color: "var(--thread-dim)", fontSize: 12 }}>
+          Couldn&apos;t load context.{" "}
+          <button type="button" style={{ color: "var(--thread-accent)", background: "none", border: "none", cursor: "pointer", fontSize: 12 }} onClick={() => ctx.refetch()}>
+            Retry
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  if (!ctx.data) return null;
 
   const d = ctx.data;
 
