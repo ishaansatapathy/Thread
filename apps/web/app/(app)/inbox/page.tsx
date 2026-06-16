@@ -433,10 +433,18 @@ export default function InboxPage() {
   const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
   const aiReady = aiStatus.data?.openai === true;
 
+  const smartRepliesQuery = trpc.ai.smartReplies.useQuery(
+    { threadId: selectedId ?? "" },
+    { enabled: Boolean(selectedId) && aiReady, staleTime: 2 * 60_000 },
+  );
+
   const visibleThreads = useMemo(() => {
     const source = hasDemoFixtures ? displayThreads : threads;
     if (view !== "priority" || !priorityRankedIds?.length) return source;
-    return sortThreadsByRank(source, priorityRankedIds);
+    // In priority view — only show threads the AI actually ranked (excludes promotions/social/forums)
+    const rankedSet = new Set(priorityRankedIds);
+    const filtered = source.filter((t) => rankedSet.has(t.id));
+    return sortThreadsByRank(filtered, priorityRankedIds);
   }, [threads, displayThreads, hasDemoFixtures, view, priorityRankedIds]);
 
   useEffect(() => {
@@ -1274,6 +1282,42 @@ export default function InboxPage() {
                 value={replySubjectValue}
                 onChange={(event) => setReplySubjectValue(event.target.value)}
               />
+              {/* Smart Reply suggestions */}
+              {aiReady && selectedId ? (
+                <div className="thread-smart-reply-wrap">
+                  {smartRepliesQuery.isLoading ? (
+                    <div className="thread-smart-reply-loading">
+                      <Loader2 size={11} className="thread-spin" />
+                      <span>Generating reply suggestions…</span>
+                    </div>
+                  ) : smartRepliesQuery.data?.suggestions?.length ? (
+                    <>
+                      <p className="thread-smart-reply-label">
+                        <Sparkles size={11} />
+                        Smart replies — click to use
+                      </p>
+                      <div className="thread-smart-reply-chips">
+                        {smartRepliesQuery.data.suggestions.map((s) => (
+                          <button
+                            key={s.label}
+                            type="button"
+                            className="thread-smart-reply-chip"
+                            onClick={() => {
+                              setReplyBody(s.body);
+                              if (smartRepliesQuery.data?.replyTo && !replyTo.trim()) {
+                                setReplyTo(smartRepliesQuery.data.replyTo);
+                              }
+                            }}
+                            title={s.body}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               <label className="thread-set-label" htmlFor="reply-body">
                 Message
               </label>
