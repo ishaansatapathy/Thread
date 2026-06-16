@@ -441,7 +441,7 @@ export default function InboxPage() {
     try {
       const batch = await utils.client.inbox.listThreads.query({
         maxResults: 50,
-        query: effectiveQuery || undefined,
+        query: [effectiveQuery, "-category:promotions -category:social -category:forums"].filter(Boolean).join(" ") || undefined,
         refresh: true,
       });
       if (batch.threads.length === 0) return;
