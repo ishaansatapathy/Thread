@@ -285,16 +285,51 @@ export default function CalendarPage() {
     }
   }, [searchParams, utils]);
 
-  // Deep-link: ?event=ID auto-opens the event modal
+  // Deep-link: ?event=ID auto-opens the event modal.
+  // If event not in current week load, widen to ±30 days and re-anchor.
+  const [deepLinkSearched, setDeepLinkSearched] = useState(false);
+  const deepLinkEventId = searchParams.get("event");
+
+  const wideEventsQuery = trpc.calendar.listEvents.useQuery(
+    {
+      timeMin: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+      timeMax: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      maxResults: 200,
+      timeZone: browserTimeZone,
+    },
+    {
+      enabled: Boolean(deepLinkEventId) && !deepLinkSearched && isConnected,
+      staleTime: 5 * 60_000,
+    },
+  );
+
   useEffect(() => {
     const eventId = searchParams.get("event");
-    if (!eventId || !eventsQuery.data?.events) return;
-    const found = eventsQuery.data.events.find((e) => e.id === eventId);
-    if (found) {
-      setSelectedEvent(found as CalendarEventItem);
-      setShowPrep(true);
+    if (!eventId) return;
+
+    // First try current week
+    if (eventsQuery.data?.events) {
+      const found = eventsQuery.data.events.find((e) => e.id === eventId);
+      if (found) {
+        setSelectedEvent(found as CalendarEventItem);
+        setShowPrep(true);
+        setDeepLinkSearched(true);
+        return;
+      }
     }
-  }, [searchParams, eventsQuery.data]);
+
+    // Try wide search
+    if (wideEventsQuery.data?.events) {
+      const found = wideEventsQuery.data.events.find((e) => e.id === eventId);
+      if (found) {
+        // Navigate calendar to that event's week
+        if (found.start) setWeekAnchor(startOfWeek(new Date(found.start)));
+        setSelectedEvent(found as CalendarEventItem);
+        setShowPrep(true);
+      }
+      setDeepLinkSearched(true);
+    }
+  }, [searchParams, eventsQuery.data, wideEventsQuery.data]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();

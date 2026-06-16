@@ -131,7 +131,7 @@ export async function runAgentChat(
           kind: "thread",
           title: thread.subject?.trim() || "Thread",
           detail: thread.fromName || thread.from,
-          href: `/inbox`,
+          href: `/inbox?thread=${encodeURIComponent(threadId)}`,
           lines: (thread.messages ?? []).slice(0, 5).map((m) => `${m.from ?? "?"}: ${m.body.slice(0, 200)}`),
         });
         return JSON.stringify({ thread: { ...thread, messages: fencedMessages } });

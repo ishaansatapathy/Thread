@@ -375,7 +375,9 @@ export default function BriefPage() {
                   </Link>
                 ) : null}
                 {brief.todaysFocus.eventId ? (
-                  <Link href="/calendar" className="thread-btn-ghost">View meeting</Link>
+                  <Link href={`/calendar?event=${encodeURIComponent(brief.todaysFocus.eventId)}`} className="thread-btn-ghost">
+                    View meeting
+                  </Link>
                 ) : null}
               </div>
             </div>
@@ -409,6 +411,13 @@ export default function BriefPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--thread-dim)", margin: "4px 0 12px" }}>
                 <Loader2 size={12} className="thread-spin" />
                 Checking for missed follow-ups…
+              </div>
+            ) : followUpsQuery.isError ? (
+              <div style={{ fontSize: 12, color: "var(--thread-dim)", margin: "4px 0 12px" }}>
+                Couldn&apos;t check follow-ups.{" "}
+                <button type="button" style={{ color: "var(--thread-accent)", background: "none", border: "none", cursor: "pointer", fontSize: 12 }} onClick={() => followUpsQuery.refetch()}>
+                  Retry
+                </button>
               </div>
             ) : null}
 

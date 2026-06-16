@@ -41,7 +41,21 @@ export function MeetingPrepPanel({ eventId, timeZone, onOpenThread }: Props) {
     );
   }
 
-  if (prep.error || !prep.data) return null;
+  if (prep.error) {
+    return (
+      <div className="mpp-root">
+        <div className="mpp-header"><Sparkles size={13} /><span>Meeting Prep</span></div>
+        <p className="mpp-text" style={{ color: "var(--thread-dim)", fontSize: 12 }}>
+          Couldn&apos;t load prep.{" "}
+          <button type="button" style={{ color: "var(--thread-accent)", background: "none", border: "none", cursor: "pointer", fontSize: 12 }} onClick={() => prep.refetch()}>
+            Retry
+          </button>
+        </p>
+      </div>
+    );
+  }
+
+  if (!prep.data) return null;
 
   const d = prep.data;
 
