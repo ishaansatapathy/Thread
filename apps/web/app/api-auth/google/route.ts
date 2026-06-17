@@ -6,19 +6,18 @@ import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 function readGoogleOAuthConfig() {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
-  const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
-  if (!clientId || !clientSecret || !redirectUri) return null;
-  return { clientId, clientSecret, redirectUri };
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
 }
 
-function buildGoogleAuthUrl(state: string) {
+function buildGoogleAuthUrl(state: string, redirectUri: string) {
   const config = readGoogleOAuthConfig();
   if (!config) throw new Error("Google OAuth is not configured");
 
   const client = new OAuth2Client({
     clientId: config.clientId,
     clientSecret: config.clientSecret,
-    redirectUri: config.redirectUri,
+    redirectUri,
   });
 
   return client.generateAuthUrl({
@@ -43,8 +42,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const nonce = crypto.randomUUID();
-    const state = Buffer.from(JSON.stringify({ nonce, returnTo }), "utf8").toString("base64url");
-    const authUrl = buildGoogleAuthUrl(state);
+    const redirectUri = new URL("/api-auth/google/callback", request.url).toString();
+    const state = Buffer.from(
+      JSON.stringify({ nonce, returnTo, redirectUri }),
+      "utf8",
+    ).toString("base64url");
+    const authUrl = buildGoogleAuthUrl(state, redirectUri);
     const response = NextResponse.redirect(authUrl);
     response.cookies.set("thread_oauth_state", nonce, {
       httpOnly: true,
