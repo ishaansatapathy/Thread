@@ -21,10 +21,13 @@ import {
   Star,
   Zap,
   Trash2,
+  BellOff,
+  CheckSquare,
+  Clock,
+  ExternalLink,
 } from "lucide-react";
 
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
-import { PriorityBadge, PriorityReason } from "~/components/app/priority-badge";
 import { formatPrioritySummary } from "~/lib/priority-display";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
@@ -266,7 +269,103 @@ export default function InboxPage() {
   const [outboundAttachments, setOutboundAttachments] = useState<OutboundAttachment[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // ── Snooze (localStorage) ──────────────────────────────────────────────────
+  const [snoozedIds, setSnoozedIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem("thread-snoozed");
+      if (!raw) return new Set();
+      const entries: Array<{ id: string; until: number }> = JSON.parse(raw);
+      const now = Date.now();
+      const still = entries.filter((e) => e.until > now);
+      if (still.length !== entries.length) {
+        localStorage.setItem("thread-snoozed", JSON.stringify(still));
+      }
+      return new Set(still.map((e) => e.id));
+    } catch { return new Set(); }
+  });
+
+  const snoozeThread = useCallback((threadId: string, when: "tomorrow" | "nextweek" | "custom", customMs?: number) => {
+    const now = Date.now();
+    const ms = when === "tomorrow"
+      ? (() => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return d.getTime() - now; })()
+      : when === "nextweek"
+        ? (() => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(8, 0, 0, 0); return d.getTime() - now; })()
+        : (customMs ?? 86_400_000);
+    const until = now + ms;
+    setSnoozedIds((prev) => {
+      const next = new Set(prev);
+      next.add(threadId);
+      try {
+        const raw = localStorage.getItem("thread-snoozed");
+        const existing: Array<{ id: string; until: number }> = raw ? JSON.parse(raw) : [];
+        const filtered = existing.filter((e) => e.id !== threadId);
+        filtered.push({ id: threadId, until });
+        localStorage.setItem("thread-snoozed", JSON.stringify(filtered));
+      } catch { /* noop */ }
+      return next;
+    });
+    if (selectedId === threadId) setSelectedId(null);
+    const wakeLabel = when === "tomorrow" ? "tomorrow at 8am" : when === "nextweek" ? "next week" : "later";
+    toast.success(`Snoozed until ${wakeLabel}`, {
+      action: { label: "Undo", onClick: () => unsnoozeThread(threadId) },
+    });
+  }, [selectedId]);
+
+  const unsnoozeThread = useCallback((threadId: string) => {
+    setSnoozedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(threadId);
+      try {
+        const raw = localStorage.getItem("thread-snoozed");
+        const existing: Array<{ id: string; until: number }> = raw ? JSON.parse(raw) : [];
+        localStorage.setItem("thread-snoozed", JSON.stringify(existing.filter((e) => e.id !== threadId)));
+      } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  // ── Bulk select ────────────────────────────────────────────────────────────
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+
+  const toggleBulk = useCallback((id: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearBulk = useCallback(() => {
+    setBulkMode(false);
+    setBulkSelected(new Set());
+  }, []);
+
   const utils = trpc.useUtils();
+
+  const bulkArchive = useCallback(async () => {
+    const ids = [...bulkSelected];
+    clearBulk();
+    await Promise.all(ids.map((id) => utils.client.inbox.archiveThread.mutate({ threadId: id })));
+    toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} archived`);
+    await utils.inbox.listThreads.invalidate();
+  }, [bulkSelected, clearBulk, utils]);
+
+  const bulkMarkRead = useCallback(async () => {
+    const ids = [...bulkSelected];
+    clearBulk();
+    await Promise.all(ids.map((id) => utils.client.inbox.markThreadRead.mutate({ threadId: id })));
+    toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} marked read`);
+    await utils.inbox.listThreads.invalidate();
+  }, [bulkSelected, clearBulk, utils]);
+
+  const bulkSnooze = useCallback(() => {
+    for (const id of bulkSelected) snoozeThread(id, "tomorrow");
+    toast.dismiss();
+    toast.success(`${bulkSelected.size} thread${bulkSelected.size === 1 ? "" : "s"} snoozed until tomorrow`);
+    clearBulk();
+  }, [bulkSelected, snoozeThread, clearBulk]);
   const meQuery = trpc.auth.me.useQuery({});
   const userEmail = meQuery.data?.email;
   const userPhotoUrl = meQuery.data?.profileImageUrl;
@@ -524,6 +623,74 @@ export default function InboxPage() {
     setPriorityAnalysis(null);
   }, [inbox.dataUpdatedAt]);
 
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      const isEditing = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
+      if (e.key === "Escape") {
+        if (bulkMode) { clearBulk(); return; }
+        if (selectedId) { setSelectedId(null); return; }
+        setSearchInput("");
+        return;
+      }
+      if (isEditing) return;
+
+      if (e.key === "/" && !isEditing) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (e.key === "e" && selectedId) {
+        archiveThread.mutate({ threadId: selectedId });
+        setSelectedId(null);
+        return;
+      }
+      if (e.key === "u" && selectedId) {
+        markRead.mutate({ threadId: selectedId });
+        return;
+      }
+      if (e.key === "s" && selectedId) {
+        starredIds.has(selectedId)
+          ? unstarThread.mutate({ threadId: selectedId })
+          : starThread.mutate({ threadId: selectedId });
+        return;
+      }
+      if (e.key === "b" && selectedId) {
+        snoozeThread(selectedId, "tomorrow");
+        return;
+      }
+      if (e.key === "#" && selectedId) {
+        trashThread.mutate({ threadId: selectedId });
+        setSelectedId(null);
+        return;
+      }
+      if (e.key === "x" && !selectedId) {
+        setBulkMode((v) => { if (v) clearBulk(); return !v; });
+        return;
+      }
+      if ((e.key === "j" || e.key === "ArrowDown") && !selectedId) {
+        const idx = visibleThreads.findIndex((t) => !snoozedIds.has(t.id));
+        if (idx >= 0) setSelectedId(visibleThreads[idx]!.id);
+        return;
+      }
+      if ((e.key === "j" || e.key === "ArrowDown") && selectedId) {
+        const idx = visibleThreads.findIndex((t) => t.id === selectedId && !snoozedIds.has(t.id));
+        const next = visibleThreads.slice(idx + 1).find((t) => !snoozedIds.has(t.id));
+        if (next) setSelectedId(next.id);
+        return;
+      }
+      if ((e.key === "k" || e.key === "ArrowUp") && selectedId) {
+        const idx = visibleThreads.findIndex((t) => t.id === selectedId);
+        const prev = [...visibleThreads].slice(0, idx).reverse().find((t) => !snoozedIds.has(t.id));
+        if (prev) setSelectedId(prev.id);
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, bulkMode, visibleThreads, snoozedIds, starredIds, archiveThread, markRead, starThread, unstarThread, trashThread, snoozeThread, clearBulk]);
+
   const handleViewChange = async (nextView: InboxView) => {
     setView(nextView);
     if (nextView !== "priority") return;
@@ -764,6 +931,40 @@ export default function InboxPage() {
               <FilePenLine size={14} />
               Compose
             </button>
+            <button
+              type="button"
+              className={`thread-inbox-bulk-btn${bulkMode ? " thread-inbox-bulk-btn--active" : ""}`}
+              onClick={() => { setBulkMode((v) => { if (v) clearBulk(); return !v; }); }}
+              title="Multi-select mode (x)"
+            >
+              <CheckSquare size={13} />
+            </button>
+          </div>
+        ) : null}
+
+        {/* Bulk action bar */}
+        {bulkMode && bulkSelected.size > 0 ? (
+          <div className="thread-inbox-bulk-bar">
+            <span className="thread-inbox-bulk-count">{bulkSelected.size} selected</span>
+            <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkArchive()}>
+              <Archive size={12} /> Archive
+            </button>
+            <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkMarkRead()}>
+              <Mail size={12} /> Mark read
+            </button>
+            <button type="button" className="thread-inbox-bulk-action" onClick={bulkSnooze}>
+              <BellOff size={12} /> Snooze
+            </button>
+            <button type="button" className="thread-inbox-bulk-action thread-inbox-bulk-action--cancel" onClick={clearBulk}>
+              <X size={12} /> Cancel
+            </button>
+          </div>
+        ) : bulkMode ? (
+          <div className="thread-inbox-bulk-bar">
+            <span className="thread-inbox-bulk-count">Select threads to act on</span>
+            <button type="button" className="thread-inbox-bulk-action thread-inbox-bulk-action--cancel" onClick={clearBulk}>
+              <X size={12} /> Cancel
+            </button>
           </div>
         ) : null}
 
@@ -831,28 +1032,16 @@ export default function InboxPage() {
         ) : null}
 
         {view === "priority" && isConnected ? (
-          <div className="thread-priority-summary" style={{ margin: "10px 12px 0" }}>
+          <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
             {rankThreads.isPending ? (
-              <div className="thread-priority-summary-loading">
-                <Loader2 size={14} className="thread-spin" />
-                <span>Analyzing inbox — scoring urgency and reply pressure…</span>
-              </div>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Loader2 size={13} className="thread-spin" />
+                Analyzing inbox…
+              </span>
             ) : priorityAnalysis ? (
-              <>
-                <div className="thread-priority-summary-head">
-                  <Sparkles size={13} />
-                  <strong>{formatPrioritySummary(priorityAnalysis.summary)}</strong>
-                </div>
-                {hiddenNoiseCount > 0 ? (
-                  <p className="thread-priority-summary-meta">
-                    {hiddenNoiseCount} promotional / low-relevance threads hidden from this view.
-                  </p>
-                ) : null}
-              </>
-            ) : aiReady ? (
-              <p className="thread-priority-summary-meta">Open Priority to analyze your inbox.</p>
-            ) : (
-              <p className="thread-priority-summary-meta">Priority analysis needs OPENAI_API_KEY in server env.</p>
+              <span>{formatPrioritySummary(priorityAnalysis.summary)}{hiddenNoiseCount > 0 ? ` · ${hiddenNoiseCount} low-relevance hidden` : ""}</span>
+            ) : aiReady ? null : (
+              <span>Priority needs OPENAI_API_KEY in server env.</span>
             )}
           </div>
         ) : null}
@@ -996,46 +1185,79 @@ export default function InboxPage() {
             </div>
           ) : (
             <>
-              {visibleThreads.map((thread, index) => {
+              {visibleThreads.map((thread) => {
                 const priority = view === "priority" ? priorityByThreadId.get(thread.id) : undefined;
+                const isSnoozed = snoozedIds.has(thread.id);
+                if (isSnoozed) return null;
+                const isSelected = selectedId === thread.id;
+                const isChecked = bulkSelected.has(thread.id);
                 return (
-                <button
+                <div
                   key={thread.id}
-                  type="button"
-                  className="thread-inbox-row"
-                  data-active={selectedId === thread.id}
-                  data-unread={thread.unread ? "true" : undefined}
+                  className="thread-inbox-row-wrap"
+                  data-active={isSelected}
+                  data-checked={isChecked}
                   data-priority={priority?.urgency}
-                  onClick={() => setSelectedId(thread.id)}
                 >
-                  <span className="thread-inbox-row-line">
-                    <span className="thread-inbox-row-sender">
-                      {thread.unread ? <span className="thread-inbox-row-dot" aria-hidden /> : null}
-                      {thread.fromName?.trim() || thread.from?.trim() || "Unknown sender"}
-                      {thread.messageCount && thread.messageCount > 1 ? (
-                        <span className="thread-inbox-row-count">{thread.messageCount}</span>
-                      ) : null}
-                      {priority ? (
-                        <PriorityBadge
-                          urgency={priority.urgency}
-                          score={priority.score}
-                          category={priority.category}
-                          rank={index + 1}
-                          compact
-                        />
-                      ) : null}
+                  {bulkMode ? (
+                    <input
+                      type="checkbox"
+                      className="thread-inbox-checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleBulk(thread.id)}
+                      aria-label={`Select ${thread.subject ?? "thread"}`}
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    className="thread-inbox-row"
+                    data-active={isSelected}
+                    data-unread={thread.unread ? "true" : undefined}
+                    onClick={() => {
+                      if (bulkMode) { toggleBulk(thread.id); return; }
+                      setSelectedId(thread.id);
+                    }}
+                  >
+                    <span className="thread-inbox-row-line">
+                      <span className="thread-inbox-row-sender">
+                        {thread.unread ? <span className="thread-inbox-row-dot" aria-hidden /> : null}
+                        {thread.fromName?.trim() || thread.from?.trim() || "Unknown sender"}
+                        {thread.messageCount && thread.messageCount > 1 ? (
+                          <span className="thread-inbox-row-count">{thread.messageCount}</span>
+                        ) : null}
+                      </span>
+                      <span className="thread-inbox-row-date">{formatListDate(thread.date)}</span>
                     </span>
-                    <span className="thread-inbox-row-date">{formatListDate(thread.date)}</span>
-                  </span>
-                  <span className="thread-inbox-row-subject">
-                    {listThreadSubject(thread.subject, thread.snippet)}
-                  </span>
-                  {priority ? (
-                    <PriorityReason reason={priority.reason} />
-                  ) : (
-                    <span className="thread-inbox-row-snippet">{decodeHtmlEntities(thread.snippet)}</span>
-                  )}
-                </button>
+                    <span className="thread-inbox-row-subject">
+                      {listThreadSubject(thread.subject, thread.snippet)}
+                    </span>
+                    <span className="thread-inbox-row-snippet">
+                      {priority?.reason
+                        ? priority.reason
+                        : decodeHtmlEntities(thread.snippet)}
+                    </span>
+                  </button>
+                  {!bulkMode ? (
+                    <div className="thread-inbox-row-hover-actions">
+                      <button
+                        type="button"
+                        className="thread-inbox-hover-btn"
+                        title="Archive (e)"
+                        onClick={(ev) => { ev.stopPropagation(); archiveThread.mutate({ threadId: thread.id }); }}
+                      >
+                        <Archive size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="thread-inbox-hover-btn"
+                        title="Snooze until tomorrow"
+                        onClick={(ev) => { ev.stopPropagation(); snoozeThread(thread.id, "tomorrow"); }}
+                      >
+                        <BellOff size={13} />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               );
               })}
             </>
@@ -1220,12 +1442,50 @@ export default function InboxPage() {
                   className="thread-btn-ghost"
                   style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0 }}
                   disabled={archiveThread.isPending}
-                  onClick={() => selectedId && archiveThread.mutate({ threadId: selectedId })}
-                  title="Archive thread (remove from inbox)"
+                  onClick={() => { if (selectedId) { archiveThread.mutate({ threadId: selectedId }); setSelectedId(null); } }}
+                  title="Archive thread (e)"
                 >
                   <Archive size={14} />
                   {archiveThread.isPending ? "Archiving…" : "Archive"}
                 </button>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    className="thread-btn-ghost"
+                    style={{ fontSize: 12, padding: "7px 12px" }}
+                    title="Snooze thread (b)"
+                    onClick={() => {
+                      const el = document.getElementById("thread-snooze-menu");
+                      if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+                    }}
+                  >
+                    <BellOff size={14} />
+                    Snooze
+                  </button>
+                  <div id="thread-snooze-menu" className="thread-snooze-menu" style={{ display: "none" }}>
+                    {([
+                      { label: "Tomorrow 8am", when: "tomorrow" as const },
+                      { label: "Next week", when: "nextweek" as const },
+                    ]).map(({ label, when }) => (
+                      <button
+                        key={when}
+                        type="button"
+                        className="thread-snooze-option"
+                        onClick={() => {
+                          if (selectedId) {
+                            snoozeThread(selectedId, when);
+                            setSelectedId(null);
+                          }
+                          const el = document.getElementById("thread-snooze-menu");
+                          if (el) el.style.display = "none";
+                        }}
+                      >
+                        <Clock size={11} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <button
                   type="button"
                   className="thread-btn-ghost"
@@ -1416,6 +1676,121 @@ export default function InboxPage() {
                 />
               )}
             </div>
+
+            {/* ── Unsubscribe banner ─────────────────────────────────────────── */}
+            {(() => {
+              const msgs = selectedQuery.data.messages ?? [];
+              const allText = msgs.map((m) => (m.body ?? "") + (m.bodyHtml ?? "")).join(" ");
+              const unsubMatch = allText.match(/href=["']([^"']*?unsubscribe[^"']*?)["']/i)
+                ?? allText.match(/href=["']([^"']*?optout[^"']*?)["']/i)
+                ?? allText.match(/href=["']([^"']*?opt-out[^"']*?)["']/i);
+              if (!unsubMatch) return null;
+              const unsubUrl = unsubMatch[1];
+              return (
+                <div className="thread-unsub-banner">
+                  <span className="thread-unsub-banner-label">Looks like a mailing list</span>
+                  <a
+                    href={unsubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="thread-unsub-btn"
+                  >
+                    <ExternalLink size={11} />
+                    Unsubscribe
+                  </a>
+                  <button
+                    type="button"
+                    className="thread-unsub-archive"
+                    onClick={() => selectedId && archiveThread.mutate({ threadId: selectedId })}
+                  >
+                    <Archive size={11} />
+                    Archive
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* ── RSVP inline ────────────────────────────────────────────────── */}
+            {(() => {
+              const msgs = selectedQuery.data.messages ?? [];
+              const allText = msgs.map((m) => (m.body ?? "") + (m.snippet ?? "")).join(" ").toLowerCase();
+              const isInvite = /you.?re? invited|calendar invite|rsvp|join.*meeting|google meet|zoom\.us\/j\//i.test(allText);
+              if (!isInvite) return null;
+              const calEvents = smartRepliesQuery.data?.suggestions ?? [];
+              // Try to find an event ID in the thread
+              const eventIdMatch = msgs
+                .map((m) => (m.body ?? "") + (m.bodyHtml ?? ""))
+                .join(" ")
+                .match(/eid=([A-Za-z0-9_-]{10,})/)?.[1];
+              return (
+                <div className="thread-rsvp-banner">
+                  <div className="thread-rsvp-banner-label">
+                    <CalendarPlus size={13} />
+                    <strong>Meeting invite detected</strong>
+                  </div>
+                  <div className="thread-rsvp-actions">
+                    {eventIdMatch ? (
+                      <>
+                        <button
+                          type="button"
+                          className="thread-rsvp-btn thread-rsvp-btn--accept"
+                          onClick={() => {
+                            if (!eventIdMatch) return;
+                            void utils.client.calendar.respondToEvent
+                              .mutate({ eventId: eventIdMatch, response: "accepted" })
+                              .then(() => toast.success("Accepted — calendar updated via Corsair"))
+                              .catch((e: Error) => toast.error(e.message));
+                          }}
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          className="thread-rsvp-btn thread-rsvp-btn--tentative"
+                          onClick={() => {
+                            if (!eventIdMatch) return;
+                            void utils.client.calendar.respondToEvent
+                              .mutate({ eventId: eventIdMatch, response: "tentative" })
+                              .then(() => toast.success("Marked tentative"))
+                              .catch((e: Error) => toast.error(e.message));
+                          }}
+                        >
+                          Maybe
+                        </button>
+                        <button
+                          type="button"
+                          className="thread-rsvp-btn thread-rsvp-btn--decline"
+                          onClick={() => {
+                            if (!eventIdMatch) return;
+                            void utils.client.calendar.respondToEvent
+                              .mutate({ eventId: eventIdMatch, response: "declined" })
+                              .then(() => toast.success("Declined — calendar updated"))
+                              .catch((e: Error) => toast.error(e.message));
+                          }}
+                        >
+                          Decline
+                        </button>
+                      </>
+                    ) : (
+                      <Link href="/calendar" className="thread-rsvp-btn thread-rsvp-btn--accept">
+                        View in Calendar
+                      </Link>
+                    )}
+                    {calEvents.length === 0 && (
+                      <button
+                        type="button"
+                        className="thread-btn-ghost"
+                        style={{ fontSize: 12, padding: "6px 10px" }}
+                        onClick={() => setShowSchedule(true)}
+                      >
+                        <CalendarPlus size={12} />
+                        Schedule
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="thread-inbox-compose">
               <div className="thread-inbox-compose-head">
