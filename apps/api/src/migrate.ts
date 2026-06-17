@@ -19,6 +19,16 @@ CREATE TABLE IF NOT EXISTS brief_dismissals (
   dismissed_at timestamp DEFAULT now() NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS brief_dismissals_user_thread_idx ON brief_dismissals (user_id, thread_id);
+
+-- Brief daily cache — one row per user per date.
+CREATE TABLE IF NOT EXISTS brief_cache (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date_key text NOT NULL,
+  brief_json text NOT NULL,
+  generated_at timestamp DEFAULT now() NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS brief_cache_user_date_idx ON brief_cache (user_id, date_key);
 `;
 
 export async function runMigrations() {

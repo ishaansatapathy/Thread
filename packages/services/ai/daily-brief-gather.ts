@@ -254,14 +254,20 @@ export async function gatherDailyBriefContext(input: {
     }),
   );
 
+  // Build a set of thread IDs where user already sent a reply (from sent folder).
+  // If a thread is in waitingOn, the user already replied — don't mark as awaitingReply.
+  const userRepliedThreadIds = new Set(waitingOnList.threads.map((t) => t.id));
+
   const threadSnapshots: BriefThreadSnapshot[] = [];
   for (const thread of detailThreads) {
     if (!thread || !thread.unread) continue;
     const reply = isAwaitingUserReply(thread, input.userEmail);
+    // If the sent-folder cross-check shows user already replied, override awaitingReply.
+    const alreadyReplied = userRepliedThreadIds.has(thread.id);
     threadSnapshots.push(
       threadSnapshot(thread, {
-        awaitingReply: reply.awaiting,
-        daysWaiting: reply.daysWaiting,
+        awaitingReply: alreadyReplied ? false : reply.awaiting,
+        daysWaiting: alreadyReplied ? null : reply.daysWaiting,
         lastMessageFrom: reply.lastMessageFrom,
       }),
     );
