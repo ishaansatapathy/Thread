@@ -23,7 +23,7 @@ import { logger } from "@repo/logger";
 import { getInboxService } from "@repo/services/inbox";
 import { getQueueService } from "@repo/services/queue";
 import { getCalendarService } from "@repo/services/calendar";
-import { rankInboxThreads, isInboxAiConfigured } from "@repo/services/ai/inbox-priority";
+import { analyzeInboxThreads, isInboxAiConfigured } from "@repo/services/ai/inbox-priority";
 import { generateDailyBrief } from "@repo/services/ai/daily-brief";
 import { getSmartReplies } from "@repo/services/ai/smart-reply";
 import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
@@ -189,7 +189,7 @@ const MCP_TOOLS: McpTool[] = [
   {
     name: "rank_inbox",
     description:
-      "Rank inbox threads by urgency using AI. Returns thread IDs sorted from most to least urgent. Requires OpenAI to be configured.",
+      "Analyze inbox threads with AI: urgency tier, 0-100 score, one-line reason, and category per thread. Returns rankedIds, items, and summary counts.",
     inputSchema: {
       type: "object",
       properties: {
@@ -699,14 +699,20 @@ async function callTool(
         subject: t.subject,
         from: t.fromName ?? t.from,
       }));
-      const rankedIds = await rankInboxThreads(threads);
+      const analysis = await analyzeInboxThreads(threads);
       const threadMap = new Map(result.threads.map((t) => [t.id, t]));
-      return toolResult(
-        rankedIds.map((id) => {
-          const t = threadMap.get(id);
-          return { id, subject: t?.subject ?? "(no subject)", from: t?.fromName ?? t?.from ?? "Unknown", snippet: t?.snippet?.slice(0, 100) };
+      return toolResult({
+        ...analysis,
+        threads: analysis.items.map((item) => {
+          const t = threadMap.get(item.id);
+          return {
+            ...item,
+            subject: t?.subject ?? "(no subject)",
+            from: t?.fromName ?? t?.from ?? "Unknown",
+            snippet: t?.snippet?.slice(0, 100),
+          };
         }),
-      );
+      });
     }
 
     case "list_calendar_events": {

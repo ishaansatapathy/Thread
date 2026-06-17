@@ -192,15 +192,21 @@ export function SmartContextPanel({ threadId, onOpenThread }: Props) {
             Relationship Intel
           </p>
           <p className="scp-text">{contactQuery.data.relationshipSummary}</p>
-          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+          <div className="scp-relationship-meta">
             {contactQuery.data.totalInteractions > 0 && (
-              <span className="scp-meta-sub">{contactQuery.data.totalInteractions} emails total</span>
+              <span className="scp-meta-chip">{contactQuery.data.totalInteractions} emails</span>
             )}
             {contactQuery.data.responseRate != null && (
-              <span className="scp-meta-sub">{Math.round(contactQuery.data.responseRate * 100)}% response rate</span>
+              <span className="scp-meta-chip" title="Share of your emails this contact replied to">
+                {contactQuery.data.responseRate >= 0.7
+                  ? "Responsive contact"
+                  : contactQuery.data.responseRate >= 0.4
+                    ? "Mixed response pattern"
+                    : "Often one-sided"}
+              </span>
             )}
             {contactQuery.data.lastInteractionDaysAgo != null && (
-              <span className="scp-meta-sub">last {contactQuery.data.lastInteractionDaysAgo}d ago</span>
+              <span className="scp-meta-chip">Last active {contactQuery.data.lastInteractionDaysAgo}d ago</span>
             )}
           </div>
           {contactQuery.data.recentTopics.length > 0 && (

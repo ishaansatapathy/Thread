@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
+import { PriorityBadge, PriorityReason } from "~/components/app/priority-badge";
+import { formatPrioritySummary } from "~/lib/priority-display";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -48,6 +50,7 @@ import { trpc } from "~/trpc/client";
 
 type InboxView = "inbox" | "priority" | "drafts";
 type ThreadRow = RouterOutputs["inbox"]["listThreads"]["threads"][number];
+type InboxAnalysis = RouterOutputs["ai"]["rankInboxThreads"];
 
 const PAGE_SIZE = INBOX_PAGE_SIZE;
 
@@ -221,7 +224,7 @@ function useDrafts(enabled: boolean) {
 export default function InboxPage() {
   const searchParams = useSearchParams();
   const [view, setView] = useState<InboxView>("inbox");
-  const [priorityRankedIds, setPriorityRankedIds] = useState<string[] | null>(null);
+  const [priorityAnalysis, setPriorityAnalysis] = useState<InboxAnalysis | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -451,10 +454,18 @@ export default function InboxPage() {
 
   const rankThreads = trpc.ai.rankInboxThreads.useMutation({
     onSuccess: (result) => {
-      setPriorityRankedIds(result.rankedIds);
+      setPriorityAnalysis(result);
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const priorityByThreadId = useMemo(() => {
+    const map = new Map<string, InboxAnalysis["items"][number]>();
+    for (const item of priorityAnalysis?.items ?? []) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [priorityAnalysis]);
 
   const queueMeeting = trpc.queue.enqueueMeeting.useMutation({
     onSuccess: async (item) => {
@@ -493,15 +504,24 @@ export default function InboxPage() {
 
   const visibleThreads = useMemo(() => {
     const source = hasDemoFixtures ? displayThreads : threads;
-    if (view !== "priority" || !priorityRankedIds?.length) return source;
-    // In priority view — only show threads the AI actually ranked (excludes promotions/social/forums)
-    const rankedSet = new Set(priorityRankedIds);
-    const filtered = source.filter((t) => rankedSet.has(t.id));
-    return sortThreadsByRank(filtered, priorityRankedIds);
-  }, [threads, displayThreads, hasDemoFixtures, view, priorityRankedIds]);
+    const rankedIds = priorityAnalysis?.rankedIds;
+    if (view !== "priority" || !rankedIds?.length) return source;
+    const rankedSet = new Set(rankedIds);
+    const filtered = source.filter((t) => {
+      if (!rankedSet.has(t.id)) return false;
+      const item = priorityByThreadId.get(t.id);
+      return item?.urgency !== "noise";
+    });
+    return sortThreadsByRank(filtered, rankedIds);
+  }, [threads, displayThreads, hasDemoFixtures, view, priorityAnalysis, priorityByThreadId]);
+
+  const hiddenNoiseCount = useMemo(() => {
+    if (view !== "priority" || !priorityAnalysis) return 0;
+    return priorityAnalysis.items.filter((item) => item.urgency === "noise").length;
+  }, [view, priorityAnalysis]);
 
   useEffect(() => {
-    setPriorityRankedIds(null);
+    setPriorityAnalysis(null);
   }, [inbox.dataUpdatedAt]);
 
   const handleViewChange = async (nextView: InboxView) => {
@@ -811,16 +831,28 @@ export default function InboxPage() {
         ) : null}
 
         {view === "priority" && isConnected ? (
-          <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
+          <div className="thread-priority-summary" style={{ margin: "10px 12px 0" }}>
             {rankThreads.isPending ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <div className="thread-priority-summary-loading">
                 <Loader2 size={14} className="thread-spin" />
-                Ranking threads by urgency…
-              </span>
+                <span>Analyzing inbox — scoring urgency and reply pressure…</span>
+              </div>
+            ) : priorityAnalysis ? (
+              <>
+                <div className="thread-priority-summary-head">
+                  <Sparkles size={13} />
+                  <strong>{formatPrioritySummary(priorityAnalysis.summary)}</strong>
+                </div>
+                {hiddenNoiseCount > 0 ? (
+                  <p className="thread-priority-summary-meta">
+                    {hiddenNoiseCount} promotional / low-relevance threads hidden from this view.
+                  </p>
+                ) : null}
+              </>
             ) : aiReady ? (
-              "Sorted by AI urgency — approve replies from Queue."
+              <p className="thread-priority-summary-meta">Open Priority to analyze your inbox.</p>
             ) : (
-              "Priority ranking needs OPENAI_API_KEY in server env."
+              <p className="thread-priority-summary-meta">Priority analysis needs OPENAI_API_KEY in server env.</p>
             )}
           </div>
         ) : null}
@@ -964,13 +996,16 @@ export default function InboxPage() {
             </div>
           ) : (
             <>
-              {visibleThreads.map((thread) => (
+              {visibleThreads.map((thread, index) => {
+                const priority = view === "priority" ? priorityByThreadId.get(thread.id) : undefined;
+                return (
                 <button
                   key={thread.id}
                   type="button"
                   className="thread-inbox-row"
                   data-active={selectedId === thread.id}
                   data-unread={thread.unread ? "true" : undefined}
+                  data-priority={priority?.urgency}
                   onClick={() => setSelectedId(thread.id)}
                 >
                   <span className="thread-inbox-row-line">
@@ -980,15 +1015,29 @@ export default function InboxPage() {
                       {thread.messageCount && thread.messageCount > 1 ? (
                         <span className="thread-inbox-row-count">{thread.messageCount}</span>
                       ) : null}
+                      {priority ? (
+                        <PriorityBadge
+                          urgency={priority.urgency}
+                          score={priority.score}
+                          category={priority.category}
+                          rank={index + 1}
+                          compact
+                        />
+                      ) : null}
                     </span>
                     <span className="thread-inbox-row-date">{formatListDate(thread.date)}</span>
                   </span>
                   <span className="thread-inbox-row-subject">
                     {listThreadSubject(thread.subject, thread.snippet)}
                   </span>
-                  <span className="thread-inbox-row-snippet">{decodeHtmlEntities(thread.snippet)}</span>
+                  {priority ? (
+                    <PriorityReason reason={priority.reason} />
+                  ) : (
+                    <span className="thread-inbox-row-snippet">{decodeHtmlEntities(thread.snippet)}</span>
+                  )}
                 </button>
-              ))}
+              );
+              })}
             </>
           )}
         </div>

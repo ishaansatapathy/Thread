@@ -25,7 +25,7 @@ import {
 import { generateDailyBrief } from "./daily-brief";
 import { getMeetingPrep } from "./meeting-prep";
 import { getMissedFollowUps } from "./missed-followups";
-import { rankInboxThreads } from "./inbox-priority";
+import { analyzeInboxThreads } from "./inbox-priority";
 import { getSmartReplies } from "./smart-reply";
 import { getThreadContext } from "./thread-context";
 import { summarizeThread } from "./summarize-thread";
@@ -109,19 +109,27 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
       case "rank_inbox": {
         const maxResults = Math.min(Math.max(Number(args.maxResults) || 15, 1), 25);
         const listed = await inbox.listThreads(tenantId, { maxResults });
-        const rankedIds = await rankInboxThreads(
+        const analysis = await analyzeInboxThreads(
           listed.threads.map((t) => ({ id: t.id, snippet: t.snippet, subject: t.subject, from: t.fromName ?? t.from })),
         );
         const byId = new Map(listed.threads.map((t) => [t.id, t]));
-        const ordered = rankedIds.map((id) => byId.get(id)).filter(Boolean);
+        const ordered = analysis.rankedIds.map((id) => byId.get(id)).filter(Boolean);
+        const topLines = analysis.items
+          .filter((item) => item.urgency !== "noise")
+          .slice(0, 8)
+          .map((item) => {
+            const thread = byId.get(item.id);
+            const label = thread ? threadLine(thread) : item.id;
+            return `[${item.urgency.toUpperCase()} · ${item.score}] ${label} — ${item.reason}`;
+          });
         actions.push({
           kind: "inbox_ranked",
-          title: "Priority ranking",
-          detail: `${ordered.length} threads by urgency`,
+          title: "Inbox analysis",
+          detail: `${analysis.summary.critical + analysis.summary.high} need attention · ${analysis.summary.replyNeeded} need a reply`,
           href: "/inbox",
-          lines: ordered.map((t) => threadLine(t!)),
+          lines: topLines.length > 0 ? topLines : ordered.slice(0, 5).map((t) => threadLine(t!)),
         });
-        return JSON.stringify({ rankedIds, threads: ordered });
+        return JSON.stringify(analysis);
       }
 
       case "get_gmail_connection_status": {

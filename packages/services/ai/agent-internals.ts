@@ -53,7 +53,7 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "rank_inbox",
-      description: "Rank inbox threads by urgency using AI. Fetches recent inbox first.",
+      description: "Analyze inbox threads by urgency using AI. Returns score (0-100), urgency tier, reason, and category for each thread.",
       parameters: {
         type: "object",
         properties: {
