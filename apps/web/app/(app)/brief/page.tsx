@@ -324,10 +324,21 @@ export default function BriefPage() {
     setDismissedThreadIds((prev) => new Set([...prev, threadId]));
   };
 
+  const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
     { staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 },
   );
+
+  const handleForceRefresh = async () => {
+    setIsForceRefreshing(true);
+    try {
+      // Bypass server cache — re-fetches from Corsair Gmail + Calendar + OpenAI
+      await briefQuery.refetch();
+    } finally {
+      setIsForceRefreshing(false);
+    }
+  };
 
   const followUpsQuery = trpc.ai.missedFollowUps.useQuery(
     { timeZone },
@@ -395,12 +406,13 @@ export default function BriefPage() {
           <button
             type="button"
             className="thread-btn-ghost"
-            disabled={briefQuery.isFetching}
+            disabled={briefQuery.isFetching || isForceRefreshing}
+            title="Force-refresh from Gmail + Calendar (bypasses 5-min cache)"
             onClick={() => {
-              void briefQuery.refetch().then(() => toast.message("Brief refreshed"));
+              void handleForceRefresh().then(() => toast.message("Brief refreshed from Corsair"));
             }}
           >
-            {briefQuery.isFetching ? (
+            {briefQuery.isFetching || isForceRefreshing ? (
               <Loader2 size={13} className="thread-spin" />
             ) : (
               <RefreshCw size={13} />

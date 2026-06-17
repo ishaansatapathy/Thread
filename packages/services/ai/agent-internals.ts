@@ -518,9 +518,11 @@ export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefa
     agentEmailMode,
     calendarMode,
     "When the user asks to send mail, write a professional plain-text email and call queue_email with mode send.",
+    "queue_email supports optional cc and bcc fields (single email address each). Use them when the user asks to CC or BCC someone.",
     "Use approve_queue_item / dismiss_queue_item only when the user explicitly asks to approve or reject a specific queue item.",
     "Call queue_email at most once per user message unless they explicitly ask for multiple different emails.",
     "Use search_inbox / get_thread before drafting replies to existing threads.",
+    "Use list_inbox to show recent emails; use search_inbox for filtered searches.",
     "Be concise and friendly. Match your wording to what actually happened (sent vs queued).",
     userEmail ? `The signed-in user's email is ${userEmail}.` : "",
   ]

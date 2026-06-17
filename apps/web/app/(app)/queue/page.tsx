@@ -318,6 +318,13 @@ export default function QueuePage() {
                 </div>
 
                 {item.preview ? <p className="thread-queue-card-preview">{item.preview}</p> : null}
+                {(item.kind === "email_send" || item.kind === "email_draft") &&
+                  (item.payload?.cc || item.payload?.bcc) ? (
+                  <div className="thread-queue-card-recipients" style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                    {item.payload.cc ? <span><strong>Cc:</strong> {String(item.payload.cc)}</span> : null}
+                    {item.payload.bcc ? <span><strong>Bcc:</strong> {String(item.payload.bcc)}</span> : null}
+                  </div>
+                ) : null}
                 {item.errorMessage ? (
                   <p className="thread-queue-card-error">{item.errorMessage}</p>
                 ) : null}

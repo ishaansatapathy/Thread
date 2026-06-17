@@ -10,6 +10,7 @@ import {
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
+import { invalidateBriefCache } from "../ai/route";
 
 const TAGS = ["Queue"];
 const getPath = generatePath("/queue");
@@ -185,7 +186,11 @@ export const queueRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const queue = getQueueService();
-        return await queue.approve(ctx.user.id, input.id, { archive: input.archive });
+        const result = await queue.approve(ctx.user.id, input.id, { archive: input.archive });
+        // Sending or creating events invalidates the cached brief so the user
+        // sees accurate "Needs attention" items when they return to /brief.
+        invalidateBriefCache(ctx.user.id);
+        return result;
       } catch (error) {
         mapServiceError(error);
       }
@@ -198,7 +203,9 @@ export const queueRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const queue = getQueueService();
-        return await queue.dismiss(ctx.user.id, input.id);
+        const result = await queue.dismiss(ctx.user.id, input.id);
+        invalidateBriefCache(ctx.user.id);
+        return result;
       } catch (error) {
         mapServiceError(error);
       }
