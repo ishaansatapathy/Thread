@@ -254,6 +254,8 @@ export default function InboxPage() {
   const [showContextPanel, setShowContextPanel] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState("");
+  const [composeCc, setComposeCc] = useState("");
+  const [composeBcc, setComposeBcc] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [outboundAttachments, setOutboundAttachments] = useState<OutboundAttachment[]>([]);
@@ -434,6 +436,8 @@ export default function InboxPage() {
       setReplyBody("");
       setShowCompose(false);
       setComposeTo("");
+      setComposeCc("");
+      setComposeBcc("");
       setComposeSubject("");
       setComposeBody("");
       setOutboundAttachments([]);
@@ -1708,6 +1712,8 @@ export default function InboxPage() {
                     to: composeTo.trim(),
                     subject: composeSubject.trim() || "(no subject)",
                     body: composeBody,
+                    cc: composeCc.trim() || undefined,
+                    bcc: composeBcc.trim() || undefined,
                     attachments: outboundAttachments.length ? outboundAttachments : undefined,
                   },
                   title: `Send: ${composeSubject.trim() || "(no subject)"}`,
@@ -1724,6 +1730,28 @@ export default function InboxPage() {
                 value={composeTo}
                 onChange={(event) => setComposeTo(event.target.value)}
                 required
+              />
+              <label className="thread-set-label" htmlFor="compose-cc">
+                Cc
+              </label>
+              <input
+                id="compose-cc"
+                className="thread-set-input"
+                type="email"
+                value={composeCc}
+                onChange={(event) => setComposeCc(event.target.value)}
+                placeholder="Optional"
+              />
+              <label className="thread-set-label" htmlFor="compose-bcc">
+                Bcc
+              </label>
+              <input
+                id="compose-bcc"
+                className="thread-set-input"
+                type="email"
+                value={composeBcc}
+                onChange={(event) => setComposeBcc(event.target.value)}
+                placeholder="Optional"
               />
               <label className="thread-set-label" htmlFor="compose-subject">
                 Subject

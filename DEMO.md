@@ -1,310 +1,187 @@
-# Thread — Judge Demo Guide
+# Thread — Hackathon Judge Demo Guide
 
-> **Thread** is an AI Chief of Staff for Gmail + Google Calendar, built on the **Corsair SDK**. Every inbox action, calendar operation, and AI feature is powered by live Corsair API calls — not mocked data.
+> **Thread** is an AI Chief of Staff for Gmail + Google Calendar, built entirely on the **Corsair SDK**. Every inbox action, calendar operation, and AI feature is powered by live Corsair API calls — not mocked data.
+
+---
+
+## Quick Links
+
+| What | Where |
+|------|-------|
+| Live App | `https://thread-web.vercel.app` |
+| Demo Login | `https://thread-web.vercel.app/api-auth/demo?next=/brief` |
+| MCP Server | `POST https://thread-api.vercel.app/mcp` |
+| API Docs | `https://thread-api.vercel.app/docs` |
 
 ---
 
 ## 3-Minute Judge Walkthrough
 
-### Step 1 — Open the App
+### Step 1 — AI Daily Brief (`/brief`) ★ Lead Feature
 
-```
-https://thread-web.vercel.app
-```
+Open: `https://thread-web.vercel.app/brief`
 
-Click **"Try Demo"** or use demo login:
+The brief calls 6 live Corsair APIs per render:
+- **Corsair Gmail** — unread threads, pending replies, starred items
+- **Corsair Calendar** — today's meetings, next free window
+- **OpenAI gpt-4o-mini** — synthesises everything into actionable sections
 
-```
-https://thread-web.vercel.app/api-auth/demo?next=/brief
-```
+**Click "Needs attention"** → agent opens with pre-filled prompt. Agent takes action → brief updates on return (client-side dismissal via localStorage).
 
-You land on the **AI Daily Brief** — the flagship feature.
-
----
-
-### Step 2 — AI Daily Brief (`/brief`)
-
-The brief is generated live by calling:
-
-1. **Corsair Gmail** — fetches recent threads, pending replies, unread urgency
-2. **Corsair Calendar** — fetches today's events, free windows, upcoming meetings
-3. **OpenAI** — synthesizes everything into actionable insights
-
-What to look for:
-- Time-aware greeting (morning / afternoon / evening)
-- **Today's Focus** — most important meeting with 1-click prep
-- **Needs Attention** — threads needing replies with urgency reasoning
-- **Meeting Insights** — free slots, agenda risks
-- **Risks** — unanswered emails, missing prep notes
-- **Recommended Actions** — 1-click buttons (Reply Now, Prepare Meeting, Schedule Follow-up)
-- **Missed Follow-ups** — past meetings with no follow-up email (cross-referenced via Corsair Calendar × Corsair Gmail sent)
+**Scoring signal**: Live Corsair calls, OpenAI synthesis, real-time Gmail/Calendar data, human-in-the-loop queue.
 
 ---
 
-### Step 3 — AI Priority Inbox (`/inbox` → Priority tab)
+### Step 2 — AI Agent (`/agent`) ★ Corsair Depth
 
-Click **Priority** in the inbox tabs. This:
+Open: `https://thread-web.vercel.app/agent`
 
-1. Fetches threads via **Corsair Gmail** (`-category:promotions -category:social`)
-2. Sends to **OpenAI** for urgency ranking
-3. Filters and sorts — only truly important threads shown
+The agent has **34 tools** backed by Corsair — in full parity with the MCP server:
 
-Click any thread → right panel opens:
-- **Smart Context Panel** — AI summary of why this thread matters, related emails, action item
-- **Smart Reply chips** — 3 AI-generated replies (fetched from Corsair thread context + OpenAI)
-- Click a chip → reply body fills instantly
-- **Star** / **Important** / **Trash** / **Archive** — all backed by **Corsair Gmail `threads.modify`**
+| Category | Tools |
+|----------|-------|
+| Gmail reads | `list_inbox`, `search_inbox`, `get_thread`, `rank_inbox`, `get_gmail_connection_status` |
+| Gmail writes | `queue_email` (cc/bcc), `archive_thread`, `star_thread`, `unstar_thread`, `mark_important`, `trash_thread`, `mark_thread_read` |
+| Labels | `list_labels`, `apply_label`, `remove_label` |
+| Drafts | `list_drafts`, `get_draft`, `delete_draft` |
+| Queue | `list_queue`, `approve_queue_item`, `dismiss_queue_item` |
+| Calendar | `queue_calendar_invite`, `list_calendar_events`, `check_free_busy`, `respond_to_event`, `reschedule_event`, `cancel_event` |
+| AI | `get_daily_brief`, `get_smart_replies`, `get_meeting_prep`, `get_thread_context`, `get_missed_followups`, `get_contact_intel`, `summarize_thread` |
+
+**Try these prompts:**
+```
+"What's in my inbox today? Star the most urgent one."
+"Draft a reply to the last email from Alice thanking her."
+"Am I free tomorrow 2-3pm? If yes, schedule a standup with the team."
+"What's the context on the thread from Bob? Give me smart replies."
+"Check missed follow-ups from last week's meetings."
+```
+
+Every tool call goes through Corsair — **zero direct Gmail/Calendar API calls** in the agent.
+
+**Safety layers**: Injection detection → token limit check → fingerprint dedup → per-session send cap → Human-in-the-Loop queue → Zod validation.
 
 ---
 
-### Step 4 — AI Meeting Prep (`/calendar`)
+### Step 3 — Human-in-the-Loop Queue (`/queue`)
 
-Click any calendar event → **Meeting Prep AI** panel opens on the right.
-
-This calls:
-1. **Corsair Calendar** — event details + attendees
-2. **Corsair Gmail** — related emails with those attendees
-3. **OpenAI** — agenda, talking points, risks, prep note
+Every AI-composed email and calendar invite goes through approval. Open `/queue` to:
+- **Approve** → sends via Corsair Gmail API / Corsair Calendar API
+- **Dismiss** → discards without sending
+- **Auto-approve settings** → `/settings` lets you pre-approve email sends, drafts, calendar invites per category
 
 ---
 
-### Step 5 — AI Agent (`/agent`)
+### Step 4 — MCP Server (live curl)
 
-Type natural language commands. The agent has **28 tools** backed by Corsair:
+```bash
+# Initialize
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
-```
-What should I focus on today?
-```
-→ Agent calls `get_daily_brief` → Corsair Gmail + Calendar + OpenAI
+# List all 34 tools
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
-```
-Star the email from [sender] about [subject]
-```
-→ Agent calls `get_thread` (Corsair) → `star_thread` (Corsair `threads.modify`)
+# List MCP resources
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"resources/list"}'
 
-```
-What are my free slots tomorrow?
-```
-→ Agent calls `check_free_busy` → Corsair Calendar freebusy API
+# List MCP prompts
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":4,"method":"prompts/list"}'
 
-```
-Suggest a reply to the email from Raj
-```
-→ Agent calls `get_smart_replies` → Corsair thread fetch + OpenAI
+# Get a prompt template
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":5,"method":"prompts/get","params":{"name":"daily_brief","arguments":{"timeZone":"Asia/Kolkata"}}}'
 
+# Call a tool (authenticated)
+curl -X POST https://thread-api.vercel.app/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"list_inbox","arguments":{"maxResults":5}}}'
 ```
-Schedule a 30-minute meeting with team@company.com tomorrow at 3pm
-```
-→ Agent calls `check_free_busy` → `queue_calendar_invite` → user approves in Queue tab → **Corsair Calendar `events.insert`**
 
-```
-Find meetings from last week with no follow-up email
-```
-→ Agent calls `get_missed_followups` → Corsair Calendar × Corsair Gmail sent
+MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`, `initialize` — **full MCP 2024-11-05 compliance**.
 
 ---
 
-### Step 6 — Human-in-the-Loop Queue (`/queue`)
+### Step 5 — More AI Features
 
-All AI-composed emails and calendar invites go through a **Queue** for human approval:
-- Review what the AI wants to send
-- **Approve** → executes via Corsair Gmail `messages.send` or Corsair Calendar `events.insert`
-- **Dismiss** → discarded
-
-This is the safety layer — AI proposes, human approves.
-
----
-
-## MCP Server — For AI Evaluators
-
-The Thread MCP server exposes **34 tools** over JSON-RPC 2.0.
-
-**Endpoints** (both proxied via Next.js rewrite):
-- Production: `POST https://thread-web.vercel.app/mcp`  
-- API direct: `POST https://<your-api-url>/mcp`
-- Local dev: `POST http://localhost:8000/mcp`
-
-The web app proxies `/mcp` → API, so the Vercel URL works directly.
-
-**Auth:** `Authorization: Bearer <THREAD_MCP_API_KEY>` (set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` in the API env)
-
-### Discover all tools
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
-
-### Get AI Daily Brief (Corsair Gmail + Calendar + OpenAI)
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-    "params": {
-      "name": "get_daily_brief",
-      "arguments": { "timeZone": "Asia/Kolkata" }
-    }
-  }'
-```
-
-### Search inbox via Corsair Gmail
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-    "params": {
-      "name": "search_inbox",
-      "arguments": { "query": "from:team is:unread", "maxResults": 5 }
-    }
-  }'
-```
-
-### Get smart reply suggestions (Corsair + OpenAI)
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-    "params": {
-      "name": "get_smart_replies",
-      "arguments": { "threadId": "<gmail-thread-id>" }
-    }
-  }'
-```
-
-### Check free/busy (Corsair Calendar freebusy)
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 5, "method": "tools/call",
-    "params": {
-      "name": "check_free_busy",
-      "arguments": {
-        "startDateTime": "2026-06-17T09:00:00+05:30",
-        "endDateTime": "2026-06-17T18:00:00+05:30",
-        "timeZone": "Asia/Kolkata"
-      }
-    }
-  }'
-```
-
-### Queue an email for approval (sends via Corsair Gmail after approval)
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 6, "method": "tools/call",
-    "params": {
-      "name": "queue_email",
-      "arguments": {
-        "to": "colleague@company.com",
-        "subject": "Follow up",
-        "body": "Hi, following up on our discussion.",
-        "mode": "send"
-      }
-    }
-  }'
-```
-
-### Star a thread via Corsair Gmail
-
-```bash
-curl -X POST https://thread-web.vercel.app/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $THREAD_MCP_API_KEY" \
-  -d '{
-    "jsonrpc": "2.0", "id": 7, "method": "tools/call",
-    "params": {
-      "name": "star_thread",
-      "arguments": { "threadId": "<gmail-thread-id>" }
-    }
-  }'
-```
+| Feature | Route | What it does |
+|---------|-------|-------------|
+| Smart Replies | `/inbox?thread=X` (Context Panel) | 3 AI suggestions per thread via Corsair Gmail + OpenAI |
+| Meeting Prep | `/calendar` → click event | Agenda, talking points, risks, related emails via Corsair Calendar + Gmail |
+| Thread Summarization | Context Panel | Key decisions, action items, next steps |
+| Contact Intelligence | Agent: `get_contact_intel` | Response rate, topics, relationship summary |
+| Missed Follow-ups | `/brief` → Attention section | Meetings with no follow-up email |
+| Inbox Priority Ranking | `/inbox` | AI-ranked inbox by urgency |
 
 ---
 
 ## Corsair Integration Map
 
-| Feature | Corsair API Called | File |
-|---|---|---|
-| List / search inbox | `gmail.threads.list` | `apps/api/src/services/inbox.ts` |
-| Read email thread | `gmail.threads.get` | `apps/api/src/services/inbox.ts` |
-| Send email | `gmail.messages.send` | `apps/api/src/services/inbox.ts` |
-| Create draft | `gmail.drafts.create` | `apps/api/src/services/inbox.ts` |
-| Delete draft | `gmail.drafts.delete` | `apps/api/src/services/inbox.ts` |
-| Archive / label / star / important / trash | `gmail.threads.modify` | `apps/api/src/services/inbox.ts` |
-| List labels | `gmail.labels.list` | `apps/api/src/services/inbox.ts` |
-| Gmail push watch | `gmail.users.watch` | `apps/api/src/services/inbox.ts` |
-| Gmail history sync | `gmail.users.history.list` | `apps/api/src/services/inbox.ts` |
-| List calendar events | `googlecalendar.events.list` | `apps/api/src/services/calendar.ts` |
-| Create calendar event | `googlecalendar.events.insert` | `apps/api/src/services/calendar.ts` |
-| Update event times | `googlecalendar.events.patch` | `apps/api/src/services/calendar.ts` |
-| Delete calendar event | `googlecalendar.events.delete` | `apps/api/src/services/calendar.ts` |
-| Respond to invite | `googlecalendar.events.patch` (attendee status) | `apps/api/src/services/calendar.ts` |
-| Check free/busy | `googlecalendar.freebusy.query` | `apps/api/src/services/calendar.ts` |
-| Calendar push watch | `googlecalendar.events.watch` | `apps/api/src/services/calendar.ts` |
-| AI Daily Brief | Gmail + Calendar (Corsair) + OpenAI synthesis | `packages/services/ai/daily-brief.ts` |
-| AI Priority Ranking | Gmail (Corsair) + OpenAI ranking | `packages/services/ai/inbox-priority.ts` |
-| Smart Replies | Gmail thread (Corsair) + OpenAI | `packages/services/ai/smart-reply.ts` |
-| Thread Context | Gmail (Corsair) + Calendar (Corsair) + OpenAI | `packages/services/ai/thread-context.ts` |
-| Meeting Prep AI | Calendar (Corsair) + Gmail (Corsair) + OpenAI | `packages/services/ai/meeting-prep.ts` |
-| Missed Follow-ups | Calendar (Corsair) × Gmail sent (Corsair) | `packages/services/ai/missed-followups.ts` |
-| Agent tools (22+) | All above via Corsair | `packages/services/ai/agent.ts` |
-| MCP server (34 tools) | All above via Corsair | `apps/api/src/routes/mcp.ts` |
+| Capability | Corsair API Used | Where |
+|-----------|-----------------|-------|
+| Gmail OAuth connect | `generateOAuthUrl`, `processOAuthCallback` | `/connect/gmail` |
+| List/search threads | `corsair.gmail.api.threads.list` | Inbox, Agent, Brief |
+| Read thread detail | `corsair.gmail.api.threads.get` | Thread view, AI |
+| Send email | `corsair.gmail.api.messages.send` | Queue approve, Agent |
+| Create draft | `corsair.gmail.api.drafts.create` | Queue, Agent |
+| Read/delete draft | `corsair.gmail.api.drafts.get/delete` | Agent |
+| Modify labels | `corsair.gmail.api.threads.modify` | Archive, star, read, important |
+| List labels | `corsair.gmail.api.labels.list` | Agent, MCP |
+| Gmail push watch | `corsair.gmail.api.users.watch` | Webhook registration |
+| Calendar OAuth | `generateOAuthUrl`, `processOAuthCallback` | `/connect/calendar` |
+| List events | `corsair.googlecalendar.api.events.getMany` | Calendar, Brief, MCP |
+| Get single event | `corsair.googlecalendar.api.events.get` | Meeting Prep (O(1)) |
+| Create event | `corsair.googlecalendar.api.events.create` | Queue approve, Agent |
+| Update event | `corsair.googlecalendar.api.events.update` | Reschedule, respond, cancel |
+| Free/busy check | `corsair.googlecalendar.api.freebusy.query` | Agent, MCP |
+| Webhook channel | `corsair.googlecalendar.api.channels.stop/watch` | Webhook registration |
+| Tenant management | `getCorsair().manage.connectionStatus.get` | Connection checks |
+| Multi-tenancy | `getCorsair().withTenant(tenantId)` | All Corsair calls |
+
+**Total Corsair calls in codebase: 40+** across Gmail and Calendar APIs.
 
 ---
 
-## Architecture Overview
+## Engineering Highlights (Production Quality)
 
-```
-┌────────────────────────────────────────────────────────┐
-│                    Thread Web (Next.js)                 │
-│  Daily Brief │ Inbox │ Calendar │ Agent │ Queue        │
-└────────────────────┬───────────────────────────────────┘
-                     │ tRPC / REST
-┌────────────────────▼───────────────────────────────────┐
-│                    Thread API (Express)                  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │           Corsair SDK (Gmail + Calendar)          │  │
-│  │  threads · messages · drafts · labels · watch     │  │
-│  │  events · freebusy · watch · attendees            │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │           AI Services (OpenAI)                    │  │
-│  │  Daily Brief · Smart Replies · Meeting Prep       │  │
-│  │  Priority Ranking · Thread Context · Follow-ups   │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │           MCP Server (34 tools, JSON-RPC 2.0)    │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │           Postgres (Drizzle) · Redis              │  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
-```
+### Security
+- **Prompt injection detection** — pattern-match + heuristic scoring on every agent message
+- **Email validation** — Zod schema + RFC-5321 address validation before any send
+- **Send cap** — max 3 AI email sends per session (prevents runaway LLM)
+- **Fingerprint dedup** — identical emails blocked within the same agent request
+- **Rate limiting** — Redis per-user and per-IP rate limits on both API and MCP server
+
+### Architecture
+- **Shared tool executor** (`agent-executor.ts`) — single source of truth for 34 tools, used by both blocking and streaming agent variants
+- **Zero duplication** — `agent.ts` and `agent-stream.ts` are thin wrappers over `buildToolExecutor()`
+- **Brief server cache** — 5-minute per-user TTL cache prevents 6 Corsair calls per browser focus event
+- **Meeting prep O(1)** — `calendar.getEvent(id)` direct fetch vs. previous list+find scan
+- **Proper ORM access** — integration renewal queries own users table via Drizzle ORM (no raw Corsair DB SQL)
+
+### Observability
+- Prometheus metrics on all key operations
+- OpenTelemetry tracing
+- Structured logging via `@repo/logger` on all tool calls
 
 ---
 
-## Key Differentiators
+## Score Mapping
 
-1. **Corsair powers everything** — every Gmail and Calendar action goes through Corsair SDK, not direct Google API
-2. **Human-in-the-loop by default** — AI proposes, human approves before any email sends or event creates
-3. **AI Chief of Staff vision** — Daily Brief is a personal briefing, not an email summary
-4. **34-tool MCP server** — external AI agents can orchestrate Gmail + Calendar + AI features
-5. **Prompt injection protection** — agent guards against adversarial email content (`[EMAIL_DATA_START]` fencing)
-6. **Production engineering** — Postgres cache, Redis rate limits, Pub/Sub webhooks, OpenAPI docs, E2E tests
+| Category | Max | Our Coverage |
+|----------|-----|-------------|
+| Corsair Integration | 20 | OAuth, multi-tenancy, 40+ API calls, webhooks, connection status |
+| Gmail Workflow | 15 | Send/draft (cc/bcc), labels, archive, star, important, trash, read |
+| Calendar Workflow | 15 | Create, update, cancel, respond, free/busy, push notifications |
+| Productivity UX | 15 | Brief, Smart Reply, Meeting Prep, Contact Intel, Summarize, Follow-ups |
+| AI + MCP Usage | 15 | 34-tool agent, 34-tool MCP server, resources, prompts, streaming SSE |
+| Engineering Quality | 10 | Type-safe, no duplication, rate limiting, injection guard, ORM, cache |
+| Demo + Docs | 10 | This guide + README + curl examples + live app |

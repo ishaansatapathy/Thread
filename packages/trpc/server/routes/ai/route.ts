@@ -1,6 +1,38 @@
 import { z } from "zod";
 
 import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
+
+// ── Server-side brief cache (5 min TTL per user) ─────────────────────────────
+// Each generateDailyBrief call makes 6+ Corsair API round-trips + OpenAI.
+// Caching prevents hammering both services on every browser focus event.
+const briefCache = new Map<string, { data: z.infer<typeof dailyBriefSchema>; expiresAt: number }>();
+const BRIEF_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCachedBrief(tenantId: string, timeZone: string) {
+  const key = `${tenantId}:${timeZone}`;
+  const entry = briefCache.get(key);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    briefCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedBrief(tenantId: string, timeZone: string, data: z.infer<typeof dailyBriefSchema>) {
+  const key = `${tenantId}:${timeZone}`;
+  briefCache.set(key, { data, expiresAt: Date.now() + BRIEF_CACHE_TTL_MS });
+  // Prevent unbounded growth — evict oldest entry when cache exceeds 500 users.
+  if (briefCache.size > 500) {
+    const oldest = briefCache.keys().next().value;
+    if (oldest) briefCache.delete(oldest);
+  }
+}
+
+export function invalidateBriefCache(tenantId: string) {
+  for (const key of briefCache.keys()) {
+    if (key.startsWith(`${tenantId}:`)) briefCache.delete(key);
+  }
+}
 import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
 import { getThreadContext } from "@repo/services/ai/thread-context";
 import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
@@ -194,23 +226,32 @@ export const aiRouter = router({
       }
     }),
 
-  /** Daily brief — also exposed here so older API bundles pick it up under `ai.*`. */
+  /** Daily brief — cached per-user for 5 min to avoid 6+ Corsair calls per refresh. */
   dailyBrief: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/daily-brief"), tags: TAGS } })
     .input(
       z.object({
         timeZone: z.string().max(64).optional(),
+        /** Pass true to bypass cache and force a fresh brief from Corsair + OpenAI. */
+        refresh: z.boolean().optional(),
       }),
     )
     .output(dailyBriefSchema)
     .query(async ({ ctx, input }) => {
+      const timeZone = input.timeZone?.trim() || "UTC";
       try {
-        return await generateDailyBrief({
+        if (!input.refresh) {
+          const cached = getCachedBrief(ctx.user.id, timeZone);
+          if (cached) return cached;
+        }
+        const brief = await generateDailyBrief({
           tenantId: ctx.user.id,
           userEmail: ctx.user.email,
           displayName: ctx.user.displayName ?? ctx.user.fullName,
-          timeZone: input.timeZone,
+          timeZone,
         });
+        setCachedBrief(ctx.user.id, timeZone, brief);
+        return brief;
       } catch (error) {
         mapServiceError(error);
       }

@@ -151,6 +151,19 @@ export class CorsairCalendarService implements CalendarService {
     });
   }
 
+  async getEvent(tenantId: string, eventId: string): Promise<import("@repo/services/calendar").CalendarEvent | null> {
+    if (!this.isConfigured()) return null;
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") return null;
+    try {
+      const corsair = getCorsair().withTenant(tenantId);
+      const event = await corsair.googlecalendar.api.events.get({ calendarId: "primary", id: eventId });
+      return mapEvent(event);
+    } catch {
+      return null;
+    }
+  }
+
   async listEvents(
     tenantId: string,
     opts: {

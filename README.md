@@ -1,17 +1,38 @@
-# Thread — Gmail + Calendar Productivity App
+# Thread — AI Chief of Staff for Gmail + Google Calendar
 
-> **Judge / Evaluator?** → Start with **[DEMO.md](./DEMO.md)** for a 3-minute walkthrough, MCP curl examples, and the full Corsair integration map.
+> **Judge / Evaluator?** → Start with **[DEMO.md](./DEMO.md)** for a 3-minute walkthrough, 5 live curl examples, the full Corsair integration map, and the scoring checklist.
 
-A full-stack productivity application built on the [Corsair SDK](https://corsair.dev) that brings Gmail and Google Calendar into a focused, human-in-the-loop workflow. Built for the Corsair Hackathon.
+A full-stack productivity application built **entirely on the [Corsair SDK](https://corsair.dev)** that brings Gmail and Google Calendar into a focused, AI-driven, human-in-the-loop workflow. Built for the Corsair Hackathon.
+
+## Feature Table
+
+| Feature | Description | Corsair APIs Used |
+|---------|-------------|------------------|
+| **AI Daily Brief** | Personalised daily summary: urgent emails, meetings, follow-ups, free windows | `gmail.api.threads.*`, `googlecalendar.api.events.*`, OpenAI |
+| **AI Agent (34 tools)** | Plain-language assistant: send emails, manage calendar, summarize threads, get contact intelligence | All Corsair Gmail + Calendar APIs |
+| **Human-in-the-Loop Queue** | Every AI-composed email/invite requires approval before sending | `gmail.api.messages.send`, `googlecalendar.api.events.create` |
+| **MCP Server (34 tools)** | Full MCP 2024-11-05 server: tools, resources, prompts — connect Claude/Cursor/any AI | All Corsair APIs |
+| **Inbox** | Cache-first Gmail inbox, search, labels, thread reader, keyboard nav | `gmail.api.threads.*`, `gmail.api.labels.*` |
+| **Smart Reply** | 3 AI suggestions per Gmail thread | `gmail.api.threads.get` + OpenAI |
+| **Meeting Prep** | Agenda, risks, talking points, related emails per calendar event | `googlecalendar.api.events.get` + `gmail.api.threads.list` + OpenAI |
+| **Thread Summarization** | Key decisions, action items, next steps | `gmail.api.threads.get` + OpenAI |
+| **Contact Intelligence** | Relationship summary, response rate, recommended next action | `gmail.api.threads.list` + OpenAI |
+| **Missed Follow-ups** | Meetings from last 2 weeks with no follow-up email | `googlecalendar.api.events.*` + `gmail.api.threads.list` |
+| **Calendar** | View, create, reschedule, cancel events; accept/decline invites | `googlecalendar.api.events.*` |
+| **CC/BCC Support** | All outbound emails support CC and BCC fields | `gmail.api.messages.send` (raw MIME) |
+| **Gmail Push Webhooks** | Real-time inbox updates via Gmail Pub/Sub | `gmail.api.users.watch` |
+| **Calendar Push Webhooks** | Real-time calendar updates | `googlecalendar.api.channels.*` |
+
+**Total Corsair API call sites: 40+** · **Agent tools: 34** · **MCP tools: 34**
 
 ## What it does
 
-- **Inbox** — Cache-first Gmail inbox with stale-while-revalidate, search, thread reader, and keyboard navigation (`j/k/Enter/`/)
-- **AI Priority** — Rank inbox threads by urgency using OpenAI
+- **Inbox** — Cache-first Gmail inbox with stale-while-revalidate, search, thread reader, CC/BCC compose, and keyboard navigation (`j/k/Enter`)
+- **AI Priority** — Rank inbox threads by urgency using OpenAI + Corsair Gmail data
 - **Queue** — Every outbound action (email send, draft save, calendar invite) is staged here for your approval before it executes — nothing sends without your OK
-- **Agent** — Plain-language AI assistant with streaming responses. Ask it to send emails, rank your inbox, schedule meetings, or check your queue
-- **Calendar** — View and manage events; create/reschedule/delete through the approval queue
-- **MCP Server** — Full Model Context Protocol server at `/mcp` so other AI tools (Claude, Cursor, etc.) can use your inbox and queue directly
+- **Agent** — Plain-language AI assistant with streaming responses and 34 Corsair-backed tools. Full parity with the MCP server.
+- **Calendar** — View and manage events; create/reschedule/cancel through the approval queue
+- **MCP Server** — Full MCP 2024-11-05 server at `/mcp`: `tools`, `resources`, `prompts` — so Claude, Cursor, and any AI tool can use your inbox and queue directly
 
 ---
 

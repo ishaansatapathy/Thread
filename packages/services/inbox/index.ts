@@ -99,6 +99,8 @@ export interface InboxService {
       subject: string;
       body: string;
       threadId?: string;
+      cc?: string;
+      bcc?: string;
       attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
     },
   ): Promise<{ id?: string; threadId?: string }>;
@@ -109,6 +111,8 @@ export interface InboxService {
       subject: string;
       body: string;
       threadId?: string;
+      cc?: string;
+      bcc?: string;
       attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
     },
   ): Promise<{ id?: string }>;

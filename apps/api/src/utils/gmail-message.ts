@@ -108,6 +108,8 @@ export function buildRawEmail(input: {
   to: string;
   subject: string;
   body: string;
+  cc?: string;
+  bcc?: string;
   inReplyTo?: string;
   references?: string;
   attachments?: EmailAttachmentInput[];
@@ -122,6 +124,12 @@ export function buildRawEmail(input: {
     "MIME-Version: 1.0",
   ];
 
+  if (input.cc?.trim()) {
+    headers.push(`Cc: ${sanitizeEmailHeader(input.cc)}`);
+  }
+  if (input.bcc?.trim()) {
+    headers.push(`Bcc: ${sanitizeEmailHeader(input.bcc)}`);
+  }
   if (input.inReplyTo) {
     headers.push(`In-Reply-To: ${sanitizeEmailHeader(input.inReplyTo)}`);
   }

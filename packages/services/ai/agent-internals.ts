@@ -10,6 +10,20 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "list_inbox",
+      description: "List recent Gmail inbox threads. Use when user asks to see inbox, latest emails, or recent messages. Optionally filter with a query.",
+      parameters: {
+        type: "object",
+        properties: {
+          maxResults: { type: "number", description: "Max threads, 1-50", default: 20 },
+          query: { type: "string", description: "Optional Gmail search query (from:, subject:, etc.)" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_inbox",
       description: "Search or list Gmail inbox threads. Omit query to list recent INBOX threads.",
       parameters: {
@@ -62,6 +76,8 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
           body: { type: "string", description: "Plain-text email body" },
           mode: { type: "string", enum: ["send", "draft"], description: "send = queue for approval to send" },
           threadId: { type: "string", description: "Optional Gmail thread id when replying" },
+          cc: { type: "string", description: "Optional CC recipient email address" },
+          bcc: { type: "string", description: "Optional BCC recipient email address" },
         },
         required: ["to", "subject", "body", "mode"],
       },
@@ -355,6 +371,45 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "unstar_thread",
+      description: "Remove the star from a Gmail thread via Corsair. Use when user says 'unstar this email'.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mark_important",
+      description: "Mark a Gmail thread as important via Corsair (adds IMPORTANT label). Use when user says 'mark as important' or 'prioritize this'.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_gmail_connection_status",
+      description: "Check whether Gmail is connected for the current user. Use when user asks about their Gmail connection or if you need to verify connectivity before acting.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_drafts",
       description: "List the user's Gmail draft emails via Corsair. Use when user asks to see their drafts.",
       parameters: {
@@ -362,6 +417,34 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
         properties: {
           maxResults: { type: "number", description: "Max drafts to return (1-25)", default: 10 },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_draft",
+      description: "Retrieve a specific Gmail draft by ID via Corsair. Use to read the full content of a draft before editing or sending.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string", description: "Gmail draft id" },
+        },
+        required: ["draftId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_draft",
+      description: "Permanently delete a Gmail draft via Corsair. Use only when user explicitly asks to delete a draft.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string", description: "Gmail draft id to delete" },
+        },
+        required: ["draftId"],
       },
     },
   },
