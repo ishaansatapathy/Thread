@@ -2,8 +2,14 @@ export { createChatCompletion, getOpenAiModel, isOpenAiConfigured } from "./open
 export type { ChatMessage } from "./openai";
 export { runOpenAiToolLoop } from "./openai-tools";
 export type { OpenAiConversationMessage, OpenAiToolDefinition } from "./openai-tools";
-export { isInboxAiConfigured, rankInboxThreads } from "./inbox-priority";
-export type { InboxRankInput } from "./inbox-priority";
+export { isInboxAiConfigured, rankInboxThreads, analyzeInboxThreads } from "./inbox-priority";
+export type {
+  InboxRankInput,
+  InboxAnalysisResult,
+  InboxRankItem,
+  InboxUrgency,
+  InboxPriorityCategory,
+} from "./inbox-priority";
 export { isAgentConfigured, runAgentChat } from "./agent";
 export type { AgentActionCard, AgentChatResult, AgentHistoryMessage } from "./agent";
 export {

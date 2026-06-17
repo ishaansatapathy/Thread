@@ -934,6 +934,93 @@
   flex-shrink: 0;
 }
 
+.thread-inbox-row[data-priority="critical"] {
+  border-color: rgba(239, 68, 68, 0.22);
+  background: rgba(239, 68, 68, 0.04);
+}
+
+.thread-inbox-row[data-priority="high"] {
+  border-color: rgba(249, 115, 22, 0.16);
+}
+
+.thread-priority-summary {
+  border: 1px solid var(--thread-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+}
+
+.thread-priority-summary-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--thread-muted);
+}
+
+.thread-priority-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--thread-text);
+}
+
+.thread-priority-summary-meta {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--thread-dim);
+}
+
+.thread-priority-badge-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.thread-priority-rank {
+  font-family: var(--thread-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: var(--thread-dim);
+}
+
+.thread-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.thread-priority-score {
+  font-family: var(--thread-mono, ui-monospace, monospace);
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+.thread-priority-category {
+  font-size: 10px;
+  color: var(--thread-dim);
+}
+
+.thread-priority-reason {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--thread-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .thread-inbox-search {
   display: flex;
   align-items: center;
@@ -2943,6 +3030,22 @@
 .scp-meta-sub {
   color: var(--thread-dim);
   font-size: 11.5px;
+}
+
+.scp-relationship-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.scp-meta-chip {
+  font-size: 10.5px;
+  color: var(--thread-muted);
+  border: 1px solid var(--thread-line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .scp-list {

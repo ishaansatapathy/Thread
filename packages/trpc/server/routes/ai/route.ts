@@ -3,7 +3,7 @@ import { and, eq } from "@repo/database";
 import db from "@repo/database";
 import { briefDismissalsTable, briefCacheTable } from "@repo/database/schema";
 
-import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
+import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, analyzeInboxThreads } from "@repo/services/ai";
 
 // ── DB-backed daily brief cache ───────────────────────────────────────────────
 // Persists across Railway restarts. One row per user per calendar day.
@@ -93,6 +93,26 @@ const inboxRankThreadSchema = z.object({
   from: z.string().max(320).optional(),
 });
 
+const inboxRankItemSchema = z.object({
+  id: z.string(),
+  urgency: z.enum(["critical", "high", "medium", "low", "noise"]),
+  score: z.number(),
+  reason: z.string(),
+  category: z.enum(["reply_needed", "deadline", "meeting", "billing", "fyi", "promo"]),
+});
+
+const inboxAnalysisSchema = z.object({
+  rankedIds: z.array(z.string()),
+  items: z.array(inboxRankItemSchema),
+  summary: z.object({
+    total: z.number(),
+    critical: z.number(),
+    high: z.number(),
+    replyNeeded: z.number(),
+    analyzedAt: z.string(),
+  }),
+});
+
 const contactIntelSchema = z.object({
   email: z.string(),
   name: z.string().optional(),
@@ -157,15 +177,10 @@ export const aiRouter = router({
         threads: z.array(inboxRankThreadSchema).min(1).max(50),
       }),
     )
-    .output(
-      z.object({
-        rankedIds: z.array(z.string()),
-      }),
-    )
+    .output(inboxAnalysisSchema)
     .mutation(async ({ input }) => {
       try {
-        const rankedIds = await rankInboxThreads(input.threads);
-        return { rankedIds };
+        return await analyzeInboxThreads(input.threads);
       } catch (error) {
         mapServiceError(error);
       }
