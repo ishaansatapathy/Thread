@@ -10,6 +10,7 @@ import {
   zonedWallTimeToIso,
   type FocusWindow,
 } from "./daily-brief-time";
+import { fenceEmailData } from "./agent-guard";
 import { getCalendarService } from "../calendar";
 import { getInboxService } from "../inbox";
 import { getQueueService } from "../queue";
@@ -384,7 +385,7 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
       lines.push(
         `- id=${thread.id} | from=${thread.from} | subject=${thread.subject}${waiting}`,
       );
-      if (thread.snippet) lines.push(`  snippet: ${thread.snippet.slice(0, 180)}`);
+      if (thread.snippet) lines.push(`  snippet: ${fenceEmailData(thread.snippet.slice(0, 180))}`);
     }
   }
 
