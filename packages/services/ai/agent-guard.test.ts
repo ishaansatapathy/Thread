@@ -8,6 +8,7 @@ import {
   DEFAULT_AGENT_SEND_CAP,
 } from "./agent-guard";
 import { ServiceError } from "../errors";
+import { emailQueuePayloadSchema } from "../queue/schemas";
 
 // ---------------------------------------------------------------------------
 // detectInjectionAttempt
@@ -202,5 +203,44 @@ describe("estimateTokenCount", () => {
     const short = estimateTokenCount([{ role: "user" as const, content: "Hi" }]);
     const long = estimateTokenCount([{ role: "user" as const, content: "Hi".repeat(1000) }]);
     expect(long).toBeGreaterThan(short);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// emailQueuePayloadSchema — cc/bcc fields
+// ---------------------------------------------------------------------------
+describe("emailQueuePayloadSchema", () => {
+  it("accepts a valid payload without cc/bcc", () => {
+    const result = emailQueuePayloadSchema.safeParse({
+      to: "alice@example.com",
+      subject: "Hello",
+      body: "Hi there",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts valid cc and bcc addresses", () => {
+    const result = emailQueuePayloadSchema.safeParse({
+      to: "alice@example.com",
+      subject: "Hello",
+      body: "Hi there",
+      cc: "bob@example.com",
+      bcc: "carol@example.com",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.cc).toBe("bob@example.com");
+      expect(result.data.bcc).toBe("carol@example.com");
+    }
+  });
+
+  it("rejects invalid cc address", () => {
+    const result = emailQueuePayloadSchema.safeParse({
+      to: "alice@example.com",
+      subject: "Hello",
+      body: "Hi there",
+      cc: "not-an-email",
+    });
+    expect(result.success).toBe(false);
   });
 });
