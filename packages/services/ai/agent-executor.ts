@@ -82,7 +82,10 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
           href: query ? `/inbox?focus=search` : "/inbox",
           lines: lines.slice(0, 8),
         });
-        return JSON.stringify({ threads: result.threads, count: result.threads.length, fencedLines: lines.map((l) => fenceEmailData(l)) });
+        return JSON.stringify({
+          threads: result.threads.map((t) => ({ ...t, snippet: fenceEmailData(t.snippet) })),
+          count: result.threads.length,
+        });
       }
 
       case "get_thread": {

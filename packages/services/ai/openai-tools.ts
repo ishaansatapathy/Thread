@@ -102,7 +102,10 @@ export async function runOpenAiToolLoop(
     return { content, messages: transcript };
   }
 
-  throw new ServiceError("INTERNAL", "Agent exceeded the maximum number of tool calls.");
+  throw new ServiceError(
+    "INTERNAL",
+    "I ran out of steps before completing your request. Try breaking it into smaller tasks.",
+  );
 }
 
 async function fetchOpenAiChoice(
@@ -111,7 +114,8 @@ async function fetchOpenAiChoice(
   signal: AbortSignal,
   onToken?: (delta: string) => void,
 ): Promise<{ content?: string | null; tool_calls?: ToolCall[] }> {
-  const apiKey = process.env.OPENAI_API_KEY!.trim();
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured.");
   const useStream = Boolean(onToken);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
