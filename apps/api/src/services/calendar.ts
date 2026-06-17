@@ -172,6 +172,7 @@ export class CorsairCalendarService implements CalendarService {
       maxResults?: number;
       timeZone?: string;
       pageToken?: string;
+      q?: string;
     },
   ) {
     if (!this.isConfigured()) return { events: [] };
@@ -193,6 +194,7 @@ export class CorsairCalendarService implements CalendarService {
       orderBy: "startTime",
       maxResults: Math.min(Math.max(opts.maxResults ?? 50, 1), 250),
       pageToken: opts.pageToken,
+      ...(opts.q ? { q: opts.q } : {}),
     });
 
     const events = (result.items ?? [])

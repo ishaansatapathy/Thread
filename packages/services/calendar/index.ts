@@ -46,6 +46,8 @@ export interface CalendarService {
       maxResults?: number;
       timeZone?: string;
       pageToken?: string;
+      /** Free-text search across summary, description, and attendees (Google Calendar `q` param). */
+      q?: string;
     },
   ): Promise<{ events: CalendarEvent[]; nextPageToken?: string }>;
   createEvent(

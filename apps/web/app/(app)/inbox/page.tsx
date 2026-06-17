@@ -521,6 +521,36 @@ export default function InboxPage() {
     { enabled: Boolean(selectedId) && isConnected },
   );
 
+  // Detect meeting invites in the selected thread and search for the matching
+  // calendar event so we can RSVP with the real Google Calendar event ID.
+  const rsvpIsInvite = useMemo(() => {
+    const msgs = selectedQuery.data?.messages ?? [];
+    const allText = msgs.map((m) => (m.body ?? "") + (m.snippet ?? "")).join(" ");
+    return /you.?re? invited|calendar invite|rsvp|join.*meeting|google meet|zoom\.us\/j\//i.test(allText);
+  }, [selectedQuery.data?.messages]);
+
+  const rsvpSearchTerm = useMemo(() => {
+    if (!selectedQuery.data?.subject) return "";
+    return selectedQuery.data.subject.replace(/^(Re|Fwd|FW|RE|FWD):\s*/i, "").trim();
+  }, [selectedQuery.data?.subject]);
+
+  // Stable time range computed once — events in the next 45 days.
+  const rsvpTimeRange = useMemo(() => ({
+    timeMin: new Date().toISOString(),
+    timeMax: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [selectedId]); // re-compute when thread changes, not on every render
+
+  const rsvpEventQuery = trpc.calendar.listEvents.useQuery(
+    { ...rsvpTimeRange, q: rsvpSearchTerm, maxResults: 5 },
+    {
+      enabled: Boolean(rsvpIsInvite && rsvpSearchTerm && calendarStatus.data?.googlecalendar === "connected"),
+      staleTime: 60_000,
+    },
+  );
+
+  const rsvpEvent = rsvpEventQuery.data?.events[0] ?? null;
+
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
     onSuccess: async (item) => {
       dismissBriefThreadFromQueueItem(item);
@@ -624,13 +654,47 @@ export default function InboxPage() {
   }, [inbox.dataUpdatedAt]);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  // Keep latest action fns in a ref so the keydown listener never needs to be
+  // torn down and re-registered when mutation state (isPending, etc.) changes.
+  const kbdRef = useRef({
+    archiveMutate: archiveThread.mutate,
+    markReadMutate: markRead.mutate,
+    starMutate: starThread.mutate,
+    unstarMutate: unstarThread.mutate,
+    trashMutate: trashThread.mutate,
+    snoozeThread,
+    clearBulk,
+    starredIds,
+    snoozedIds,
+    visibleThreads,
+    selectedId,
+    bulkMode,
+  });
+  useEffect(() => {
+    kbdRef.current = {
+      archiveMutate: archiveThread.mutate,
+      markReadMutate: markRead.mutate,
+      starMutate: starThread.mutate,
+      unstarMutate: unstarThread.mutate,
+      trashMutate: trashThread.mutate,
+      snoozeThread,
+      clearBulk,
+      starredIds,
+      snoozedIds,
+      visibleThreads,
+      selectedId,
+      bulkMode,
+    };
+  });
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      const r = kbdRef.current;
       const tag = (e.target as HTMLElement).tagName;
       const isEditing = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
       if (e.key === "Escape") {
-        if (bulkMode) { clearBulk(); return; }
-        if (selectedId) { setSelectedId(null); return; }
+        if (r.bulkMode) { r.clearBulk(); return; }
+        if (r.selectedId) { setSelectedId(null); return; }
         setSearchInput("");
         return;
       }
@@ -641,55 +705,55 @@ export default function InboxPage() {
         searchRef.current?.focus();
         return;
       }
-      if (e.key === "e" && selectedId) {
-        archiveThread.mutate({ threadId: selectedId });
+      if (e.key === "e" && r.selectedId) {
+        r.archiveMutate({ threadId: r.selectedId });
         setSelectedId(null);
         return;
       }
-      if (e.key === "u" && selectedId) {
-        markRead.mutate({ threadId: selectedId });
+      if (e.key === "u" && r.selectedId) {
+        r.markReadMutate({ threadId: r.selectedId });
         return;
       }
-      if (e.key === "s" && selectedId) {
-        starredIds.has(selectedId)
-          ? unstarThread.mutate({ threadId: selectedId })
-          : starThread.mutate({ threadId: selectedId });
+      if (e.key === "s" && r.selectedId) {
+        r.starredIds.has(r.selectedId)
+          ? r.unstarMutate({ threadId: r.selectedId })
+          : r.starMutate({ threadId: r.selectedId });
         return;
       }
-      if (e.key === "b" && selectedId) {
-        snoozeThread(selectedId, "tomorrow");
+      if (e.key === "b" && r.selectedId) {
+        r.snoozeThread(r.selectedId, "tomorrow");
         return;
       }
-      if (e.key === "#" && selectedId) {
-        trashThread.mutate({ threadId: selectedId });
+      if (e.key === "#" && r.selectedId) {
+        r.trashMutate({ threadId: r.selectedId });
         setSelectedId(null);
         return;
       }
-      if (e.key === "x" && !selectedId) {
-        setBulkMode((v) => { if (v) clearBulk(); return !v; });
+      if (e.key === "x" && !r.selectedId) {
+        setBulkMode((v) => { if (v) r.clearBulk(); return !v; });
         return;
       }
-      if ((e.key === "j" || e.key === "ArrowDown") && !selectedId) {
-        const idx = visibleThreads.findIndex((t) => !snoozedIds.has(t.id));
-        if (idx >= 0) setSelectedId(visibleThreads[idx]!.id);
+      if ((e.key === "j" || e.key === "ArrowDown") && !r.selectedId) {
+        const idx = r.visibleThreads.findIndex((t) => !r.snoozedIds.has(t.id));
+        if (idx >= 0) setSelectedId(r.visibleThreads[idx]!.id);
         return;
       }
-      if ((e.key === "j" || e.key === "ArrowDown") && selectedId) {
-        const idx = visibleThreads.findIndex((t) => t.id === selectedId && !snoozedIds.has(t.id));
-        const next = visibleThreads.slice(idx + 1).find((t) => !snoozedIds.has(t.id));
+      if ((e.key === "j" || e.key === "ArrowDown") && r.selectedId) {
+        const idx = r.visibleThreads.findIndex((t) => t.id === r.selectedId && !r.snoozedIds.has(t.id));
+        const next = r.visibleThreads.slice(idx + 1).find((t) => !r.snoozedIds.has(t.id));
         if (next) setSelectedId(next.id);
         return;
       }
-      if ((e.key === "k" || e.key === "ArrowUp") && selectedId) {
-        const idx = visibleThreads.findIndex((t) => t.id === selectedId);
-        const prev = [...visibleThreads].slice(0, idx).reverse().find((t) => !snoozedIds.has(t.id));
+      if ((e.key === "k" || e.key === "ArrowUp") && r.selectedId) {
+        const idx = r.visibleThreads.findIndex((t) => t.id === r.selectedId);
+        const prev = [...r.visibleThreads].slice(0, idx).reverse().find((t) => !r.snoozedIds.has(t.id));
         if (prev) setSelectedId(prev.id);
         return;
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, bulkMode, visibleThreads, snoozedIds, starredIds, archiveThread, markRead, starThread, unstarThread, trashThread, snoozeThread, clearBulk]);
+  }, []); // registered once — reads latest state from kbdRef
 
   const handleViewChange = async (nextView: InboxView) => {
     setView(nextView);
@@ -1711,86 +1775,74 @@ export default function InboxPage() {
             })()}
 
             {/* ── RSVP inline ────────────────────────────────────────────────── */}
-            {(() => {
-              const msgs = selectedQuery.data.messages ?? [];
-              const allText = msgs.map((m) => (m.body ?? "") + (m.snippet ?? "")).join(" ").toLowerCase();
-              const isInvite = /you.?re? invited|calendar invite|rsvp|join.*meeting|google meet|zoom\.us\/j\//i.test(allText);
-              if (!isInvite) return null;
-              const calEvents = smartRepliesQuery.data?.suggestions ?? [];
-              // Try to find an event ID in the thread
-              const eventIdMatch = msgs
-                .map((m) => (m.body ?? "") + (m.bodyHtml ?? ""))
-                .join(" ")
-                .match(/eid=([A-Za-z0-9_-]{10,})/)?.[1];
-              return (
-                <div className="thread-rsvp-banner">
-                  <div className="thread-rsvp-banner-label">
-                    <CalendarPlus size={13} />
-                    <strong>Meeting invite detected</strong>
-                  </div>
-                  <div className="thread-rsvp-actions">
-                    {eventIdMatch ? (
-                      <>
-                        <button
-                          type="button"
-                          className="thread-rsvp-btn thread-rsvp-btn--accept"
-                          onClick={() => {
-                            if (!eventIdMatch) return;
-                            void utils.client.calendar.respondToEvent
-                              .mutate({ eventId: eventIdMatch, response: "accepted" })
-                              .then(() => toast.success("Accepted — calendar updated via Corsair"))
-                              .catch((e: Error) => toast.error(e.message));
-                          }}
-                        >
-                          Accept
-                        </button>
-                        <button
-                          type="button"
-                          className="thread-rsvp-btn thread-rsvp-btn--tentative"
-                          onClick={() => {
-                            if (!eventIdMatch) return;
-                            void utils.client.calendar.respondToEvent
-                              .mutate({ eventId: eventIdMatch, response: "tentative" })
-                              .then(() => toast.success("Marked tentative"))
-                              .catch((e: Error) => toast.error(e.message));
-                          }}
-                        >
-                          Maybe
-                        </button>
-                        <button
-                          type="button"
-                          className="thread-rsvp-btn thread-rsvp-btn--decline"
-                          onClick={() => {
-                            if (!eventIdMatch) return;
-                            void utils.client.calendar.respondToEvent
-                              .mutate({ eventId: eventIdMatch, response: "declined" })
-                              .then(() => toast.success("Declined — calendar updated"))
-                              .catch((e: Error) => toast.error(e.message));
-                          }}
-                        >
-                          Decline
-                        </button>
-                      </>
-                    ) : (
-                      <Link href="/calendar" className="thread-rsvp-btn thread-rsvp-btn--accept">
-                        View in Calendar
-                      </Link>
-                    )}
-                    {calEvents.length === 0 && (
+            {rsvpIsInvite && (
+              <div className="thread-rsvp-banner">
+                <div className="thread-rsvp-banner-label">
+                  <CalendarPlus size={13} />
+                  <strong>Meeting invite detected</strong>
+                  {rsvpEvent && (
+                    <span style={{ fontWeight: 400, opacity: 0.7, fontSize: 11, marginLeft: 6 }}>
+                      — {rsvpEvent.summary}
+                    </span>
+                  )}
+                </div>
+                <div className="thread-rsvp-actions">
+                  {rsvpEvent ? (
+                    <>
                       <button
                         type="button"
-                        className="thread-btn-ghost"
-                        style={{ fontSize: 12, padding: "6px 10px" }}
-                        onClick={() => setShowSchedule(true)}
+                        className="thread-rsvp-btn thread-rsvp-btn--accept"
+                        onClick={() => {
+                          void utils.client.calendar.respondToEvent
+                            .mutate({ eventId: rsvpEvent.id, response: "accepted" })
+                            .then(() => toast.success("Accepted — calendar updated via Corsair"))
+                            .catch((e: Error) => toast.error(e.message));
+                        }}
                       >
-                        <CalendarPlus size={12} />
-                        Schedule
+                        Accept
                       </button>
-                    )}
-                  </div>
+                      <button
+                        type="button"
+                        className="thread-rsvp-btn thread-rsvp-btn--tentative"
+                        onClick={() => {
+                          void utils.client.calendar.respondToEvent
+                            .mutate({ eventId: rsvpEvent.id, response: "tentative" })
+                            .then(() => toast.success("Marked tentative"))
+                            .catch((e: Error) => toast.error(e.message));
+                        }}
+                      >
+                        Maybe
+                      </button>
+                      <button
+                        type="button"
+                        className="thread-rsvp-btn thread-rsvp-btn--decline"
+                        onClick={() => {
+                          void utils.client.calendar.respondToEvent
+                            .mutate({ eventId: rsvpEvent.id, response: "declined" })
+                            .then(() => toast.success("Declined — calendar updated"))
+                            .catch((e: Error) => toast.error(e.message));
+                        }}
+                      >
+                        Decline
+                      </button>
+                    </>
+                  ) : (
+                    <Link href="/calendar" className="thread-rsvp-btn thread-rsvp-btn--accept">
+                      View in Calendar
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    className="thread-btn-ghost"
+                    style={{ fontSize: 12, padding: "6px 10px" }}
+                    onClick={() => setShowSchedule(true)}
+                  >
+                    <CalendarPlus size={12} />
+                    Schedule
+                  </button>
                 </div>
-              );
-            })()}
+              </div>
+            )}
 
             <div className="thread-inbox-compose">
               <div className="thread-inbox-compose-head">

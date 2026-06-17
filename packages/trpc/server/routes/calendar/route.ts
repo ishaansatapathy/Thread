@@ -64,6 +64,8 @@ export const calendarRouter = router({
         maxResults: z.number().int().min(1).max(250).optional(),
         timeZone: z.string().max(64).optional(),
         pageToken: z.string().optional(),
+        /** Free-text search across event title, description, and attendees. */
+        q: z.string().max(200).optional(),
       }),
     )
     .output(
