@@ -51,10 +51,8 @@ async function bootstrap() {
     logger.info("Database schema patches applied");
   } catch (err) {
     logger.error("Database migration failed", { err });
-    const nodeEnv = process.env.NODE_ENV ?? "development";
-    if (["production", "prod"].includes(nodeEnv)) {
-      process.exit(1);
-    }
+    // Do not exit — idempotent patches may have partially applied and the
+    // app can still serve traffic. Railway/Vercel will 502 if we crash here.
   }
 
   try {

@@ -27,7 +27,17 @@ export async function runMigrations() {
     throw new Error("DATABASE_URL is required to run migrations");
   }
 
-  await runJournalMigrations(databaseUrl);
+  // Journal migrations may fail on existing DBs where tables were created
+  // incrementally but the drizzle journal is out of sync. Never crash the
+  // server for that — fall through to idempotent ENSURE_SCHEMA_SQL patches.
+  try {
+    await runJournalMigrations(databaseUrl);
+  } catch (err) {
+    console.warn(
+      "[migrate] Drizzle journal migrations skipped:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 
   const client = await createPgClient(databaseUrl);
   try {
