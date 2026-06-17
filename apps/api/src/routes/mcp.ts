@@ -575,9 +575,47 @@ const MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  {
+    name: "get_calendar_connection_status",
+    description: "Check whether Google Calendar is connected for the current user. Returns googlecalendar connection state.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mark_thread_unread",
+    description: "Add the UNREAD label to a Gmail thread via Corsair — the reverse of mark_thread_read. Useful for flagging threads that need revisiting.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID." },
+      },
+    },
+  },
+  {
+    name: "quick_add_event",
+    description: "Create a Google Calendar event from a natural-language text string via Corsair quickAdd. E.g. 'Lunch with Sarah tomorrow at noon' creates a real event. Faster than create_event for simple scheduling.",
+    inputSchema: {
+      type: "object",
+      required: ["text"],
+      properties: {
+        text: { type: "string", description: "Natural-language event description, e.g. 'Team standup every weekday at 10am'." },
+      },
+    },
+  },
+  {
+    name: "send_draft",
+    description: "Send an existing Gmail draft immediately via Corsair. The draft is sent and removed from the Drafts folder. Use after create_draft_email when the user confirms they want to send.",
+    inputSchema: {
+      type: "object",
+      required: ["draftId"],
+      properties: {
+        draftId: { type: "string", description: "Gmail draft ID to send." },
+      },
+    },
+  },
 ];
 
-const MCP_SERVER_VERSION = "2.0.0";
+const MCP_SERVER_VERSION = "2.1.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -1049,6 +1087,35 @@ async function callTool(
         location: args.location ? String(args.location) : undefined,
       });
       return toolResult({ success: true, eventId, updated });
+    }
+
+    case "get_calendar_connection_status": {
+      const status = await calendar.getConnectionStatus(userId);
+      return toolResult(status);
+    }
+
+    case "mark_thread_unread": {
+      const threadId = String(args.threadId ?? "");
+      await inbox.markThreadUnread(userId, threadId);
+      return toolResult({ ok: true, threadId });
+    }
+
+    case "quick_add_event": {
+      const text = String(args.text ?? "");
+      if (!text.trim()) return toolResult({ error: "text is required" });
+      const event = await calendar.quickAddEvent(userId, text);
+      return toolResult({ ok: true, event });
+    }
+
+    case "send_draft": {
+      const draftId = String(args.draftId ?? "");
+      if (!draftId) return toolResult({ error: "draftId is required" });
+      // Use the Corsair drafts.send API to send the draft immediately.
+      const corsairClient = (await import("../corsair")).getCorsair().withTenant(userId);
+      await (corsairClient.gmail.api.drafts as {
+        send: (opts: { draft: { id: string } }) => Promise<void>;
+      }).send({ draft: { id: draftId } });
+      return toolResult({ ok: true, draftId, sent: true });
     }
 
     default:

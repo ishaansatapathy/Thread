@@ -83,6 +83,95 @@ export const calendarRouter = router({
       }
     }),
 
+  quickAddEvent: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/events/quick-add"), tags: TAGS } })
+    .input(
+      z.object({
+        /** Natural language text — e.g. "Lunch with Sarah tomorrow at noon". */
+        text: z.string().min(1).max(500),
+      }),
+    )
+    .output(calendarEventSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const calendar = getCalendarService();
+        return await calendar.quickAddEvent(ctx.user.id, input.text);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  getEvent: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/events/{eventId}"), tags: TAGS } })
+    .input(z.object({ eventId: z.string().min(1) }))
+    .output(calendarEventSchema.nullable())
+    .query(async ({ ctx, input }) => {
+      try {
+        const calendar = getCalendarService();
+        return await calendar.getEvent(ctx.user.id, input.eventId);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  rescheduleEvent: protectedProcedure
+    .meta({ openapi: { method: "PATCH", path: getPath("/events/{eventId}/reschedule"), tags: TAGS } })
+    .input(
+      z.object({
+        eventId: z.string().min(1),
+        startDateTime: isoDateTimeSchema,
+        endDateTime: isoDateTimeSchema,
+        timeZone: z.string().max(64).optional(),
+        allDay: z.boolean().optional(),
+        editScope: z.enum(["instance", "series", "following"]).optional(),
+        recurringEventId: z.string().optional(),
+      }),
+    )
+    .output(calendarEventSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        if (Number.isNaN(Date.parse(input.startDateTime)) || Number.isNaN(Date.parse(input.endDateTime))) {
+          throw new Error("Invalid ISO date/time");
+        }
+        if (Date.parse(input.endDateTime) <= Date.parse(input.startDateTime)) {
+          throw new Error("End date/time must be after start date/time");
+        }
+        const calendar = getCalendarService();
+        return await calendar.updateEventTimes(
+          ctx.user.id,
+          input.eventId,
+          { startDateTime: input.startDateTime, endDateTime: input.endDateTime, timeZone: input.timeZone, allDay: input.allDay },
+          { editScope: input.editScope, recurringEventId: input.recurringEventId },
+        );
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  patchEventDetails: protectedProcedure
+    .meta({ openapi: { method: "PATCH", path: getPath("/events/{eventId}/details"), tags: TAGS } })
+    .input(
+      z.object({
+        eventId: z.string().min(1),
+        summary: z.string().max(200).optional(),
+        description: z.string().max(5000).optional(),
+        location: z.string().max(500).optional(),
+      }),
+    )
+    .output(calendarEventSchema.nullable())
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const calendar = getCalendarService();
+        return await calendar.patchEventDetails(ctx.user.id, input.eventId, {
+          summary: input.summary,
+          description: input.description,
+          location: input.location,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   createEvent: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/events"), tags: TAGS } })
     .input(
@@ -95,6 +184,9 @@ export const calendarRouter = router({
         timeZone: z.string().max(64).optional(),
         attendeeEmails: z.array(z.string().email()).max(20).optional(),
         allDay: z.boolean().optional(),
+        /** Auto-add a Google Meet video conference link. Defaults to true when attendees provided. */
+        addGoogleMeet: z.boolean().optional(),
+        recurrence: z.array(z.string().max(200)).max(5).optional(),
       }),
     )
     .output(calendarEventSchema)

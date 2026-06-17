@@ -575,6 +575,34 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "mark_thread_unread",
+      description: "Add the UNREAD label to a Gmail thread via Corsair — the reverse of mark_thread_read. Useful for flagging threads that need revisiting.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread ID." },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "quick_add_event",
+      description: "Create a Google Calendar event from a natural-language text string via Corsair quickAdd. Faster than queue_calendar_invite for simple events. E.g. 'Lunch with Sarah tomorrow at noon'.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Natural-language event description." },
+        },
+        required: ["text"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {

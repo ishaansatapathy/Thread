@@ -5,7 +5,7 @@
  * `executeTool` function from this single source of truth, eliminating the ~450-
  * line duplication that previously existed between the two files.
  *
- * 34 tools — in parity with the MCP server.
+ * 43 tools — in parity with the MCP server.
  */
 
 import { logger } from "@repo/logger";
@@ -546,6 +546,21 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         });
         actions.push({ kind: "calendar", title: "Event updated", detail: args.summary ? String(args.summary) : eventId, href: "/calendar" });
         return JSON.stringify({ success: true, eventId, updated });
+      }
+
+      case "mark_thread_unread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.markThreadUnread(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, action: "marked_unread" });
+      }
+
+      case "quick_add_event": {
+        const text = String(args.text ?? "").trim();
+        if (!text) return JSON.stringify({ success: false, error: "text is required" });
+        const event = await calendar.quickAddEvent(tenantId, text);
+        actions.push({ kind: "calendar", title: "Event created", detail: event.summary, href: "/calendar" });
+        return JSON.stringify({ success: true, event });
       }
 
       default:

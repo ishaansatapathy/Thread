@@ -140,6 +140,8 @@ export async function gatherDailyBriefContext(input: {
   userEmail?: string;
   displayName?: string | null;
   timeZone?: string;
+  /** Thread IDs the user has dismissed from previous briefs — excluded from this brief. */
+  dismissedThreadIds?: string[];
 }): Promise<BriefGatherResult> {
   const timeZone = input.timeZone?.trim() || "UTC";
   const userName = displayNameFromEmail(input.userEmail, input.displayName);
@@ -227,11 +229,16 @@ export async function gatherDailyBriefContext(input: {
     ...invoiceList.threads,
   ]);
 
-  let rankedThreadIds = merged.map((t) => t.id);
-  if (gmailConnected && merged.length > 1 && isOpenAiConfigured()) {
+  const dismissedSet = new Set(input.dismissedThreadIds ?? []);
+  const filteredMerged = dismissedSet.size > 0
+    ? merged.filter((t) => !dismissedSet.has(t.id))
+    : merged;
+
+  let rankedThreadIds = filteredMerged.map((t) => t.id);
+  if (gmailConnected && filteredMerged.length > 1 && isOpenAiConfigured()) {
     try {
       rankedThreadIds = await rankInboxThreads(
-        merged.slice(0, 20).map((t) => ({
+        filteredMerged.slice(0, 20).map((t) => ({
           id: t.id,
           snippet: t.snippet,
           subject: t.subject,
@@ -239,7 +246,7 @@ export async function gatherDailyBriefContext(input: {
         })),
       );
     } catch {
-      rankedThreadIds = merged.map((t) => t.id);
+      rankedThreadIds = filteredMerged.map((t) => t.id);
     }
   }
 
@@ -338,8 +345,8 @@ export async function gatherDailyBriefContext(input: {
       title: item.title,
       kind: item.kind,
     })),
-    deadlineThreadIds: deadlineList.threads.map((t) => t.id),
-    invoiceThreadIds: invoiceList.threads.map((t) => t.id),
+    deadlineThreadIds: deadlineList.threads.map((t) => t.id).filter((id) => !dismissedSet.has(id)),
+    invoiceThreadIds: invoiceList.threads.map((t) => t.id).filter((id) => !dismissedSet.has(id)),
     waitingOn: waitingOnList.threads
       .filter((t) => {
         // Only include if the last message was from us (i.e. they haven't replied).
@@ -380,6 +387,8 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
   }
 
   if (context.threads.length > 0) {
+    const deadlineSet = new Set(context.deadlineThreadIds);
+    const invoiceSet = new Set(context.invoiceThreadIds);
     lines.push("", "Email threads (most important first):");
     for (const thread of context.threads) {
       const waiting =
@@ -388,11 +397,26 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
           : thread.awaitingReply
             ? " | awaiting reply"
             : "";
+      const tags: string[] = [];
+      if (deadlineSet.has(thread.id)) tags.push("DEADLINE");
+      if (invoiceSet.has(thread.id)) tags.push("INVOICE");
+      const tagStr = tags.length > 0 ? ` | [${tags.join(",")}]` : "";
       lines.push(
-        `- id=${thread.id} | from=${thread.from} | subject=${thread.subject}${waiting}`,
+        `- id=${thread.id} | from=${thread.from} | subject=${thread.subject}${waiting}${tagStr}`,
       );
       if (thread.snippet) lines.push(`  snippet: ${fenceEmailData(thread.snippet.slice(0, 180))}`);
     }
+  }
+
+  // Surface deadline/invoice threads that weren't in the top-detail window but are still important.
+  const detailIds = new Set(context.threads.map((t) => t.id));
+  const extraDeadlines = context.deadlineThreadIds.filter((id) => !detailIds.has(id));
+  const extraInvoices = context.invoiceThreadIds.filter((id) => !detailIds.has(id));
+  if (extraDeadlines.length > 0) {
+    lines.push("", `Deadline/urgent threads not in detail (IDs only): ${extraDeadlines.join(", ")}`);
+  }
+  if (extraInvoices.length > 0) {
+    lines.push("", `Invoice/payment threads not in detail (IDs only): ${extraInvoices.join(", ")}`);
   }
 
   if (context.meetings.length > 0) {
