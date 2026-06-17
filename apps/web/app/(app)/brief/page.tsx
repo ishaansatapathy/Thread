@@ -325,6 +325,7 @@ export default function BriefPage() {
   };
 
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
+  const utils = trpc.useUtils();
   const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
     { staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 },
@@ -333,8 +334,12 @@ export default function BriefPage() {
   const handleForceRefresh = async () => {
     setIsForceRefreshing(true);
     try {
-      // Bypass server cache — re-fetches from Corsair Gmail + Calendar + OpenAI
-      await briefQuery.refetch();
+      // Pass refresh:true to bypass the 5-min server-side cache and re-fetch
+      // live from Corsair Gmail + Calendar + OpenAI.
+      const fresh = await utils.ai.dailyBrief.fetch({ timeZone, refresh: true });
+      // Push the fresh response into the normal (non-refresh) query's cache slot
+      // so briefQuery.data updates without a second round-trip.
+      utils.ai.dailyBrief.setData({ timeZone }, fresh);
     } finally {
       setIsForceRefreshing(false);
     }
