@@ -7,6 +7,7 @@
  * Flow: Corsair Gmail (full thread) → OpenAI → 3 reply options
  */
 import { getInboxService } from "../inbox";
+import { normalizeEmail } from "./daily-brief-time";
 import { createChatCompletion, isOpenAiConfigured } from "./openai";
 
 export type SmartReplySuggestion = {
@@ -74,14 +75,13 @@ export async function getSmartReplies(input: {
     return { suggestions: [], replyTo: "", replyToName: "" };
   }
 
-  // Who to reply to — last sender that isn't the user
-  const userEmail = input.userEmail?.toLowerCase().trim() ?? "";
+  // Who to reply to — last sender that isn't the user (exact email match)
+  const userEmailNorm = normalizeEmail(input.userEmail) ?? "";
   const lastExternalMessage = [...(thread.messages ?? [])]
     .reverse()
     .find((m) => {
-      const fromEmail = (m.from ?? "").toLowerCase();
-      return !fromEmail.includes(userEmail.split("@")[0] ?? "__none__") &&
-        fromEmail !== userEmail;
+      const fromNorm = normalizeEmail(m.from) ?? (m.from ?? "").toLowerCase().trim();
+      return fromNorm !== userEmailNorm && fromNorm.length > 0;
     });
 
   const replyToRaw = lastExternalMessage?.from ?? thread.from ?? "";

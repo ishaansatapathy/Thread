@@ -508,7 +508,7 @@ const MCP_TOOLS: McpTool[] = [
   },
 ];
 
-const MCP_SERVER_VERSION = "1.4.0";
+const MCP_SERVER_VERSION = "1.5.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -849,7 +849,8 @@ async function callTool(
 
     case "respond_to_event": {
       const eventId = String(args.eventId ?? "").trim();
-      const response = String(args.response ?? "").trim() as "accepted" | "declined" | "tentative";
+      const responseRaw = String(args.response ?? "").trim().toLowerCase();
+      const response = responseRaw as "accepted" | "declined" | "tentative";
       if (!eventId || !["accepted", "declined", "tentative"].includes(response)) {
         return toolResult({ success: false, error: "eventId and response (accepted/declined/tentative) are required" });
       }

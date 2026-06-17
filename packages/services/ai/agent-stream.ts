@@ -112,7 +112,7 @@ export async function runAgentChatStream(
           kind: "thread",
           title: thread.subject?.trim() || "Thread",
           detail: thread.fromName || thread.from,
-          href: `/inbox`,
+          href: `/inbox?thread=${encodeURIComponent(threadId)}`,
           lines: (thread.messages ?? []).slice(0, 5).map((m) => `${m.from ?? "?"}: ${m.body.slice(0, 200)}`),
         });
         return JSON.stringify({ thread: { ...thread, messages: fencedMessages } });
@@ -366,7 +366,8 @@ export async function runAgentChatStream(
 
       case "respond_to_event": {
         const eventId = String(args.eventId ?? "").trim();
-        const response = String(args.response ?? "").trim() as "accepted" | "declined" | "tentative";
+        const responseRaw = String(args.response ?? "").trim().toLowerCase();
+        const response = responseRaw as "accepted" | "declined" | "tentative";
         if (!eventId || !["accepted", "declined", "tentative"].includes(response)) {
           return JSON.stringify({ success: false, error: "eventId and response (accepted/declined/tentative) are required" });
         }
