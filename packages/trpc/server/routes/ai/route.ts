@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { and, eq } from "@repo/database";
+import db from "@repo/database";
+import { briefDismissalsTable } from "@repo/database/schema";
 
 import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
 
@@ -252,6 +255,62 @@ export const aiRouter = router({
         });
         setCachedBrief(ctx.user.id, timeZone, brief);
         return brief;
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Return all thread IDs the user has dismissed from their daily brief (server-persisted). */
+  getBriefDismissals: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/brief-dismissals"), tags: TAGS } })
+    .input(z.object({}))
+    .output(z.object({ dismissedThreadIds: z.array(z.string()) }))
+    .query(async ({ ctx }) => {
+      try {
+        const rows = await db
+          .select({ threadId: briefDismissalsTable.threadId })
+          .from(briefDismissalsTable)
+          .where(eq(briefDismissalsTable.userId, ctx.user.id));
+        return { dismissedThreadIds: rows.map((r) => r.threadId) };
+      } catch (error) {
+        // Graceful fallback — UI falls back to localStorage if DB is unavailable.
+        mapServiceError(error);
+      }
+    }),
+
+  /** Dismiss a thread from the daily brief — persisted to DB per user. */
+  dismissBriefThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/brief-dismissals"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await db
+          .insert(briefDismissalsTable)
+          .values({ userId: ctx.user.id, threadId: input.threadId })
+          .onConflictDoNothing();
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Un-dismiss a thread from the daily brief (e.g. user wants to see it again). */
+  undismissBriefThread: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/brief-dismissals"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await db
+          .delete(briefDismissalsTable)
+          .where(
+            and(
+              eq(briefDismissalsTable.userId, ctx.user.id),
+              eq(briefDismissalsTable.threadId, input.threadId),
+            ),
+          );
+        return { ok: true };
       } catch (error) {
         mapServiceError(error);
       }

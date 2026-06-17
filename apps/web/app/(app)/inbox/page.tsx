@@ -228,6 +228,8 @@ export default function InboxPage() {
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
   const [replyBody, setReplyBody] = useState("");
+  const [replyCc, setReplyCc] = useState("");
+  const [replyBcc, setReplyBcc] = useState("");
   const [showSchedule, setShowSchedule] = useState(false);
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingStart, setMeetingStart] = useState(() =>
@@ -434,6 +436,8 @@ export default function InboxPage() {
         toast.success(msg.title);
       }
       setReplyBody("");
+      setReplyCc("");
+      setReplyBcc("");
       setShowCompose(false);
       setComposeTo("");
       setComposeCc("");
@@ -663,6 +667,8 @@ export default function InboxPage() {
 
   const emailPayload = {
     to: replyTo,
+    cc: replyCc.trim() || undefined,
+    bcc: replyBcc.trim() || undefined,
     subject: replySubjectValue,
     body: replyBody,
     threadId: selectedQuery.data?.id,
@@ -1378,6 +1384,26 @@ export default function InboxPage() {
                 className="thread-set-input"
                 value={replyTo}
                 onChange={(event) => setReplyTo(event.target.value)}
+              />
+              <label className="thread-set-label" htmlFor="reply-cc">
+                Cc
+              </label>
+              <input
+                id="reply-cc"
+                className="thread-set-input"
+                placeholder="Optional — comma-separated"
+                value={replyCc}
+                onChange={(event) => setReplyCc(event.target.value)}
+              />
+              <label className="thread-set-label" htmlFor="reply-bcc">
+                Bcc
+              </label>
+              <input
+                id="reply-bcc"
+                className="thread-set-input"
+                placeholder="Optional — comma-separated"
+                value={replyBcc}
+                onChange={(event) => setReplyBcc(event.target.value)}
               />
               <label className="thread-set-label" htmlFor="reply-subject">
                 Subject
