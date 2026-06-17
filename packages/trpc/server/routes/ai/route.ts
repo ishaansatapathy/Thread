@@ -5,6 +5,8 @@ import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
 import { getThreadContext } from "@repo/services/ai/thread-context";
 import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
 import { getSmartReplies } from "@repo/services/ai/smart-reply";
+import { getContactIntel } from "@repo/services/ai/contact-intel";
+import { summarizeThread } from "@repo/services/ai/summarize-thread";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -108,6 +110,39 @@ export const aiRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         return await getSmartReplies({
+          tenantId: ctx.user.id,
+          threadId: input.threadId,
+          userEmail: ctx.user.email,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Contact intelligence — relationship summary for an email contact via Corsair Gmail + OpenAI. */
+  contactIntel: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/contact-intel"), tags: TAGS } })
+    .input(z.object({ email: z.string().email(), name: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getContactIntel({
+          tenantId: ctx.user.id,
+          email: input.email,
+          name: input.name,
+          userEmail: ctx.user.email,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Thread summary — key decisions, action items, and next steps via Corsair Gmail + OpenAI. */
+  summarizeThread: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/summarize-thread"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await summarizeThread({
           tenantId: ctx.user.id,
           threadId: input.threadId,
           userEmail: ctx.user.email,

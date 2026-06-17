@@ -218,7 +218,7 @@ Thread exposes a full [Model Context Protocol](https://modelcontextprotocol.io) 
 | `apply_label` | Apply label to a thread |
 | `remove_label` | Remove label from a thread |
 
-Headless MCP auth: set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` (bound pair — no arbitrary user impersonation). See `mcp-server.json` (v1.2.0, **15 tools**).
+Headless MCP auth: set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` (bound pair — no arbitrary user impersonation). See `mcp-server.json` (v1.5.0, **34 tools**).
 
 ### Using with Cursor / Claude
 
@@ -425,7 +425,7 @@ Authorization: Bearer <THREAD_MCP_API_KEY>
 
 The API key is scoped to the user id in `THREAD_MCP_USER_ID` — arbitrary impersonation is not supported.
 
-See `mcp-server.json` for all 11 tools.
+See `mcp-server.json` for all 34 tools.
 
 ### 5. Post-deploy smoke
 

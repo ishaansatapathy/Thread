@@ -20,7 +20,7 @@ const historyMessageSchema = z.object({
 const MAX_STORED_MESSAGES = 40;
 
 const actionCardSchema = z.object({
-  kind: z.enum(["email_queued", "calendar_queued", "inbox_search", "inbox_ranked", "queue_list", "thread"]),
+  kind: z.enum(["email_queued", "calendar_queued", "inbox_search", "inbox_ranked", "queue_list", "thread", "calendar"]),
   title: z.string(),
   detail: z.string().optional(),
   href: z.string().optional(),
