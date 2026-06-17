@@ -1,6 +1,7 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "pnpm install --frozen-lockfile --prod=false && pnpm --filter @repo/api run build"
+# NODE_ENV=production on Railway skips devDependencies (tsup). Force dev install for the build.
+buildCommand = "NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @repo/api run build"
 
 [deploy]
 startCommand = "node apps/api/dist/index.js"
