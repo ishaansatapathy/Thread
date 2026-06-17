@@ -303,25 +303,46 @@ export default function BriefPage() {
     }
   }, []);
 
-  const [dismissedThreadIds, setDismissedThreadIds] = useState<Set<string>>(() => new Set());
+  // Server-persisted dismissals — merged with localStorage for instant optimistic UI.
+  const [dismissedThreadIds, setDismissedThreadIds] = useState<Set<string>>(() => getDismissedBriefThreadIds());
 
-  useEffect(() => {
-    setDismissedThreadIds(getDismissedBriefThreadIds());
-  }, []);
+  const dismissalsQuery = trpc.ai.getBriefDismissals.useQuery({}, { staleTime: 60_000 });
+  const serverDismissMutation = trpc.ai.dismissBriefThread.useMutation();
 
+  // Merge server dismissals into local state whenever the query resolves.
   useEffect(() => {
-    const syncDismissals = () => setDismissedThreadIds(getDismissedBriefThreadIds());
-    window.addEventListener("focus", syncDismissals);
-    document.addEventListener("visibilitychange", syncDismissals);
+    if (!dismissalsQuery.data) return;
+    setDismissedThreadIds((prev) => {
+      const merged = new Set(prev);
+      for (const id of dismissalsQuery.data.dismissedThreadIds) merged.add(id);
+      return merged;
+    });
+  }, [dismissalsQuery.data]);
+
+  // Re-sync from localStorage on focus (cross-tab support).
+  useEffect(() => {
+    const syncLocal = () => {
+      const local = getDismissedBriefThreadIds();
+      setDismissedThreadIds((prev) => {
+        const merged = new Set(prev);
+        for (const id of local) merged.add(id);
+        return merged;
+      });
+    };
+    window.addEventListener("focus", syncLocal);
+    document.addEventListener("visibilitychange", syncLocal);
     return () => {
-      window.removeEventListener("focus", syncDismissals);
-      document.removeEventListener("visibilitychange", syncDismissals);
+      window.removeEventListener("focus", syncLocal);
+      document.removeEventListener("visibilitychange", syncLocal);
     };
   }, []);
 
   const markBriefThreadDismissed = (threadId: string) => {
+    // Optimistic local update + localStorage for cross-tab
     dismissBriefThread(threadId);
     setDismissedThreadIds((prev) => new Set([...prev, threadId]));
+    // Persist to DB in background
+    serverDismissMutation.mutate({ threadId });
   };
 
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
@@ -365,8 +386,15 @@ export default function BriefPage() {
     const stillActive = new Set(
       brief.needsAttention.map((i) => i.threadId).filter(Boolean) as string[],
     );
+    // Prune localStorage entries that are no longer in the brief
     pruneBriefDismissals(stillActive);
-    setDismissedThreadIds(getDismissedBriefThreadIds());
+    // Re-read localStorage after pruning, then merge with server state
+    const local = getDismissedBriefThreadIds();
+    setDismissedThreadIds((prev) => {
+      const merged = new Set(local);
+      for (const id of prev) merged.add(id);
+      return merged;
+    });
   }, [brief?.generatedAt, brief?.needsAttention]);
 
   const visibleNeedsAttention = useMemo(

@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 
 import { agentChatHistoryTable } from "./models/agent-chat-history";
+import { briefDismissalsTable } from "./models/brief-dismissals";
 import { threadMailCacheTable } from "./models/mail-cache";
 import { threadQueueItemsTable } from "./models/queue-item";
 import { threadContactsTable } from "./models/thread-contact";
@@ -10,6 +11,7 @@ export const usersRelations = relations(usersTable, ({ many, one }) => ({
   queueItems: many(threadQueueItemsTable),
   contacts: many(threadContactsTable),
   mailCache: many(threadMailCacheTable),
+  briefDismissals: many(briefDismissalsTable),
   agentChatHistory: one(agentChatHistoryTable, {
     fields: [usersTable.id],
     references: [agentChatHistoryTable.userId],
@@ -40,6 +42,13 @@ export const threadMailCacheRelations = relations(threadMailCacheTable, ({ one }
 export const agentChatHistoryRelations = relations(agentChatHistoryTable, ({ one }) => ({
   user: one(usersTable, {
     fields: [agentChatHistoryTable.userId],
+    references: [usersTable.id],
+  }),
+}));
+
+export const briefDismissalsRelations = relations(briefDismissalsTable, ({ one }) => ({
+  user: one(usersTable, {
+    fields: [briefDismissalsTable.userId],
     references: [usersTable.id],
   }),
 }));
