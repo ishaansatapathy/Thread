@@ -6,7 +6,7 @@ import { logger } from "@repo/logger";
 import { cacheGet, cacheSet, cacheIncr } from "../cache/kv-store";
 import type { Request, Response } from "express";
 
-import { env } from "../env";
+import { env, getGoogleOAuthConfig } from "../env";
 import { getGoogleOAuth2Client, isGoogleOAuthConfigured } from "../clients/google-oauth";
 import { isDevEmailLogging, sendEmail } from "./email";
 import { AuthError, toAuthError } from "./errors";
@@ -583,16 +583,25 @@ class AuthService {
     return toPublicUser(updated);
   }
 
-  public async handleGoogleCallback(code: string, res: Response, returnTo = "/"): Promise<string> {
+  public async handleGoogleCallback(
+    code: string,
+    res: Response,
+    returnTo = "/",
+    redirectUri?: string,
+  ): Promise<string> {
     if (!isGoogleOAuthConfigured()) {
       throw new AuthError("INTERNAL", "Google OAuth is not configured");
     }
 
     const safeReturnTo = sanitizeRedirectPath(returnTo);
+    const tokenRedirectUri = redirectUri?.trim() || getGoogleOAuthConfig().redirectUri;
+    if (!tokenRedirectUri) {
+      throw new AuthError("INTERNAL", "Google OAuth redirect URI is not configured");
+    }
 
     try {
       const client = getGoogleOAuth2Client();
-      const { tokens } = await client.getToken(code);
+      const { tokens } = await client.getToken({ code, redirect_uri: tokenRedirectUri });
       client.setCredentials(tokens);
 
       if (!tokens.id_token) {
