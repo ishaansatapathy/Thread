@@ -8,6 +8,7 @@ import { agentChatHistoryTable } from "@repo/database/schema";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
+import { invalidateBriefCache } from "../ai/route";
 
 const TAGS = ["Agent"];
 const getPath = generatePath("/agent");
@@ -67,11 +68,17 @@ export const agentRouter = router({
         historyLength: input.history?.length ?? 0,
       });
       try {
-        return await runAgentChat(ctx.user.id, {
+        const result = await runAgentChat(ctx.user.id, {
           message: input.message,
           history: input.history,
           userEmail: ctx.user.email,
         });
+        // If the agent took any outbound actions, invalidate the brief cache so
+        // the user sees accurate "Needs attention" items on /brief immediately.
+        if (result.actions.some((a) => a.kind === "email_queued" || a.kind === "calendar_queued")) {
+          invalidateBriefCache(ctx.user.id);
+        }
+        return result;
       } catch (error) {
         mapServiceError(error);
       }

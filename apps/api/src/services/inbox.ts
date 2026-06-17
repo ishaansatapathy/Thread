@@ -25,6 +25,25 @@ import {
   suggestReplyTo,
 } from "../utils/gmail-message";
 import { ensureCorsairTenant } from "./corsair-tenant";
+
+// ── Corsair SDK typed wrappers ────────────────────────────────────────────────
+// The Corsair SDK's TypeScript types do not expose `threads.trash` or
+// `drafts.delete` directly. These thin wrappers centralise the one-line cast
+// so it never leaks into business logic, and document the SDK limitation.
+
+function corsairGmailThreadsTrash(
+  threads: object,
+  id: string,
+): Promise<void> {
+  return (threads as { trash: (opts: { id: string }) => Promise<void> }).trash({ id });
+}
+
+function corsairGmailDraftsDelete(
+  drafts: object,
+  id: string,
+): Promise<void> {
+  return (drafts as { delete: (opts: { id: string }) => Promise<void> }).delete({ id });
+}
 import type { SelectMailCacheRow } from "@repo/database/schema";
 
 import { mailCache, type CachedThreadMetadata } from "./mail-cache";
@@ -835,18 +854,14 @@ export class CorsairInboxService implements InboxService {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") throw new Error("Gmail is not connected");
     const corsair = getCorsair().withTenant(tenantId);
-    await (corsair.gmail.api.threads as unknown as {
-      trash: (opts: { id: string }) => Promise<void>;
-    }).trash({ id: threadId });
+    await corsairGmailThreadsTrash(corsair.gmail.api.threads, threadId);
   }
 
   async deleteDraft(tenantId: string, draftId: string): Promise<void> {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") throw new Error("Gmail is not connected");
     const corsair = getCorsair().withTenant(tenantId);
-    await (corsair.gmail.api.drafts as unknown as {
-      delete: (opts: { id: string }) => Promise<void>;
-    }).delete({ id: draftId });
+    await corsairGmailDraftsDelete(corsair.gmail.api.drafts, draftId);
   }
 
   async registerGmailWatch(tenantId: string): Promise<void> {
