@@ -4,6 +4,7 @@ export * from "./models/mail-cache";
 export * from "./models/thread-contact";
 export * from "./models/agent-chat-history";
 export * from "./models/brief-dismissals";
+export * from "./models/brief-cache";
 export * from "./models/gmail-state";
 export * from "./models/calendar-state";
 export * from "./relations";

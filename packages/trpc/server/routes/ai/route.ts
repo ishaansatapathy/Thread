@@ -1,40 +1,77 @@
 import { z } from "zod";
 import { and, eq } from "@repo/database";
 import db from "@repo/database";
-import { briefDismissalsTable } from "@repo/database/schema";
+import { briefDismissalsTable, briefCacheTable } from "@repo/database/schema";
 
 import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, rankInboxThreads } from "@repo/services/ai";
 
-// ── Server-side brief cache (5 min TTL per user) ─────────────────────────────
-// Each generateDailyBrief call makes 6+ Corsair API round-trips + OpenAI.
-// Caching prevents hammering both services on every browser focus event.
-const briefCache = new Map<string, { data: z.infer<typeof dailyBriefSchema>; expiresAt: number }>();
-const BRIEF_CACHE_TTL_MS = 5 * 60 * 1000;
+// ── DB-backed daily brief cache ───────────────────────────────────────────────
+// Persists across Railway restarts. One row per user per calendar day.
+// Falls back to in-memory 5-min cache on DB errors so the route stays live.
 
-function getCachedBrief(tenantId: string, timeZone: string) {
-  const key = `${tenantId}:${timeZone}`;
-  const entry = briefCache.get(key);
-  if (!entry || entry.expiresAt <= Date.now()) {
-    briefCache.delete(key);
+const memBriefCache = new Map<string, { data: z.infer<typeof dailyBriefSchema>; expiresAt: number }>();
+
+function todayDateKey(timeZone: string): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: timeZone || "UTC" });
+}
+
+async function getDbCachedBrief(
+  userId: string,
+  timeZone: string,
+): Promise<z.infer<typeof dailyBriefSchema> | null> {
+  try {
+    const dateKey = todayDateKey(timeZone);
+    const rows = await db
+      .select()
+      .from(briefCacheTable)
+      .where(and(eq(briefCacheTable.userId, userId), eq(briefCacheTable.dateKey, dateKey)))
+      .limit(1);
+    if (!rows[0]) return null;
+    return dailyBriefSchema.parse(JSON.parse(rows[0].briefJson));
+  } catch {
+    // DB miss or parse error — regenerate
     return null;
   }
+}
+
+async function setDbCachedBrief(
+  userId: string,
+  timeZone: string,
+  data: z.infer<typeof dailyBriefSchema>,
+): Promise<void> {
+  try {
+    const dateKey = todayDateKey(timeZone);
+    await db
+      .insert(briefCacheTable)
+      .values({ userId, dateKey, briefJson: JSON.stringify(data) })
+      .onConflictDoUpdate({
+        target: [briefCacheTable.userId, briefCacheTable.dateKey],
+        set: { briefJson: JSON.stringify(data), generatedAt: new Date() },
+      });
+  } catch {
+    // Non-fatal — client still gets the brief
+  }
+}
+
+/** In-memory fallback for when DB is unavailable (5 min TTL). */
+function getMemCached(userId: string): z.infer<typeof dailyBriefSchema> | null {
+  const entry = memBriefCache.get(userId);
+  if (!entry || entry.expiresAt <= Date.now()) { memBriefCache.delete(userId); return null; }
   return entry.data;
 }
-
-function setCachedBrief(tenantId: string, timeZone: string, data: z.infer<typeof dailyBriefSchema>) {
-  const key = `${tenantId}:${timeZone}`;
-  briefCache.set(key, { data, expiresAt: Date.now() + BRIEF_CACHE_TTL_MS });
-  // Prevent unbounded growth — evict oldest entry when cache exceeds 500 users.
-  if (briefCache.size > 500) {
-    const oldest = briefCache.keys().next().value;
-    if (oldest) briefCache.delete(oldest);
-  }
+function setMemCached(userId: string, data: z.infer<typeof dailyBriefSchema>) {
+  memBriefCache.set(userId, { data, expiresAt: Date.now() + 5 * 60 * 1000 });
+  if (memBriefCache.size > 500) { const k = memBriefCache.keys().next().value; if (k) memBriefCache.delete(k); }
 }
 
-export function invalidateBriefCache(tenantId: string) {
-  for (const key of briefCache.keys()) {
-    if (key.startsWith(`${tenantId}:`)) briefCache.delete(key);
-  }
+export async function invalidateBriefCache(tenantId: string, timeZone = "UTC") {
+  memBriefCache.delete(tenantId);
+  try {
+    const dateKey = todayDateKey(timeZone);
+    await db
+      .delete(briefCacheTable)
+      .where(and(eq(briefCacheTable.userId, tenantId), eq(briefCacheTable.dateKey, dateKey)));
+  } catch { /* non-fatal */ }
 }
 import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
 import { getThreadContext } from "@repo/services/ai/thread-context";
@@ -229,7 +266,7 @@ export const aiRouter = router({
       }
     }),
 
-  /** Daily brief — cached per-user for 5 min to avoid 6+ Corsair calls per refresh. */
+  /** Daily brief — cached per-user per day in DB (falls back to 5-min memory cache). */
   dailyBrief: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/daily-brief"), tags: TAGS } })
     .input(
@@ -244,8 +281,10 @@ export const aiRouter = router({
       const timeZone = input.timeZone?.trim() || "UTC";
       try {
         if (!input.refresh) {
-          const cached = getCachedBrief(ctx.user.id, timeZone);
-          if (cached) return cached;
+          const dbCached = await getDbCachedBrief(ctx.user.id, timeZone);
+          if (dbCached) return dbCached;
+          const memCached = getMemCached(ctx.user.id);
+          if (memCached) return memCached;
         }
         const brief = await generateDailyBrief({
           tenantId: ctx.user.id,
@@ -253,7 +292,9 @@ export const aiRouter = router({
           displayName: ctx.user.displayName ?? ctx.user.fullName,
           timeZone,
         });
-        setCachedBrief(ctx.user.id, timeZone, brief);
+        // Persist to DB (daily) + memory (5 min fallback) — fire-and-forget.
+        setDbCachedBrief(ctx.user.id, timeZone, brief).catch(() => {});
+        setMemCached(ctx.user.id, brief);
         return brief;
       } catch (error) {
         mapServiceError(error);
