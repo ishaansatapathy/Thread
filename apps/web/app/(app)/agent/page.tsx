@@ -21,6 +21,11 @@ import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { AgentMentionInput } from "~/components/app/agent-mention-input";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import {
+  dismissBriefThread,
+  dismissBriefThreadFromQueueItem,
+  dismissBriefThreadsFromAgentActions,
+} from "~/lib/brief-dismissals";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -111,9 +116,11 @@ function ActionPanel({
 }) {
   const utils = trpc.useUtils();
   const approve = trpc.queue.approve.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (item) => {
+      dismissBriefThreadFromQueueItem(item);
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
+      await utils.ai.dailyBrief.invalidate();
       toast.success("Approved from Agent panel");
     },
     onError: (e) => toast.error(e.message),
@@ -401,6 +408,7 @@ export default function AgentPage() {
                   });
                 } else if (currentEvent === "complete") {
                   const reply = String(data.reply ?? "");
+                  const actions = (data.actions as ActionCard[]) ?? [];
                   setMessages((prev) => {
                     const last = prev[prev.length - 1];
                     if (last?.role === "assistant") {
@@ -408,9 +416,22 @@ export default function AgentPage() {
                     }
                     return [...prev, { role: "assistant", content: reply }];
                   });
-                  setLastActions((data.actions as ActionCard[]) ?? []);
+                  setLastActions(actions);
                   setStreamStatus(null);
+                  dismissBriefThreadsFromAgentActions(actions);
+                  const urlThreadId = searchParams.get("thread")?.trim();
+                  if (
+                    urlThreadId &&
+                    actions.some(
+                      (a) =>
+                        a.kind === "email_queued" ||
+                        (a.kind === "thread" && a.href?.includes(urlThreadId)),
+                    )
+                  ) {
+                    dismissBriefThread(urlThreadId);
+                  }
                   void utils.queue.pendingCount.invalidate();
+                  void utils.ai.dailyBrief.invalidate();
                 } else if (currentEvent === "error") {
                   throw new Error(String(data.message ?? "Agent error"));
                 }

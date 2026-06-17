@@ -40,6 +40,7 @@ export type AgentActionCard = {
   lines?: string[];
   disposition?: "sent" | "queued";
   queueItemId?: string;
+  threadId?: string;
 };
 
 export type AgentChatResult = {
@@ -242,9 +243,14 @@ export async function runAgentChat(
               ? "Draft queued"
               : "Send queued for approval",
           detail: `To ${to}`,
-          href: sent ? undefined : "/queue",
+          href: sent
+            ? threadId
+              ? `/inbox?thread=${encodeURIComponent(threadId)}`
+              : undefined
+            : "/queue",
           disposition: sent ? "sent" : "queued",
           queueItemId: sent ? undefined : item.id,
+          threadId: threadId || undefined,
           lines: [`Subject: ${subject}`, body.slice(0, 400)],
         });
         return JSON.stringify({

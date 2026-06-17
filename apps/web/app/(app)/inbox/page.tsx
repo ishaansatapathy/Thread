@@ -29,6 +29,7 @@ import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { EmailMessageBody } from "~/components/app/email-message-body";
 import { queueResultMessage } from "~/lib/queue-toast";
+import { dismissBriefThreadFromQueueItem } from "~/lib/brief-dismissals";
 import { localDateTimeRangeToPayload, toLocalDateTimeInput } from "~/lib/calendar-datetime";
 import {
   decodeHtmlEntities,
@@ -416,7 +417,9 @@ export default function InboxPage() {
 
   const queueEmail = trpc.queue.enqueueEmail.useMutation({
     onSuccess: async (item) => {
+      dismissBriefThreadFromQueueItem(item);
       await utils.queue.pendingCount.invalidate();
+      await utils.ai.dailyBrief.invalidate();
       const msg = queueResultMessage(item);
       if (item.status === "pending") {
         toast.success(msg.title, {

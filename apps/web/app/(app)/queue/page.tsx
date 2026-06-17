@@ -19,6 +19,7 @@ import {
 
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { dismissBriefThreadFromQueueItem } from "~/lib/brief-dismissals";
 import {
   isoToLocalDateTimeInput,
   localDateTimeRangeToPayload,
@@ -85,11 +86,13 @@ export default function QueuePage() {
       return { prev };
     },
     onSuccess: async (data) => {
+      dismissBriefThreadFromQueueItem(data);
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
       await utils.inbox.listThreads.invalidate();
       await utils.calendar.listEvents.invalidate();
       await utils.calendar.listEvents.refetch();
+      await utils.ai.dailyBrief.invalidate();
       setArchiveConfirm(null);
 
       if (data.kind === "calendar_archive") {

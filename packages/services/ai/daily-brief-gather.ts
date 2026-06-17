@@ -104,7 +104,7 @@ function isAwaitingUserReply(
   const lastFrom = extractEmailAddress(last.from) ?? last.from ?? "";
   const user = normalizeEmail(userEmail);
 
-  if (user && lastFrom && lastFrom.includes(user)) {
+  if (user && lastFrom && normalizeEmail(lastFrom) === user) {
     return { awaiting: false, daysWaiting: null, lastMessageFrom: last.from };
   }
 

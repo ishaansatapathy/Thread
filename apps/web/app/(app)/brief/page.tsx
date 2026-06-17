@@ -27,11 +27,22 @@ import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
 import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
+import {
+  dismissBriefThread,
+  getDismissedBriefThreadIds,
+  pruneBriefDismissals,
+} from "~/lib/brief-dismissals";
 
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
 type BriefAction = DailyBrief["recommendedActions"][number];
 type FollowUp = RouterOutputs["ai"]["missedFollowUps"][number];
+
+function briefAgentUrl(prompt: string, threadId?: string) {
+  const params = new URLSearchParams({ prompt });
+  if (threadId) params.set("thread", threadId);
+  return `/agent?${params.toString()}`;
+}
 
 function urgencyColor(urgency?: BriefItem["urgency"]) {
   switch (urgency) {
@@ -71,6 +82,7 @@ function BriefItemRow({
   expandedEventId,
   onToggle,
   onToggleEvent,
+  onDismissThread,
   timeZone,
 }: {
   item: BriefItem;
@@ -78,6 +90,7 @@ function BriefItemRow({
   expandedEventId: string | null;
   onToggle: (id: string | null) => void;
   onToggleEvent: (id: string | null) => void;
+  onDismissThread?: (threadId: string) => void;
   timeZone: string;
 }) {
   const router = useRouter();
@@ -93,9 +106,13 @@ function BriefItemRow({
     } else if (item.queueItemId) {
       router.push("/queue");
     } else {
-      // Fallback: open agent with context about this item
+      // Fallback: open agent with context — dismiss so item leaves Needs attention
+      if (item.threadId) onDismissThread?.(item.threadId);
       router.push(
-        `/agent?prompt=${encodeURIComponent(`Help me with: "${item.headline}". ${item.detail ?? ""}`)}`,
+        briefAgentUrl(
+          `Help me with: "${item.headline}". ${item.detail ?? ""}`,
+          item.threadId,
+        ),
       );
     }
   };
@@ -130,9 +147,22 @@ function BriefItemRow({
               href={`/inbox?thread=${encodeURIComponent(item.threadId)}`}
               className="thread-btn-accent"
               style={{ fontSize: 12, padding: "7px 14px" }}
+              onClick={() => onDismissThread?.(item.threadId!)}
             >
               <Mail size={12} />
               Open in inbox
+            </Link>
+            <Link
+              href={briefAgentUrl(
+                `Reply to this email: "${item.headline}". ${item.detail ?? ""} Draft or queue a reply.`,
+                item.threadId,
+              )}
+              className="thread-btn-ghost"
+              style={{ fontSize: 12, padding: "7px 14px" }}
+              onClick={() => onDismissThread?.(item.threadId!)}
+            >
+              <Sparkles size={12} />
+              Ask agent
             </Link>
           </div>
         </div>
@@ -206,7 +236,13 @@ function FollowUpRow({
   );
 }
 
-function runBriefAction(action: BriefAction, router: ReturnType<typeof useRouter>) {
+function runBriefAction(
+  action: BriefAction,
+  router: ReturnType<typeof useRouter>,
+  onDismissThread?: (threadId: string) => void,
+) {
+  if (action.threadId) onDismissThread?.(action.threadId);
+
   switch (action.kind) {
     case "reply":
       if (action.threadId) {
@@ -222,7 +258,7 @@ function runBriefAction(action: BriefAction, router: ReturnType<typeof useRouter
         return;
       }
       if (action.agentPrompt) {
-        router.push(`/agent?prompt=${encodeURIComponent(action.agentPrompt)}`);
+        router.push(briefAgentUrl(action.agentPrompt, action.threadId));
         return;
       }
       router.push("/calendar");
@@ -230,7 +266,7 @@ function runBriefAction(action: BriefAction, router: ReturnType<typeof useRouter
     case "follow_up":
     case "agent":
       if (action.agentPrompt) {
-        router.push(`/agent?prompt=${encodeURIComponent(action.agentPrompt)}`);
+        router.push(briefAgentUrl(action.agentPrompt, action.threadId));
         return;
       }
       break;
@@ -267,9 +303,30 @@ export default function BriefPage() {
     }
   }, []);
 
+  const [dismissedThreadIds, setDismissedThreadIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setDismissedThreadIds(getDismissedBriefThreadIds());
+  }, []);
+
+  useEffect(() => {
+    const syncDismissals = () => setDismissedThreadIds(getDismissedBriefThreadIds());
+    window.addEventListener("focus", syncDismissals);
+    document.addEventListener("visibilitychange", syncDismissals);
+    return () => {
+      window.removeEventListener("focus", syncDismissals);
+      document.removeEventListener("visibilitychange", syncDismissals);
+    };
+  }, []);
+
+  const markBriefThreadDismissed = (threadId: string) => {
+    dismissBriefThread(threadId);
+    setDismissedThreadIds((prev) => new Set([...prev, threadId]));
+  };
+
   const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
-    { staleTime: 5 * 60_000, refetchOnWindowFocus: true, retry: 1 },
+    { staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 },
   );
 
   const followUpsQuery = trpc.ai.missedFollowUps.useQuery(
@@ -287,8 +344,41 @@ export default function BriefPage() {
   const followUps = followUpsQuery.data ?? [];
   const loading = briefQuery.isLoading || inboxStatus.isLoading || calendarStatus.isLoading;
 
+  useEffect(() => {
+    if (!brief) return;
+    const stillActive = new Set(
+      brief.needsAttention.map((i) => i.threadId).filter(Boolean) as string[],
+    );
+    pruneBriefDismissals(stillActive);
+    setDismissedThreadIds(getDismissedBriefThreadIds());
+  }, [brief?.generatedAt, brief?.needsAttention]);
+
+  const visibleNeedsAttention = useMemo(
+    () =>
+      (brief?.needsAttention ?? []).filter(
+        (item) => !item.threadId || !dismissedThreadIds.has(item.threadId),
+      ),
+    [brief?.needsAttention, dismissedThreadIds],
+  );
+
+  const visibleRisks = useMemo(
+    () =>
+      (brief?.risks ?? []).filter(
+        (item) => !item.threadId || !dismissedThreadIds.has(item.threadId),
+      ),
+    [brief?.risks, dismissedThreadIds],
+  );
+
+  const visibleRecommendedActions = useMemo(
+    () =>
+      (brief?.recommendedActions ?? []).filter(
+        (action) => !action.threadId || !dismissedThreadIds.has(action.threadId),
+      ),
+    [brief?.recommendedActions, dismissedThreadIds],
+  );
+
   const handleDraftFollowUp = (agentPrompt: string) => {
-    router.push(`/agent?prompt=${encodeURIComponent(agentPrompt)}`);
+    router.push(briefAgentUrl(agentPrompt));
   };
 
   return (
@@ -425,17 +515,18 @@ export default function BriefPage() {
               <BriefSection
                 title="Needs attention"
                 icon={Mail}
-                empty={brief.needsAttention.length === 0}
-                badge={brief.needsAttention.filter(i => i.urgency === "high").length || undefined}
+                empty={visibleNeedsAttention.length === 0}
+                badge={visibleNeedsAttention.filter(i => i.urgency === "high").length || undefined}
               >
-                {brief.needsAttention.map((item, i) => (
+                {visibleNeedsAttention.map((item, i) => (
                   <BriefItemRow
-                    key={`need-${i}`}
+                    key={`need-${item.threadId ?? i}`}
                     item={item}
                     expandedId={expandedId}
                     expandedEventId={expandedEventId}
                     onToggle={setExpandedId}
                     onToggleEvent={setExpandedEventId}
+                    onDismissThread={markBriefThreadDismissed}
                     timeZone={timeZone}
                   />
                 ))}
@@ -459,34 +550,35 @@ export default function BriefPage() {
                 ))}
               </BriefSection>
 
-              <BriefSection title="Risks" icon={AlertTriangle} empty={brief.risks.length === 0}>
-                {brief.risks.map((item, i) => (
+              <BriefSection title="Risks" icon={AlertTriangle} empty={visibleRisks.length === 0}>
+                {visibleRisks.map((item, i) => (
                   <BriefItemRow
-                    key={`risk-${i}`}
+                    key={`risk-${item.threadId ?? i}`}
                     item={item}
                     expandedId={expandedId}
                     expandedEventId={expandedEventId}
                     onToggle={setExpandedId}
                     onToggleEvent={setExpandedEventId}
+                    onDismissThread={markBriefThreadDismissed}
                     timeZone={timeZone}
                   />
                 ))}
               </BriefSection>
             </div>
 
-            {brief.recommendedActions.length > 0 ? (
+            {visibleRecommendedActions.length > 0 ? (
               <section className="thread-brief-actions">
                 <div className="thread-brief-section-head">
                   <Sparkles size={14} />
                   <h2>Recommended</h2>
                 </div>
                 <div className="thread-brief-action-row">
-                  {brief.recommendedActions.map((action) => (
+                  {visibleRecommendedActions.map((action) => (
                     <button
                       key={action.id}
                       type="button"
                       className="thread-brief-action-btn"
-                      onClick={() => runBriefAction(action, router)}
+                      onClick={() => runBriefAction(action, router, markBriefThreadDismissed)}
                     >
                       {action.kind === "reply" ? <PenLine size={13} /> : null}
                       {action.kind === "prepare_meeting" ? <Calendar size={13} /> : null}
