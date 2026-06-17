@@ -24,6 +24,8 @@ import { getInboxService } from "@repo/services/inbox";
 import { getQueueService } from "@repo/services/queue";
 import { getCalendarService } from "@repo/services/calendar";
 import { rankInboxThreads, isInboxAiConfigured } from "@repo/services/ai/inbox-priority";
+import { generateDailyBrief } from "@repo/services/ai/daily-brief";
+import { getSmartReplies } from "@repo/services/ai/smart-reply";
 import { detectInjectionAttempt, validateAgentEmailArgs, DEFAULT_AGENT_SEND_CAP } from "@repo/services/ai/agent-guard";
 import { incrementCounter } from "../metrics";
 import { resolveMcpUserId } from "../mcp-auth";
@@ -272,6 +274,54 @@ const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: "star_thread",
+    description: "Star a Gmail thread via Corsair (adds STARRED label). Use to bookmark important emails.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string", description: "Gmail thread ID." } },
+    },
+  },
+  {
+    name: "unstar_thread",
+    description: "Remove the star from a Gmail thread via Corsair.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string", description: "Gmail thread ID." } },
+    },
+  },
+  {
+    name: "mark_important",
+    description: "Mark a Gmail thread as important via Corsair (adds IMPORTANT label).",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string", description: "Gmail thread ID." } },
+    },
+  },
+  {
+    name: "get_daily_brief",
+    description: "Get the AI-generated daily brief: today's priorities, pending replies, meeting insights, risks, and recommended actions. Pulls live data from Corsair Gmail + Calendar.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata. Defaults to UTC." },
+      },
+    },
+  },
+  {
+    name: "get_smart_replies",
+    description: "Get 3 AI-generated smart reply suggestions for a Gmail thread. Uses full thread context from Corsair Gmail.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID to generate replies for." },
+      },
+    },
+  },
+  {
     name: "apply_label",
     description: "Apply a Gmail label to a thread by label id (use list_labels first).",
     inputSchema: {
@@ -293,6 +343,24 @@ const MCP_TOOLS: McpTool[] = [
         threadId: { type: "string" },
         labelId: { type: "string", description: "Gmail label id to remove." },
       },
+    },
+  },
+  {
+    name: "trash_thread",
+    description: "Move a Gmail thread to trash via Corsair. Use only when user explicitly wants to delete an email.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string", description: "Gmail thread ID." } },
+    },
+  },
+  {
+    name: "delete_draft",
+    description: "Permanently delete a Gmail draft by id via Corsair. Use when user wants to discard a draft.",
+    inputSchema: {
+      type: "object",
+      required: ["draftId"],
+      properties: { draftId: { type: "string", description: "Gmail draft ID to delete." } },
     },
   },
 ];
@@ -535,6 +603,40 @@ async function callTool(
       return toolResult({ success: true, threadId });
     }
 
+    case "star_thread": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.starThread(userId, threadId);
+      return toolResult({ success: true, threadId, action: "starred" });
+    }
+
+    case "unstar_thread": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.unstarThread(userId, threadId);
+      return toolResult({ success: true, threadId, action: "unstarred" });
+    }
+
+    case "mark_important": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.markImportant(userId, threadId);
+      return toolResult({ success: true, threadId, action: "marked_important" });
+    }
+
+    case "get_daily_brief": {
+      const timeZone = typeof args.timeZone === "string" ? args.timeZone : "UTC";
+      const brief = await generateDailyBrief({ tenantId: userId, timeZone });
+      return toolResult(brief);
+    }
+
+    case "get_smart_replies": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      const result = await getSmartReplies({ tenantId: userId, threadId });
+      return toolResult(result);
+    }
+
     case "apply_label": {
       const threadId = String(args.threadId ?? "").trim();
       const labelId = String(args.labelId ?? "").trim();
@@ -553,6 +655,20 @@ async function callTool(
       }
       await inbox.removeLabel(userId, threadId, labelId);
       return toolResult({ success: true, threadId, labelId });
+    }
+
+    case "trash_thread": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.trashThread(userId, threadId);
+      return toolResult({ success: true, threadId, action: "trashed" });
+    }
+
+    case "delete_draft": {
+      const draftId = String(args.draftId ?? "").trim();
+      if (!draftId) return toolResult({ success: false, error: "draftId is required" });
+      await inbox.deleteDraft(userId, draftId);
+      return toolResult({ success: true, draftId, action: "deleted" });
     }
 
     default:

@@ -126,6 +126,18 @@ export interface InboxService {
   applyLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
   /** Remove a label from a thread. Throws on failure. */
   removeLabel(tenantId: string, threadId: string, labelId: string): Promise<void>;
+  /** Star a thread via Corsair Gmail (STARRED label). */
+  starThread(tenantId: string, threadId: string): Promise<void>;
+  /** Unstar a thread via Corsair Gmail. */
+  unstarThread(tenantId: string, threadId: string): Promise<void>;
+  /** Mark thread as important via Corsair Gmail (IMPORTANT label). */
+  markImportant(tenantId: string, threadId: string): Promise<void>;
+  /** Remove important flag via Corsair Gmail. */
+  markNotImportant(tenantId: string, threadId: string): Promise<void>;
+  /** Move a Gmail thread to trash via Corsair. */
+  trashThread(tenantId: string, threadId: string): Promise<void>;
+  /** Delete a Gmail draft by id via Corsair. */
+  deleteDraft(tenantId: string, draftId: string): Promise<void>;
   /**
    * Register Gmail Pub/Sub push notifications (users.watch).
    * Best-effort when CORSAIR_GMAIL_TOPIC_ID is unset; throws on API failure.

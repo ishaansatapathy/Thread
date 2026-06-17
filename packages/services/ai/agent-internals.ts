@@ -201,6 +201,42 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "star_thread",
+      description: "Star a Gmail thread via Corsair (adds STARRED label). Use when user asks to star or bookmark an email.",
+      parameters: {
+        type: "object",
+        properties: { threadId: { type: "string", description: "Gmail thread id" } },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "trash_thread",
+      description: "Move a Gmail thread to trash via Corsair. Use only when user explicitly asks to delete or trash an email.",
+      parameters: {
+        type: "object",
+        properties: { threadId: { type: "string", description: "Gmail thread id" } },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_smart_replies",
+      description: "Generate 3 AI-powered reply suggestions for a Gmail thread using full thread context from Corsair. Call before composing a reply to get options.",
+      parameters: {
+        type: "object",
+        properties: { threadId: { type: "string", description: "Gmail thread id" } },
+        required: ["threadId"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {

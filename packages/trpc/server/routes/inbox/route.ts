@@ -296,6 +296,94 @@ export const inboxRouter = router({
       }
     }),
 
+  /** Star a thread via Corsair Gmail (STARRED label). */
+  starThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/star"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.starThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Unstar a thread via Corsair Gmail. */
+  unstarThread: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/threads/{threadId}/star"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.unstarThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Mark thread as important via Corsair Gmail (IMPORTANT label). */
+  markImportant: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/important"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.markImportant(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  /** Remove important flag via Corsair Gmail. */
+  markNotImportant: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/threads/{threadId}/important"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.markNotImportant(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  trashThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/trash"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.trashThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  deleteDraft: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/drafts/{draftId}"), tags: TAGS } })
+    .input(z.object({ draftId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.deleteDraft(ctx.user.id, input.draftId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   disconnectGmail: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/disconnect"), tags: TAGS } })
     .input(z.object({}))
