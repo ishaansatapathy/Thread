@@ -21,6 +21,46 @@ const inboxRankThreadSchema = z.object({
   from: z.string().max(320).optional(),
 });
 
+const contactIntelSchema = z.object({
+  email: z.string(),
+  name: z.string().optional(),
+  totalInteractions: z.number(),
+  lastInteractionDaysAgo: z.number().nullable(),
+  lastInteractionDate: z.string().optional(),
+  sentByUser: z.number(),
+  receivedFromContact: z.number(),
+  responseRate: z.number().nullable(),
+  recentTopics: z.array(z.string()),
+  relationshipSummary: z.string(),
+  recommendedAction: z.string(),
+  recentThreads: z.array(
+    z.object({
+      id: z.string(),
+      subject: z.string(),
+      date: z.string().optional(),
+      direction: z.enum(["sent", "received"]),
+    }),
+  ),
+});
+
+const summarizeThreadSchema = z.object({
+  threadId: z.string(),
+  subject: z.string(),
+  participantCount: z.number(),
+  messageCount: z.number(),
+  summary: z.string(),
+  keyDecisions: z.array(z.string()),
+  actionItems: z.array(
+    z.object({
+      action: z.string(),
+      owner: z.string().optional(),
+      deadline: z.string().optional(),
+    }),
+  ),
+  nextStep: z.string(),
+  sentiment: z.enum(["positive", "neutral", "urgent", "negative"]),
+});
+
 export const aiRouter = router({
   status: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/status"), tags: TAGS } })
@@ -123,6 +163,7 @@ export const aiRouter = router({
   contactIntel: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/contact-intel"), tags: TAGS } })
     .input(z.object({ email: z.string().email(), name: z.string().optional() }))
+    .output(contactIntelSchema)
     .query(async ({ ctx, input }) => {
       try {
         return await getContactIntel({
@@ -140,6 +181,7 @@ export const aiRouter = router({
   summarizeThread: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/summarize-thread"), tags: TAGS } })
     .input(z.object({ threadId: z.string().min(1) }))
+    .output(summarizeThreadSchema)
     .query(async ({ ctx, input }) => {
       try {
         return await summarizeThread({
