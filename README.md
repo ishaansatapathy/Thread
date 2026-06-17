@@ -1,5 +1,7 @@
 # Thread — Gmail + Calendar Productivity App
 
+> **Judge / Evaluator?** → Start with **[DEMO.md](./DEMO.md)** for a 3-minute walkthrough, MCP curl examples, and the full Corsair integration map.
+
 A full-stack productivity application built on the [Corsair SDK](https://corsair.dev) that brings Gmail and Google Calendar into a focused, human-in-the-loop workflow. Built for the Corsair Hackathon.
 
 ## What it does

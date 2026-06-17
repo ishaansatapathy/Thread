@@ -10,6 +10,7 @@ import {
   Mail,
   Sparkles,
   User,
+  TrendingUp,
 } from "lucide-react";
 import { trpc } from "~/trpc/client";
 
@@ -27,6 +28,12 @@ export function SmartContextPanel({ threadId, onOpenThread }: Props) {
       enabled: Boolean(threadId),
       staleTime: 5 * 60 * 1000,
     },
+  );
+
+  const senderEmail = ctx.data?.senderInfo?.email ?? "";
+  const contactQuery = trpc.ai.contactIntel.useQuery(
+    { email: senderEmail, name: ctx.data?.senderInfo?.name },
+    { enabled: Boolean(senderEmail), staleTime: 10 * 60 * 1000 },
   );
 
   if (ctx.isLoading) {
@@ -173,6 +180,43 @@ export function SmartContextPanel({ threadId, onOpenThread }: Props) {
             {d.senderInfo.lastInteractionDaysAgo != null ? (
               <span className="scp-meta-sub"> · last {d.senderInfo.lastInteractionDaysAgo}d ago</span>
             ) : null}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Relationship Intelligence (Contact Intel) */}
+      {contactQuery.data && (contactQuery.data.totalInteractions > 0 || contactQuery.data.relationshipSummary) ? (
+        <div className="scp-block">
+          <p className="scp-label">
+            <TrendingUp size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
+            Relationship Intel
+          </p>
+          <p className="scp-text">{contactQuery.data.relationshipSummary}</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+            {contactQuery.data.totalInteractions > 0 && (
+              <span className="scp-meta-sub">{contactQuery.data.totalInteractions} emails total</span>
+            )}
+            {contactQuery.data.responseRate != null && (
+              <span className="scp-meta-sub">{Math.round(contactQuery.data.responseRate * 100)}% response rate</span>
+            )}
+            {contactQuery.data.lastInteractionDaysAgo != null && (
+              <span className="scp-meta-sub">last {contactQuery.data.lastInteractionDaysAgo}d ago</span>
+            )}
+          </div>
+          {contactQuery.data.recentTopics.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+              {contactQuery.data.recentTopics.map((topic) => (
+                <span
+                  key={topic}
+                  style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "var(--thread-surface-2, #f3f4f6)", color: "var(--thread-dim)", border: "1px solid var(--thread-border, #e5e7eb)" }}
+                >
+                  {topic}
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="scp-text" style={{ marginTop: 4, fontStyle: "italic", opacity: 0.8 }}>
+            {contactQuery.data.recommendedAction}
           </p>
         </div>
       ) : null}

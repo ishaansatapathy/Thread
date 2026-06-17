@@ -661,6 +661,14 @@ export class CorsairInboxService implements InboxService {
       messages,
       messageCount: messages.length,
       suggestedReplyTo: suggestReplyTo(messages, opts?.userEmail),
+      // Aggregate labelIds across all messages so UI can show starred/important state
+      labelIds: Array.from(
+        new Set(
+          (thread.messages ?? []).flatMap(
+            (m: { labelIds?: string[] }) => m.labelIds ?? [],
+          ),
+        ),
+      ),
     };
   }
 

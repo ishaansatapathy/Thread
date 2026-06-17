@@ -50,6 +50,7 @@ const inboxThreadSchema = z.object({
   suggestedReplyTo: z.string().optional(),
   messageCount: z.number().optional(),
   unread: z.boolean().optional(),
+  labelIds: z.array(z.string()).optional(),
 });
 
 const inboxDraftSchema = z.object({
