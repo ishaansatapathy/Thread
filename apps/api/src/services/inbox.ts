@@ -679,6 +679,8 @@ export class CorsairInboxService implements InboxService {
       subject: string;
       body: string;
       threadId?: string;
+      cc?: string;
+      bcc?: string;
       attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
     },
   ) {
@@ -704,6 +706,8 @@ export class CorsairInboxService implements InboxService {
       subject: string;
       body: string;
       threadId?: string;
+      cc?: string;
+      bcc?: string;
       attachments?: Array<{ filename: string; mimeType: string; contentBase64: string }>;
     },
   ) {

@@ -13,6 +13,8 @@ export type EmailQueuePayload = {
   subject: string;
   body: string;
   threadId?: string;
+  cc?: string;
+  bcc?: string;
 };
 
 export type CalendarQueuePayload = {

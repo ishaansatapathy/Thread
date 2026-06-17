@@ -36,6 +36,8 @@ export type CalendarEvent = {
 export interface CalendarService {
   isConfigured(): boolean;
   getConnectionStatus(tenantId: string): Promise<CalendarConnectionStatus>;
+  /** Fetch a single event by id. Returns null if not found or disconnected. */
+  getEvent(tenantId: string, eventId: string): Promise<CalendarEvent | null>;
   listEvents(
     tenantId: string,
     opts: {

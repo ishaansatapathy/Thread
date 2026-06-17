@@ -68,6 +68,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     registerCalendarService({
       isConfigured: () => true,
       getConnectionStatus: async () => ({ googlecalendar: "connected" }),
+      getEvent: async () => null,
       listEvents: async () => ({ events: [] }),
       createEvent,
       cancelEvent: async () => ({ success: true as const }),

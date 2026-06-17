@@ -949,7 +949,7 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
   const method = body.method;
 
   // Throttle unauthenticated discovery traffic by IP only (never trust client user headers).
-  const publicMethods = new Set(["initialize", "tools/list", "notifications/initialized"]);
+  const publicMethods = new Set(["initialize", "tools/list", "resources/list", "prompts/list", "notifications/initialized"]);
   if (publicMethods.has(method)) {
     const ipLimitOk = await applyMcpIpRateLimit(req, res);
     if (!ipLimitOk) return;
@@ -960,7 +960,7 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
       return res.json(
         ok(id, {
           protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
+          capabilities: { tools: {}, resources: {}, prompts: {} },
           serverInfo: { name: "thread-mcp", version: MCP_SERVER_VERSION },
         }),
       );
@@ -970,9 +970,96 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
       return res.json(ok(id, { tools: MCP_TOOLS }));
     }
 
-    // notifications/initialized — no-op acknowledgment per MCP spec
+    // MCP resources — expose static references to key Thread features
+    if (method === "resources/list") {
+      return res.json(ok(id, {
+        resources: [
+          {
+            uri: "thread://inbox",
+            name: "Gmail Inbox",
+            description: "Current Gmail inbox threads fetched via Corsair SDK. Use list_inbox or search_inbox tools to read.",
+            mimeType: "application/json",
+          },
+          {
+            uri: "thread://queue",
+            name: "Approval Queue",
+            description: "Pending AI-composed emails and calendar invites awaiting user approval. Use list_queue tool to read.",
+            mimeType: "application/json",
+          },
+          {
+            uri: "thread://brief",
+            name: "Daily Brief",
+            description: "AI-generated daily productivity brief (Corsair Gmail + Calendar + OpenAI). Use get_daily_brief tool to read.",
+            mimeType: "application/json",
+          },
+          {
+            uri: "thread://calendar",
+            name: "Google Calendar",
+            description: "Upcoming calendar events fetched via Corsair Calendar SDK. Use list_calendar_events or check_free_busy tools.",
+            mimeType: "application/json",
+          },
+        ],
+      }));
+    }
+
+    // MCP prompts — reusable prompt templates for common Thread workflows
+    if (method === "prompts/list") {
+      return res.json(ok(id, {
+        prompts: [
+          {
+            name: "daily_brief",
+            description: "Generate a personalised daily brief from Gmail + Calendar via Corsair",
+            arguments: [{ name: "timeZone", description: "IANA timezone (e.g. Asia/Kolkata)", required: false }],
+          },
+          {
+            name: "meeting_prep",
+            description: "Prepare talking points, agenda, and risks for an upcoming calendar event",
+            arguments: [
+              { name: "eventId", description: "Google Calendar event id", required: true },
+              { name: "timeZone", description: "IANA timezone", required: false },
+            ],
+          },
+          {
+            name: "smart_reply",
+            description: "Generate 3 AI smart-reply suggestions for a Gmail thread via Corsair",
+            arguments: [{ name: "threadId", description: "Gmail thread id", required: true }],
+          },
+          {
+            name: "contact_intel",
+            description: "Get relationship intelligence for a contact: history, response rate, recommended next action",
+            arguments: [
+              { name: "email", description: "Contact email address", required: true },
+              { name: "name", description: "Contact display name", required: false },
+            ],
+          },
+          {
+            name: "missed_followups",
+            description: "Find calendar meetings from the past 2 weeks that had no follow-up email sent",
+            arguments: [{ name: "timeZone", description: "IANA timezone", required: false }],
+          },
+        ],
+      }));
+    }
+
+    if (method === "prompts/get") {
+      const params = (body.params ?? {}) as Record<string, unknown>;
+      const name = String(params.name ?? "");
+      const args = (params.arguments ?? {}) as Record<string, string>;
+      const promptMap: Record<string, string> = {
+        daily_brief: `Call get_daily_brief with timeZone="${args.timeZone ?? "UTC"}" to generate a personalised daily brief from Gmail and Google Calendar via Corsair SDK.`,
+        meeting_prep: `Call get_meeting_prep with eventId="${args.eventId ?? ""}" and timeZone="${args.timeZone ?? "UTC"}" to prepare talking points, agenda risks, and related emails for this calendar event.`,
+        smart_reply: `Call get_smart_replies with threadId="${args.threadId ?? ""}" to generate 3 context-aware reply suggestions for this Gmail thread.`,
+        contact_intel: `Call get_contact_intel with email="${args.email ?? ""}"${args.name ? ` and name="${args.name}"` : ""} to retrieve relationship intelligence: interaction history, response rate, recent topics, and recommended next action.`,
+        missed_followups: `Call get_missed_followups with timeZone="${args.timeZone ?? "UTC"}" to find calendar meetings from the past 2 weeks that had no follow-up email sent.`,
+      };
+      const text = promptMap[name];
+      if (!text) return res.status(404).json(rpcError(id, -32601, `Prompt not found: ${name}`));
+      return res.json(ok(id, { description: name, messages: [{ role: "user", content: { type: "text", text } }] }));
+    }
+
+    // notifications/initialized — acknowledgment per MCP spec
     if (method === "notifications/initialized") {
-      return res.status(200).send();
+      return res.json(ok(id, {}));
     }
 
     if (method === "tools/call") {

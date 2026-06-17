@@ -5,9 +5,11 @@
 
 import { logger } from "@repo/logger";
 import { acquireLeaderLock } from "@repo/services/cache/leader-lock";
+import db from "@repo/database";
+import { usersTable } from "@repo/database/schema";
 
 import { env } from "../env";
-import { getCorsairPool, isCorsairConfigured } from "../corsair";
+import { isCorsairConfigured } from "../corsair";
 import { CorsairInboxService } from "../services/inbox";
 import { CorsairCalendarService } from "../services/calendar";
 
@@ -16,15 +18,17 @@ const INITIAL_DELAY_MS = 60_000;
 const LEADER_LOCK_TTL_MS = 26 * 60 * 60 * 1000;
 const LEADER_LOCK_NAME = "integration-renewal";
 
+/**
+ * List all known tenant IDs from our own users table (Drizzle ORM + Postgres).
+ * Each user's `id` is the Corsair tenantId for that account.
+ * This replaces the previous raw SQL query against Corsair's internal DB table.
+ */
 async function listConnectedTenantIds(): Promise<string[]> {
   try {
-    const pool = getCorsairPool();
-    const result = await pool.query<{ tenant_id: string }>(
-      `SELECT DISTINCT tenant_id FROM corsair_accounts WHERE tenant_id IS NOT NULL AND tenant_id <> ''`,
-    );
-    return result.rows.map((row) => row.tenant_id).filter(Boolean);
+    const rows = await db.select({ id: usersTable.id }).from(usersTable);
+    return rows.map((r) => r.id).filter(Boolean);
   } catch (error) {
-    logger.warn("integration-renewal: could not list corsair tenants", {
+    logger.warn("integration-renewal: could not list tenant ids from users table", {
       message: error instanceof Error ? error.message : String(error),
     });
     return [];

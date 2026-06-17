@@ -72,16 +72,8 @@ export async function getMeetingPrep(input: {
   const calendar = getCalendarService();
   const inbox = getInboxService();
 
-  // Get today's events to find the specific event (Corsair Calendar)
-  const now = new Date();
-  const eventsResult = await calendar.listEvents(input.tenantId, {
-    timeMin: new Date(now.getTime() - 7 * 86_400_000).toISOString(),
-    timeMax: new Date(now.getTime() + 14 * 86_400_000).toISOString(),
-    maxResults: 50,
-    timeZone: input.timeZone,
-  });
-
-  const event = eventsResult.events.find((e) => e.id === input.eventId);
+  // Fetch the specific event directly via Corsair Calendar (getEvent is O(1))
+  const event = await calendar.getEvent(input.tenantId, input.eventId);
 
   if (!event) {
     return {

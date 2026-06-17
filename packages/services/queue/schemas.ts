@@ -17,6 +17,10 @@ export const emailQueuePayloadSchema = z.object({
   subject: safeEmailSubjectSchema,
   body: emailBodySchema,
   threadId: z.string().optional(),
+  /** Optional CC recipient (single address for now — comma-separated multi not yet supported). */
+  cc: z.string().email().optional(),
+  /** Optional BCC recipient (kept server-side; never shown in previews to the user). */
+  bcc: z.string().email().optional(),
   attachments: z.array(emailAttachmentSchema).max(5).optional(),
 });
 
