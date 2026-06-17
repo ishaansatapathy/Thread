@@ -1,0 +1,6 @@
+# Railway/Nixpacks: keep devDependencies available during the API build (tsup).
+[phases.install]
+cmds = ["NODE_ENV=development pnpm install --frozen-lockfile"]
+
+[phases.build]
+cmds = ["pnpm --filter @repo/api run build"]
