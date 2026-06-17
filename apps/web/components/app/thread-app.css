@@ -589,6 +589,258 @@
 .thread-inbox-compose-cta {
   padding: 0 12px 10px;
   border-bottom: 1px solid var(--thread-line);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ── Bulk mode ── */
+.thread-inbox-bulk-btn {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+}
+.thread-inbox-bulk-btn:hover,
+.thread-inbox-bulk-btn--active {
+  background: rgba(255,255,255,0.06);
+  color: var(--thread-accent);
+  border-color: var(--thread-accent);
+}
+.thread-inbox-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+  flex-wrap: wrap;
+}
+.thread-inbox-bulk-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--thread-text);
+  margin-right: 4px;
+}
+.thread-inbox-bulk-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--thread-line);
+  background: var(--thread-surface, #1e1e2e);
+  color: var(--thread-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.thread-inbox-bulk-action:hover { background: rgba(255,255,255,0.07); color: var(--thread-text); }
+.thread-inbox-bulk-action--cancel { color: var(--thread-dim); margin-left: auto; }
+
+/* ── Row wrap (hover actions) ── */
+.thread-inbox-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-radius: 10px;
+}
+.thread-inbox-row-wrap[data-active="true"],
+.thread-inbox-row-wrap:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.thread-inbox-row-wrap[data-priority="critical"] .thread-inbox-row {
+  border-left: 2px solid rgba(239, 68, 68, 0.55);
+}
+.thread-inbox-row-wrap[data-priority="high"] .thread-inbox-row {
+  border-left: 2px solid rgba(249, 115, 22, 0.4);
+}
+.thread-inbox-row-wrap .thread-inbox-row {
+  flex: 1;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+}
+.thread-inbox-row-wrap .thread-inbox-row:hover,
+.thread-inbox-row-wrap[data-active="true"] .thread-inbox-row {
+  background: transparent;
+  border-color: transparent;
+}
+.thread-inbox-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: auto 4px auto 10px;
+  flex-shrink: 0;
+  accent-color: var(--thread-accent);
+  cursor: pointer;
+}
+.thread-inbox-row-hover-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+  flex-shrink: 0;
+}
+.thread-inbox-row-wrap:hover .thread-inbox-row-hover-actions {
+  display: flex;
+}
+.thread-inbox-hover-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--thread-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.thread-inbox-hover-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--thread-text);
+}
+
+/* ── Snooze menu ── */
+.thread-snooze-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  background: var(--thread-popover, #1e1e2e);
+  border: 1px solid var(--thread-line);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 170px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+.thread-snooze-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--thread-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.thread-snooze-option:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--thread-text);
+}
+
+/* ── Unsubscribe banner ── */
+.thread-unsub-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(251, 191, 36, 0.06);
+  border-top: 1px solid rgba(251, 191, 36, 0.2);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+  flex-wrap: wrap;
+}
+.thread-unsub-banner-label {
+  font-size: 12px;
+  color: var(--thread-dim);
+  flex: 1;
+}
+.thread-unsub-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  text-decoration: none;
+  transition: background 0.12s;
+}
+.thread-unsub-btn:hover { background: rgba(251, 191, 36, 0.14); }
+.thread-unsub-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--thread-line);
+  color: var(--thread-dim);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.thread-unsub-archive:hover { color: var(--thread-text); background: rgba(255,255,255,0.06); }
+
+/* ── RSVP inline banner ── */
+.thread-rsvp-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(96, 165, 250, 0.06);
+  border-top: 1px solid rgba(96, 165, 250, 0.2);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.2);
+  flex-wrap: wrap;
+}
+.thread-rsvp-banner-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--thread-muted);
+  flex: 1;
+  min-width: 120px;
+}
+.thread-rsvp-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.thread-rsvp-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: opacity 0.15s;
+}
+.thread-rsvp-btn:hover { opacity: 0.85; }
+.thread-rsvp-btn--accept {
+  background: rgba(52, 211, 153, 0.15);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #34d399;
+}
+.thread-rsvp-btn--tentative {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+}
+.thread-rsvp-btn--decline {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
 }
 
 .thread-inbox-compose-btn {
