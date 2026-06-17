@@ -506,9 +506,78 @@ const MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  // ── 5 new tools (39 total) ──────────────────────────────────────────────────
+  {
+    name: "mark_not_important",
+    description: "Remove the Important flag from a Gmail thread via Corsair (removes IMPORTANT label).",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID." },
+      },
+    },
+  },
+  {
+    name: "get_calendar_event",
+    description: "Fetch full details of a single Google Calendar event by ID via Corsair: title, time, location, attendees, description.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID." },
+      },
+    },
+  },
+  {
+    name: "find_meeting_slots",
+    description: "Find available meeting slots by querying the user's Corsair Calendar free/busy. Returns up to 5 concrete slot suggestions with human-readable labels.",
+    inputSchema: {
+      type: "object",
+      required: ["durationMinutes"],
+      properties: {
+        durationMinutes: { type: "number", description: "Meeting duration in minutes (e.g. 30, 60)." },
+        preferredStartDate: { type: "string", description: "ISO datetime to start searching from (default: today)." },
+        preferredEndDate: { type: "string", description: "ISO datetime to stop searching (default: +7 days)." },
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+        attendeeEmail: { type: "string", description: "Optional attendee email for context." },
+        context: { type: "string", description: "Meeting context e.g. '1:1 with Rahul'." },
+      },
+    },
+  },
+  {
+    name: "create_draft_email",
+    description: "Save an email as a Gmail draft via Corsair. Does NOT send or queue — creates a real Gmail draft the user can review and send from Gmail.",
+    inputSchema: {
+      type: "object",
+      required: ["to", "subject", "body"],
+      properties: {
+        to: { type: "string", description: "Recipient email address." },
+        subject: { type: "string", description: "Email subject." },
+        body: { type: "string", description: "Plain-text email body." },
+        threadId: { type: "string", description: "Optional Gmail thread ID (for drafting a reply)." },
+        cc: { type: "string", description: "Optional CC email address." },
+        bcc: { type: "string", description: "Optional BCC email address." },
+      },
+    },
+  },
+  {
+    name: "update_event_details",
+    description: "Update the title, description, or location of a Google Calendar event via Corsair patch API. Use for metadata changes only — for time changes use reschedule_event.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID." },
+        summary: { type: "string", description: "New event title." },
+        description: { type: "string", description: "New event description." },
+        location: { type: "string", description: "New event location." },
+      },
+    },
+  },
 ];
 
-const MCP_SERVER_VERSION = "1.5.0";
+const MCP_SERVER_VERSION = "2.0.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -916,6 +985,66 @@ async function callTool(
       return toolResult(summary);
     }
 
+    // ── 5 new tools (39 total) ────────────────────────────────────────────────
+
+    case "mark_not_important": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.markNotImportant(userId, threadId);
+      return toolResult({ success: true, threadId, action: "marked_not_important" });
+    }
+
+    case "get_calendar_event": {
+      const eventId = String(args.eventId ?? "").trim();
+      if (!eventId) return toolResult({ success: false, error: "eventId is required" });
+      const calendar = getCalendarService();
+      const event = await calendar.getEvent(userId, eventId);
+      if (!event) return toolResult({ success: false, error: "Event not found or calendar not connected" });
+      return toolResult(event);
+    }
+
+    case "find_meeting_slots": {
+      const { findMeetingSlots } = await import("@repo/services/ai/meeting-slots");
+      const result = await findMeetingSlots({
+        tenantId: userId,
+        durationMinutes: Math.max(15, Math.min(480, Number(args.durationMinutes ?? 30))),
+        preferredStartDate: args.preferredStartDate ? String(args.preferredStartDate) : undefined,
+        preferredEndDate: args.preferredEndDate ? String(args.preferredEndDate) : undefined,
+        timeZone: args.timeZone ? String(args.timeZone) : undefined,
+        attendeeEmail: args.attendeeEmail ? String(args.attendeeEmail) : undefined,
+        context: args.context ? String(args.context) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "create_draft_email": {
+      const to = String(args.to ?? "").trim();
+      const subject = String(args.subject ?? "").trim();
+      const body = String(args.body ?? "").trim();
+      if (!to || !subject || !body) return toolResult({ success: false, error: "to, subject, and body are required" });
+      const draft = await inbox.createDraft(userId, {
+        to,
+        subject,
+        body,
+        threadId: args.threadId ? String(args.threadId) : undefined,
+        cc: args.cc ? String(args.cc) : undefined,
+        bcc: args.bcc ? String(args.bcc) : undefined,
+      });
+      return toolResult({ success: true, draftId: draft.id, subject, to });
+    }
+
+    case "update_event_details": {
+      const eventId = String(args.eventId ?? "").trim();
+      if (!eventId) return toolResult({ success: false, error: "eventId is required" });
+      const calendar = getCalendarService();
+      const updated = await calendar.patchEventDetails(userId, eventId, {
+        summary: args.summary ? String(args.summary) : undefined,
+        description: args.description ? String(args.description) : undefined,
+        location: args.location ? String(args.location) : undefined,
+      });
+      return toolResult({ success: true, eventId, updated });
+    }
+
     default:
       throw Object.assign(new Error(`Unknown tool: ${name}`), { code: -32601 });
   }
@@ -1055,6 +1184,47 @@ mcpRouter.post("/", async (req: Request, res: Response) => {
       const text = promptMap[name];
       if (!text) return res.status(404).json(rpcError(id, -32601, `Prompt not found: ${name}`));
       return res.json(ok(id, { description: name, messages: [{ role: "user", content: { type: "text", text } }] }));
+    }
+
+    // MCP resources/read — return live data for static resource URIs
+    if (method === "resources/read") {
+      const params = (body.params ?? {}) as Record<string, unknown>;
+      const uri = String(params.uri ?? "");
+      const userId = await resolveMcpUserId(req);
+      if (!userId) {
+        return res.status(401).json(rpcError(id, -32001, "Authentication required to read resources"));
+      }
+      const userLimitOk = await applyMcpUserRateLimit(req, res, userId);
+      if (!userLimitOk) return;
+
+      try {
+        let content: unknown;
+        if (uri === "thread://inbox") {
+          const inbox = getInboxService();
+          const result = await inbox.listThreads(userId, { maxResults: 20 });
+          content = result;
+        } else if (uri === "thread://queue") {
+          const queue = getQueueService();
+          const items = await queue.listItems(userId, { status: "pending" });
+          content = { items, count: items.length };
+        } else if (uri === "thread://brief") {
+          const { generateDailyBrief } = await import("@repo/services/ai/daily-brief");
+          content = await generateDailyBrief({ tenantId: userId, timeZone: "UTC" });
+        } else if (uri === "thread://calendar") {
+          const calendar = getCalendarService();
+          const now = new Date();
+          const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          content = await calendar.listEvents(userId, { timeMin: now.toISOString(), timeMax, maxResults: 20 });
+        } else {
+          return res.status(404).json(rpcError(id, -32601, `Unknown resource URI: ${uri}`));
+        }
+        return res.json(ok(id, {
+          contents: [{ uri, mimeType: "application/json", text: JSON.stringify(content, null, 2) }],
+        }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return res.status(500).json(rpcError(id, -32603, `Failed to read resource: ${msg}`));
+      }
     }
 
     // notifications/initialized — acknowledgment per MCP spec

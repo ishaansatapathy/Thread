@@ -475,6 +475,71 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         return JSON.stringify(summary);
       }
 
+      // ── 5 new tools (39 total) ─────────────────────────────────────────────
+
+      case "mark_not_important": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.markNotImportant(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Marked not important", detail: threadId, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId, action: "marked_not_important" });
+      }
+
+      case "get_calendar_event": {
+        const eventId = String(args.eventId ?? "").trim();
+        if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
+        const event = await calendar.getEvent(tenantId, eventId);
+        if (!event) return JSON.stringify({ success: false, error: "Event not found" });
+        return JSON.stringify(event);
+      }
+
+      case "find_meeting_slots": {
+        const durationMinutes = Math.max(15, Math.min(480, Number(args.durationMinutes ?? 30)));
+        const { findMeetingSlots } = await import("./meeting-slots");
+        const result = await findMeetingSlots({
+          tenantId,
+          durationMinutes,
+          preferredStartDate: args.preferredStartDate ? String(args.preferredStartDate) : undefined,
+          preferredEndDate: args.preferredEndDate ? String(args.preferredEndDate) : undefined,
+          timeZone: args.timeZone ? String(args.timeZone) : undefined,
+          attendeeEmail: args.attendeeEmail ? String(args.attendeeEmail) : undefined,
+          context: args.context ? String(args.context) : undefined,
+        });
+        if (result.slots.length > 0) {
+          actions.push({ kind: "calendar", title: `${result.slots.length} meeting slots found`, detail: result.slots[0]!.label, href: "/calendar" });
+        }
+        return JSON.stringify(result);
+      }
+
+      case "create_draft_email": {
+        const to = String(args.to ?? "").trim();
+        const subject = String(args.subject ?? "").trim();
+        const body = String(args.body ?? "").trim();
+        if (!to || !subject || !body) return JSON.stringify({ success: false, error: "to, subject, and body are required" });
+        const draft = await inbox.createDraft(tenantId, {
+          to,
+          subject,
+          body,
+          threadId: args.threadId ? String(args.threadId) : undefined,
+          cc: args.cc ? String(args.cc) : undefined,
+          bcc: args.bcc ? String(args.bcc) : undefined,
+        });
+        actions.push({ kind: "thread", title: "Draft saved", detail: subject, href: "/inbox" });
+        return JSON.stringify({ success: true, draftId: draft.id, subject, to });
+      }
+
+      case "update_event_details": {
+        const eventId = String(args.eventId ?? "").trim();
+        if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
+        const updated = await calendar.patchEventDetails(tenantId, eventId, {
+          summary: args.summary ? String(args.summary) : undefined,
+          description: args.description ? String(args.description) : undefined,
+          location: args.location ? String(args.location) : undefined,
+        });
+        actions.push({ kind: "calendar", title: "Event updated", detail: args.summary ? String(args.summary) : eventId, href: "/calendar" });
+        return JSON.stringify({ success: true, eventId, updated });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
