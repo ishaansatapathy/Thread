@@ -237,6 +237,177 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_daily_brief",
+      description: "Generate the AI daily brief: today's priorities, pending replies, meeting insights, risks, and recommended actions. Combines Corsair Gmail + Calendar data. Call when user asks what to do today or wants a summary.",
+      parameters: {
+        type: "object",
+        properties: {
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata. Defaults to UTC." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_meeting_prep",
+      description: "Generate AI meeting prep for a specific calendar event: past emails, agenda, talking points, risks. Call before a meeting to prepare the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+        },
+        required: ["eventId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_thread_context",
+      description: "Get smart context for an email thread: key people, action items, related emails, and sentiment analysis via Corsair + OpenAI.",
+      parameters: {
+        type: "object",
+        properties: { threadId: { type: "string", description: "Gmail thread id" } },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_missed_followups",
+      description: "Find meetings from the past week that have no follow-up email. Cross-references Corsair Calendar with Corsair Gmail sent. Use to help user track post-meeting actions.",
+      parameters: {
+        type: "object",
+        properties: {
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "check_free_busy",
+      description: "Check the user's calendar availability via Corsair freebusy API. Returns conflicts and free windows. Use before suggesting meeting times.",
+      parameters: {
+        type: "object",
+        properties: {
+          startDateTime: { type: "string", description: "ISO 8601 range start" },
+          endDateTime: { type: "string", description: "ISO 8601 range end" },
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+        },
+        required: ["startDateTime", "endDateTime"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "respond_to_event",
+      description: "Accept, decline, or tentatively accept a Google Calendar event invite via Corsair. Use when user says 'accept this meeting' or 'decline the invite'.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+          response: { type: "string", enum: ["accepted", "declined", "tentative"] },
+        },
+        required: ["eventId", "response"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reschedule_event",
+      description: "Reschedule a Google Calendar event to a new time via Corsair. Use when user wants to move a meeting.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+          startDateTime: { type: "string", description: "New ISO 8601 start datetime" },
+          endDateTime: { type: "string", description: "New ISO 8601 end datetime" },
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+        },
+        required: ["eventId", "startDateTime", "endDateTime"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_event",
+      description: "Cancel a Google Calendar event via Corsair. Use only when user explicitly asks to cancel a meeting.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+        },
+        required: ["eventId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_drafts",
+      description: "List the user's Gmail draft emails via Corsair. Use when user asks to see their drafts.",
+      parameters: {
+        type: "object",
+        properties: {
+          maxResults: { type: "number", description: "Max drafts to return (1-25)", default: 10 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mark_thread_read",
+      description: "Mark a Gmail thread as read via Corsair (removes UNREAD label). Use when user says 'mark as read'.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_contact_intel",
+      description: "Get relationship intelligence for an email contact: interaction history, response rate, key topics, and recommended next action — all from Corsair Gmail + OpenAI. Use when user asks about someone they email.",
+      parameters: {
+        type: "object",
+        properties: {
+          email: { type: "string", description: "Contact's email address" },
+          name: { type: "string", description: "Contact's display name (optional)" },
+        },
+        required: ["email"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "summarize_thread",
+      description: "Summarize an email thread: key decisions, action items, next steps, and sentiment — using Corsair Gmail + OpenAI. Use when user asks 'what's this email about?' or 'what are the action items?'",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {

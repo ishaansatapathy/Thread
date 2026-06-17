@@ -475,6 +475,11 @@ export default function InboxPage() {
     { enabled: Boolean(selectedId) && aiReady, staleTime: 2 * 60_000 },
   );
 
+  const summarizeQuery = trpc.ai.summarizeThread.useQuery(
+    { threadId: selectedId ?? "" },
+    { enabled: Boolean(selectedId) && aiReady, staleTime: 5 * 60_000 },
+  );
+
   const visibleThreads = useMemo(() => {
     const source = hasDemoFixtures ? displayThreads : threads;
     if (view !== "priority" || !priorityRankedIds?.length) return source;
@@ -1363,6 +1368,47 @@ export default function InboxPage() {
                 value={replySubjectValue}
                 onChange={(event) => setReplySubjectValue(event.target.value)}
               />
+              {/* AI Thread Summary */}
+              {aiReady && selectedId && summarizeQuery.data && !summarizeQuery.isLoading ? (
+                <div className="thread-smart-reply-wrap" style={{ borderColor: "var(--thread-border, #e5e7eb)" }}>
+                  <p className="thread-smart-reply-label" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <Sparkles size={11} style={{ color: "var(--thread-accent, #6366f1)" }} />
+                    AI Summary
+                    {summarizeQuery.data.sentiment && summarizeQuery.data.sentiment !== "neutral" ? (
+                      <span style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: summarizeQuery.data.sentiment === "urgent" ? "#fef3c7" : summarizeQuery.data.sentiment === "positive" ? "#d1fae5" : "#fee2e2",
+                        color: summarizeQuery.data.sentiment === "urgent" ? "#92400e" : summarizeQuery.data.sentiment === "positive" ? "#065f46" : "#991b1b",
+                        fontWeight: 600,
+                        textTransform: "capitalize",
+                      }}>
+                        {summarizeQuery.data.sentiment}
+                      </span>
+                    ) : null}
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--thread-muted)", lineHeight: 1.5, margin: "0 0 6px" }}>
+                    {summarizeQuery.data.summary}
+                  </p>
+                  {summarizeQuery.data.actionItems?.length ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {summarizeQuery.data.actionItems.slice(0, 3).map((item, i) => (
+                        <span key={i} style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          background: "var(--thread-surface-2, #f3f4f6)",
+                          color: "var(--thread-text, #374151)",
+                          border: "1px solid var(--thread-border, #e5e7eb)",
+                        }}>
+                          ✓ {item.action}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {/* Smart Reply suggestions */}
               {aiReady && selectedId ? (
                 <div className="thread-smart-reply-wrap">

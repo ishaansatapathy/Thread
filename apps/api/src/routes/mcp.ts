@@ -26,6 +26,11 @@ import { getCalendarService } from "@repo/services/calendar";
 import { rankInboxThreads, isInboxAiConfigured } from "@repo/services/ai/inbox-priority";
 import { generateDailyBrief } from "@repo/services/ai/daily-brief";
 import { getSmartReplies } from "@repo/services/ai/smart-reply";
+import { getMeetingPrep } from "@repo/services/ai/meeting-prep";
+import { getThreadContext } from "@repo/services/ai/thread-context";
+import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
+import { getContactIntel } from "@repo/services/ai/contact-intel";
+import { summarizeThread } from "@repo/services/ai/summarize-thread";
 import { detectInjectionAttempt, validateAgentEmailArgs, DEFAULT_AGENT_SEND_CAP } from "@repo/services/ai/agent-guard";
 import { incrementCounter } from "../metrics";
 import { resolveMcpUserId } from "../mcp-auth";
@@ -363,9 +368,147 @@ const MCP_TOOLS: McpTool[] = [
       properties: { draftId: { type: "string", description: "Gmail draft ID to delete." } },
     },
   },
+  {
+    name: "get_meeting_prep",
+    description: "Generate AI meeting preparation for a calendar event: past email context, agenda items, talking points, and risks. Fetches event via Corsair Calendar and related emails via Corsair Gmail.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID." },
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata. Defaults to UTC." },
+      },
+    },
+  },
+  {
+    name: "get_thread_context",
+    description: "Generate a smart context summary for an email thread: key people, action items, related emails, and sentiment. Fetches via Corsair Gmail and synthesizes with OpenAI.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID." },
+      },
+    },
+  },
+  {
+    name: "get_missed_followups",
+    description: "Detect past meetings that had no follow-up email sent. Cross-references Corsair Calendar events with Corsair Gmail sent messages and suggests follow-up drafts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+      },
+    },
+  },
+  {
+    name: "check_free_busy",
+    description: "Check free/busy availability for a time range via Corsair Calendar freebusy API. Returns conflicting events and available windows.",
+    inputSchema: {
+      type: "object",
+      required: ["startDateTime", "endDateTime"],
+      properties: {
+        startDateTime: { type: "string", description: "ISO 8601 start datetime." },
+        endDateTime: { type: "string", description: "ISO 8601 end datetime." },
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+      },
+    },
+  },
+  {
+    name: "respond_to_event",
+    description: "Accept, decline, or tentatively accept a Google Calendar event invitation via Corsair. Updates attendee RSVP status directly on Google Calendar.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId", "response"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID." },
+        response: { type: "string", enum: ["accepted", "declined", "tentative"], description: "RSVP response." },
+      },
+    },
+  },
+  {
+    name: "reschedule_event",
+    description: "Reschedule a Google Calendar event to a new time via Corsair. Updates start/end time directly on Google Calendar.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId", "startDateTime", "endDateTime"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID." },
+        startDateTime: { type: "string", description: "New ISO 8601 start datetime." },
+        endDateTime: { type: "string", description: "New ISO 8601 end datetime." },
+        timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata." },
+      },
+    },
+  },
+  {
+    name: "cancel_event",
+    description: "Cancel a Google Calendar event via Corsair (sets status to cancelled, notifies attendees).",
+    inputSchema: {
+      type: "object",
+      required: ["eventId"],
+      properties: {
+        eventId: { type: "string", description: "Google Calendar event ID to cancel." },
+      },
+    },
+  },
+  {
+    name: "list_drafts",
+    description: "List Gmail draft emails via Corsair Gmail API.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxResults: { type: "number", description: "Max drafts to return (1-25).", default: 10 },
+      },
+    },
+  },
+  {
+    name: "get_draft",
+    description: "Fetch a specific Gmail draft by ID via Corsair Gmail API, including full message content.",
+    inputSchema: {
+      type: "object",
+      required: ["draftId"],
+      properties: {
+        draftId: { type: "string", description: "Gmail draft ID." },
+      },
+    },
+  },
+  {
+    name: "mark_thread_read",
+    description: "Mark a Gmail thread as read via Corsair Gmail API (removes UNREAD label).",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID." },
+      },
+    },
+  },
+  {
+    name: "get_contact_intel",
+    description: "Get relationship intelligence for an email contact: interaction history, response rate, last contact date, and key topics — all fetched from Corsair Gmail and analyzed by OpenAI.",
+    inputSchema: {
+      type: "object",
+      required: ["email"],
+      properties: {
+        email: { type: "string", description: "Contact email address." },
+        name: { type: "string", description: "Contact display name (optional)." },
+      },
+    },
+  },
+  {
+    name: "summarize_thread",
+    description: "Generate an AI summary of an email thread: key decisions, action items, and next steps. Fetches full thread via Corsair Gmail and summarizes with OpenAI.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID." },
+      },
+    },
+  },
 ];
 
-const MCP_SERVER_VERSION = "1.2.0";
+const MCP_SERVER_VERSION = "1.4.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -669,6 +812,107 @@ async function callTool(
       if (!draftId) return toolResult({ success: false, error: "draftId is required" });
       await inbox.deleteDraft(userId, draftId);
       return toolResult({ success: true, draftId, action: "deleted" });
+    }
+
+    case "get_meeting_prep": {
+      const eventId = String(args.eventId ?? "").trim();
+      const timeZone = String(args.timeZone ?? "UTC").trim();
+      if (!eventId) return toolResult({ success: false, error: "eventId is required" });
+      const prep = await getMeetingPrep({ tenantId: userId, eventId, timeZone });
+      return toolResult(prep);
+    }
+
+    case "get_thread_context": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      const ctx = await getThreadContext({ tenantId: userId, threadId });
+      return toolResult(ctx);
+    }
+
+    case "get_missed_followups": {
+      const timeZone = String(args.timeZone ?? "UTC").trim();
+      const followups = await getMissedFollowUps({ tenantId: userId, timeZone });
+      return toolResult({ followups, count: followups.length });
+    }
+
+    case "check_free_busy": {
+      const startDateTime = String(args.startDateTime ?? "").trim();
+      const endDateTime = String(args.endDateTime ?? "").trim();
+      const timeZone = String(args.timeZone ?? "UTC").trim();
+      if (!startDateTime || !endDateTime) {
+        return toolResult({ success: false, error: "startDateTime and endDateTime are required" });
+      }
+      const calendar = getCalendarService();
+      const result = await calendar.checkFreeBusy(userId, { startDateTime, endDateTime, timeZone });
+      return toolResult(result);
+    }
+
+    case "respond_to_event": {
+      const eventId = String(args.eventId ?? "").trim();
+      const response = String(args.response ?? "").trim() as "accepted" | "declined" | "tentative";
+      if (!eventId || !["accepted", "declined", "tentative"].includes(response)) {
+        return toolResult({ success: false, error: "eventId and response (accepted/declined/tentative) are required" });
+      }
+      const calendar = getCalendarService();
+      const updated = await calendar.respondToEvent(userId, eventId, response);
+      return toolResult({ success: true, eventId, response, event: updated });
+    }
+
+    case "reschedule_event": {
+      const eventId = String(args.eventId ?? "").trim();
+      const startDateTime = String(args.startDateTime ?? "").trim();
+      const endDateTime = String(args.endDateTime ?? "").trim();
+      const timeZone = String(args.timeZone ?? "UTC").trim();
+      if (!eventId || !startDateTime || !endDateTime) {
+        return toolResult({ success: false, error: "eventId, startDateTime, and endDateTime are required" });
+      }
+      const calendar = getCalendarService();
+      const updated = await calendar.updateEventTimes(userId, eventId, { startDateTime, endDateTime, timeZone });
+      return toolResult({ success: true, eventId, updated });
+    }
+
+    case "cancel_event": {
+      const eventId = String(args.eventId ?? "").trim();
+      if (!eventId) return toolResult({ success: false, error: "eventId is required" });
+      const calendar = getCalendarService();
+      await calendar.cancelEvent(userId, eventId);
+      return toolResult({ success: true, eventId, action: "cancelled" });
+    }
+
+    case "list_drafts": {
+      const maxResults = Math.min(25, Math.max(1, Number(args.maxResults ?? 10)));
+      const result = await inbox.listDrafts(userId, { maxResults });
+      return toolResult(result);
+    }
+
+    case "get_draft": {
+      const draftId = String(args.draftId ?? "").trim();
+      if (!draftId) return toolResult({ success: false, error: "draftId is required" });
+      const draft = await inbox.getDraft(userId, draftId);
+      if (!draft) return toolResult({ success: false, error: "Draft not found" });
+      return toolResult(draft);
+    }
+
+    case "mark_thread_read": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      await inbox.markThreadRead(userId, threadId);
+      return toolResult({ success: true, threadId, action: "marked_read" });
+    }
+
+    case "get_contact_intel": {
+      const email = String(args.email ?? "").trim();
+      const name = args.name ? String(args.name).trim() : undefined;
+      if (!email) return toolResult({ success: false, error: "email is required" });
+      const intel = await getContactIntel({ tenantId: userId, email, name });
+      return toolResult(intel);
+    }
+
+    case "summarize_thread": {
+      const threadId = String(args.threadId ?? "").trim();
+      if (!threadId) return toolResult({ success: false, error: "threadId is required" });
+      const summary = await summarizeThread({ tenantId: userId, threadId });
+      return toolResult(summary);
     }
 
     default:

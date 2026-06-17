@@ -54,7 +54,7 @@ function AuthFormPlaceholder({ fields = 2 }: { fields?: number }) {
 export function ThreadAuthCard({
   mode,
   onModeChange,
-  nextPath = "/inbox",
+  nextPath = "/brief",
   onSuccess,
   errorMessage,
   pendingTwoFactorEmail,
