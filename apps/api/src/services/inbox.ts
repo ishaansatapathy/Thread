@@ -787,6 +787,56 @@ export class CorsairInboxService implements InboxService {
     await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: [labelId] });
   }
 
+  /** Star a thread via Corsair Gmail — adds STARRED system label. */
+  async starThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, addLabelIds: ["STARRED"] });
+  }
+
+  /** Unstar a thread via Corsair Gmail — removes STARRED system label. */
+  async unstarThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: ["STARRED"] });
+  }
+
+  /** Mark thread as important via Corsair Gmail — adds IMPORTANT system label. */
+  async markImportant(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, addLabelIds: ["IMPORTANT"] });
+  }
+
+  /** Remove important flag via Corsair Gmail — removes IMPORTANT system label. */
+  async markNotImportant(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: ["IMPORTANT"] });
+  }
+
+  async trashThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await (corsair.gmail.api.threads as unknown as {
+      trash: (opts: { id: string }) => Promise<void>;
+    }).trash({ id: threadId });
+  }
+
+  async deleteDraft(tenantId: string, draftId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await (corsair.gmail.api.drafts as unknown as {
+      delete: (opts: { id: string }) => Promise<void>;
+    }).delete({ id: draftId });
+  }
+
   async registerGmailWatch(tenantId: string): Promise<void> {
     const topicId = process.env.CORSAIR_GMAIL_TOPIC_ID?.trim();
     if (!topicId) {

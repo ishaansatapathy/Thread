@@ -54,6 +54,12 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       listLabels: vi.fn(async () => []),
       applyLabel: vi.fn(async () => undefined),
       removeLabel: vi.fn(async () => undefined),
+      starThread: vi.fn(async () => undefined),
+      unstarThread: vi.fn(async () => undefined),
+      markImportant: vi.fn(async () => undefined),
+      markNotImportant: vi.fn(async () => undefined),
+      trashThread: vi.fn(async () => undefined),
+      deleteDraft: vi.fn(async () => undefined),
       registerGmailWatch: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
     };

@@ -7,6 +7,7 @@ import { getQueueService } from "../queue";
 import { getSettingsService } from "../settings";
 import { isOpenAiConfigured } from "./openai";
 import { rankInboxThreads } from "./inbox-priority";
+import { getSmartReplies } from "./smart-reply";
 import type { OpenAiConversationMessage } from "./openai-tools";
 import { runOpenAiToolLoop } from "./openai-tools";
 import {
@@ -413,6 +414,30 @@ export async function runAgentChat(
           href: "/inbox",
         });
         return JSON.stringify({ success: true, threadId, labelId });
+      }
+
+      case "star_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.starThread(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Thread starred", detail: threadId, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify({ success: true, threadId, action: "starred" });
+      }
+
+      case "trash_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.trashThread(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Thread moved to trash", detail: threadId, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId, action: "trashed" });
+      }
+
+      case "get_smart_replies": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        const result = await getSmartReplies({ tenantId, threadId, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: "Smart replies ready", detail: `${result.suggestions.length} suggestions`, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify(result);
       }
 
       default:

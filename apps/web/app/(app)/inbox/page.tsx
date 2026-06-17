@@ -18,6 +18,9 @@ import {
   Search,
   Sparkles,
   PanelRight,
+  Star,
+  Zap,
+  Trash2,
 } from "lucide-react";
 
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
@@ -297,6 +300,40 @@ export default function InboxPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [importantIds, setImportantIds] = useState<Set<string>>(new Set());
+
+  const starThread = trpc.inbox.starThread.useMutation({
+    onSuccess: () => { if (selectedId) setStarredIds((s) => new Set([...s, selectedId])); },
+    onError: (e) => toast.error(e.message),
+  });
+  const unstarThread = trpc.inbox.unstarThread.useMutation({
+    onSuccess: () => { if (selectedId) setStarredIds((s) => { const n = new Set(s); n.delete(selectedId); return n; }); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markImportant = trpc.inbox.markImportant.useMutation({
+    onSuccess: () => { if (selectedId) setImportantIds((s) => new Set([...s, selectedId])); toast.success("Marked as important"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const markNotImportant = trpc.inbox.markNotImportant.useMutation({
+    onSuccess: () => { if (selectedId) setImportantIds((s) => { const n = new Set(s); n.delete(selectedId); return n; }); },
+    onError: (e) => toast.error(e.message),
+  });
+  const trashThread = trpc.inbox.trashThread.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success("Moved to trash");
+      utils.inbox.listThreads.setData(
+        { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
+        (old) => {
+          if (!old) return old;
+          return { ...old, threads: old.threads.filter((t) => t.id !== variables.threadId) };
+        }
+      );
+      setSelectedId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const archiveThread = trpc.inbox.archiveThread.useMutation({
     onSuccess: (_data, variables) => {
       // Optimistically remove from thread list.
@@ -517,6 +554,7 @@ export default function InboxPage() {
         : selectedQuery.data.suggestedReplyTo?.trim() || parseReplyTo(selectedQuery.data.from),
     );
     setReplySubjectValue(replySubject(selectedQuery.data.subject));
+    setReplyBody("");
     setMeetingTitle(
       selectedQuery.data.subject?.trim() ? `Sync: ${selectedQuery.data.subject}` : "Meeting",
     );
@@ -1053,6 +1091,49 @@ export default function InboxPage() {
                 >
                   <CalendarPlus size={14} />
                   Schedule meeting
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: selectedId && starredIds.has(selectedId) ? "#fbbf24" : undefined }}
+                  disabled={starThread.isPending || unstarThread.isPending}
+                  onClick={() => {
+                    if (!selectedId) return;
+                    starredIds.has(selectedId)
+                      ? unstarThread.mutate({ threadId: selectedId })
+                      : starThread.mutate({ threadId: selectedId });
+                  }}
+                  title={selectedId && starredIds.has(selectedId) ? "Unstar" : "Star this thread"}
+                >
+                  <Star size={14} fill={selectedId && starredIds.has(selectedId) ? "#fbbf24" : "none"} />
+                  {selectedId && starredIds.has(selectedId) ? "Starred" : "Star"}
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: selectedId && importantIds.has(selectedId) ? "#a78bfa" : undefined }}
+                  disabled={markImportant.isPending || markNotImportant.isPending}
+                  onClick={() => {
+                    if (!selectedId) return;
+                    importantIds.has(selectedId)
+                      ? markNotImportant.mutate({ threadId: selectedId })
+                      : markImportant.mutate({ threadId: selectedId });
+                  }}
+                  title={selectedId && importantIds.has(selectedId) ? "Remove important" : "Mark as important"}
+                >
+                  <Zap size={14} fill={selectedId && importantIds.has(selectedId) ? "#a78bfa" : "none"} />
+                  {selectedId && importantIds.has(selectedId) ? "Important" : "Important"}
+                </button>
+                <button
+                  type="button"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: "#ef4444" }}
+                  disabled={trashThread.isPending}
+                  onClick={() => { if (selectedId) trashThread.mutate({ threadId: selectedId }); }}
+                  title="Move to trash"
+                >
+                  <Trash2 size={14} />
+                  Trash
                 </button>
                 <button
                   type="button"
