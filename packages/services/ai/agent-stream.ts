@@ -16,6 +16,13 @@ import { getQueueService } from "../queue";
 import { getSettingsService } from "../settings";
 import { isOpenAiConfigured } from "./openai";
 import { rankInboxThreads } from "./inbox-priority";
+import { getSmartReplies } from "./smart-reply";
+import { generateDailyBrief } from "./daily-brief";
+import { getMeetingPrep } from "./meeting-prep";
+import { getThreadContext } from "./thread-context";
+import { getMissedFollowUps } from "./missed-followups";
+import { getContactIntel } from "./contact-intel";
+import { summarizeThread } from "./summarize-thread";
 import type { OpenAiConversationMessage } from "./openai-tools";
 import { runOpenAiToolLoop } from "./openai-tools";
 import {
@@ -289,6 +296,135 @@ export async function runAgentChatStream(
         await inbox.removeLabel(tenantId, threadId, labelId);
         actions.push({ kind: "thread", title: "Label removed", detail: `${labelId} from ${threadId}`, href: "/inbox" });
         return JSON.stringify({ success: true, threadId, labelId });
+      }
+
+      case "star_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.starThread(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Thread starred", detail: threadId, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify({ success: true, threadId, action: "starred" });
+      }
+
+      case "trash_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.trashThread(tenantId, threadId);
+        actions.push({ kind: "thread", title: "Thread moved to trash", detail: threadId, href: "/inbox" });
+        return JSON.stringify({ success: true, threadId, action: "trashed" });
+      }
+
+      case "get_smart_replies": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        const result = await getSmartReplies({ tenantId, threadId, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: "Smart replies ready", detail: `${result.suggestions.length} suggestions`, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify(result);
+      }
+
+      case "get_daily_brief": {
+        const timeZone = String(args.timeZone ?? "UTC").trim();
+        const brief = await generateDailyBrief({ tenantId, timeZone, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: "Daily Brief", detail: "View your daily brief", href: "/brief" });
+        return JSON.stringify(brief);
+      }
+
+      case "get_meeting_prep": {
+        const eventId = String(args.eventId ?? "").trim();
+        const timeZone = String(args.timeZone ?? "UTC").trim();
+        if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
+        const prep = await getMeetingPrep({ tenantId, eventId, timeZone });
+        actions.push({ kind: "calendar", title: "Meeting prep ready", detail: prep.summary ?? eventId, href: `/calendar?event=${encodeURIComponent(eventId)}` });
+        return JSON.stringify(prep);
+      }
+
+      case "get_thread_context": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        const ctx = await getThreadContext({ tenantId, threadId, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: "Thread context", detail: ctx.nextAction ?? threadId, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify(ctx);
+      }
+
+      case "get_missed_followups": {
+        const timeZone = String(args.timeZone ?? "UTC").trim();
+        const followups = await getMissedFollowUps({ tenantId, userEmail: input.userEmail, timeZone });
+        actions.push({ kind: "thread", title: `${followups.length} missed follow-ups`, detail: "Meetings with no follow-up email", href: "/brief" });
+        return JSON.stringify({ followups, count: followups.length });
+      }
+
+      case "check_free_busy": {
+        const startDateTime = String(args.startDateTime ?? "").trim();
+        const endDateTime = String(args.endDateTime ?? "").trim();
+        const timeZone = String(args.timeZone ?? "UTC").trim();
+        if (!startDateTime || !endDateTime) {
+          return JSON.stringify({ success: false, error: "startDateTime and endDateTime are required" });
+        }
+        const result = await calendar.checkFreeBusy(tenantId, { startDateTime, endDateTime, timeZone });
+        return JSON.stringify(result);
+      }
+
+      case "respond_to_event": {
+        const eventId = String(args.eventId ?? "").trim();
+        const response = String(args.response ?? "").trim() as "accepted" | "declined" | "tentative";
+        if (!eventId || !["accepted", "declined", "tentative"].includes(response)) {
+          return JSON.stringify({ success: false, error: "eventId and response (accepted/declined/tentative) are required" });
+        }
+        const updated = await calendar.respondToEvent(tenantId, eventId, response);
+        actions.push({ kind: "calendar", title: `Event ${response}`, detail: updated.summary, href: "/calendar" });
+        return JSON.stringify({ success: true, eventId, response, event: updated });
+      }
+
+      case "reschedule_event": {
+        const eventId = String(args.eventId ?? "").trim();
+        const startDateTime = String(args.startDateTime ?? "").trim();
+        const endDateTime = String(args.endDateTime ?? "").trim();
+        const timeZone = String(args.timeZone ?? "UTC").trim();
+        if (!eventId || !startDateTime || !endDateTime) {
+          return JSON.stringify({ success: false, error: "eventId, startDateTime, and endDateTime are required" });
+        }
+        const updated = await calendar.updateEventTimes(tenantId, eventId, { startDateTime, endDateTime, timeZone });
+        actions.push({ kind: "calendar", title: "Event rescheduled", detail: updated.summary, href: `/calendar?event=${encodeURIComponent(eventId)}` });
+        return JSON.stringify({ success: true, eventId, updated });
+      }
+
+      case "cancel_event": {
+        const eventId = String(args.eventId ?? "").trim();
+        if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
+        await calendar.cancelEvent(tenantId, eventId);
+        actions.push({ kind: "calendar", title: "Event cancelled", detail: eventId, href: "/calendar" });
+        return JSON.stringify({ success: true, eventId, action: "cancelled" });
+      }
+
+      case "list_drafts": {
+        const maxResults = Math.min(25, Math.max(1, Number(args.maxResults ?? 10)));
+        const result = await inbox.listDrafts(tenantId, { maxResults });
+        actions.push({ kind: "thread", title: `${result.drafts?.length ?? 0} drafts found`, href: "/inbox?view=drafts" });
+        return JSON.stringify(result);
+      }
+
+      case "mark_thread_read": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.markThreadRead(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, action: "marked_read" });
+      }
+
+      case "get_contact_intel": {
+        const email = String(args.email ?? "").trim();
+        const name = args.name ? String(args.name).trim() : undefined;
+        if (!email) return JSON.stringify({ success: false, error: "email is required" });
+        const intel = await getContactIntel({ tenantId, email, name, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: `Relationship: ${intel.name ?? email}`, detail: intel.relationshipSummary, href: `/inbox?q=${encodeURIComponent(`from:${email}`)}` });
+        return JSON.stringify(intel);
+      }
+
+      case "summarize_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        const summary = await summarizeThread({ tenantId, threadId, userEmail: input.userEmail });
+        actions.push({ kind: "thread", title: "Thread summarized", detail: summary.subject, href: `/inbox?thread=${encodeURIComponent(threadId)}` });
+        return JSON.stringify(summary);
       }
 
       default:

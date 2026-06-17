@@ -34,6 +34,8 @@ export type InboxThread = {
   suggestedReplyTo?: string;
   messageCount?: number;
   unread?: boolean;
+  /** Gmail label IDs on the thread (e.g. ["STARRED", "IMPORTANT", "INBOX"]). */
+  labelIds?: string[];
 };
 
 export type InboxDraft = {

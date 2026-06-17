@@ -70,7 +70,7 @@ This calls:
 
 ### Step 5 — AI Agent (`/agent`)
 
-Type natural language commands. The agent has **22 tools** backed by Corsair:
+Type natural language commands. The agent has **28 tools** backed by Corsair:
 
 ```
 What should I focus on today?
@@ -119,9 +119,14 @@ This is the safety layer — AI proposes, human approves.
 
 The Thread MCP server exposes **34 tools** over JSON-RPC 2.0.
 
-**Endpoint:** `POST https://thread-web.vercel.app/mcp` (or `http://localhost:8000/mcp` locally)
+**Endpoints** (both proxied via Next.js rewrite):
+- Production: `POST https://thread-web.vercel.app/mcp`  
+- API direct: `POST https://<your-api-url>/mcp`
+- Local dev: `POST http://localhost:8000/mcp`
 
-**Auth:** `Authorization: Bearer <THREAD_MCP_API_KEY>` (set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` in env)
+The web app proxies `/mcp` → API, so the Vercel URL works directly.
+
+**Auth:** `Authorization: Bearer <THREAD_MCP_API_KEY>` (set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` in the API env)
 
 ### Discover all tools
 
