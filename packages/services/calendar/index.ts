@@ -91,6 +91,15 @@ export interface CalendarService {
     eventId: string,
     response: "accepted" | "declined" | "tentative",
   ): Promise<CalendarEvent>;
+  /**
+   * Patch non-time metadata of a calendar event (title, description, location).
+   * For time changes use updateEventTimes.
+   */
+  patchEventDetails(
+    tenantId: string,
+    eventId: string,
+    patch: { summary?: string; description?: string; location?: string },
+  ): Promise<CalendarEvent | null>;
   /** Revoke Google Calendar OAuth credentials (disconnect). Throws on failure. */
   disconnect(tenantId: string): Promise<void>;
   /**

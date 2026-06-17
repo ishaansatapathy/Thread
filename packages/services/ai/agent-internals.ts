@@ -491,6 +491,90 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  // ── 5 new tools (39 total) ────────────────────────────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "mark_not_important",
+      description: "Remove the Important flag from a Gmail thread via Corsair. Use when user says 'unmark important' or 'this is not important'.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread id" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_calendar_event",
+      description: "Fetch details of a single Google Calendar event by ID via Corsair. Returns title, time, attendees, description, location. Use before rescheduling or preparing for a specific event.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+        },
+        required: ["eventId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_meeting_slots",
+      description: "Find available time slots for a meeting by checking the user's Corsair Calendar free/busy. Returns up to 5 concrete slot suggestions. Use when user asks 'when am I free?' or 'find a time for a 30-min call'.",
+      parameters: {
+        type: "object",
+        properties: {
+          durationMinutes: { type: "number", description: "Meeting duration in minutes (e.g. 30, 60)" },
+          preferredStartDate: { type: "string", description: "ISO date or datetime to start searching from (default: today)" },
+          preferredEndDate: { type: "string", description: "ISO date or datetime to stop searching (default: +7 days)" },
+          timeZone: { type: "string", description: "IANA timezone e.g. Asia/Kolkata" },
+          attendeeEmail: { type: "string", description: "Optional attendee email (for context in the response)" },
+          context: { type: "string", description: "Meeting context e.g. '1:1 with Rahul', 'team standup'" },
+        },
+        required: ["durationMinutes"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_draft_email",
+      description: "Save an email as a Gmail draft via Corsair (does NOT queue for approval or send). Use when user says 'save as draft', 'draft this email', or wants to compose without sending.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Recipient email address" },
+          subject: { type: "string", description: "Email subject" },
+          body: { type: "string", description: "Plain-text email body" },
+          threadId: { type: "string", description: "Optional Gmail thread id when drafting a reply" },
+          cc: { type: "string", description: "Optional CC email address" },
+          bcc: { type: "string", description: "Optional BCC email address" },
+        },
+        required: ["to", "subject", "body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_event_details",
+      description: "Update the title, description, or location of a Google Calendar event via Corsair. Use when user wants to rename a meeting or add/change event details (NOT for rescheduling — use reschedule_event for time changes).",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId: { type: "string", description: "Google Calendar event id" },
+          summary: { type: "string", description: "New event title" },
+          description: { type: "string", description: "New event description" },
+          location: { type: "string", description: "New event location" },
+        },
+        required: ["eventId"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {
