@@ -70,17 +70,30 @@ export async function summarizeThread(input: {
   }
 
   // Build thread text for OpenAI — last 8 messages max
+  // Include attachment filenames so AI knows what's attached (content not read)
   const threadText = messages
     .slice(-8)
     .map((m, i) => {
       const from = m.from ?? "Unknown";
       const date = m.date ? new Date(m.date).toLocaleDateString() : "";
       const body = (m.body ?? "").slice(0, 600).replace(/\n{3,}/g, "\n\n");
-      return `[Message ${i + 1}] From: ${from}${date ? ` (${date})` : ""}\n${body}`;
+      const attachmentLine =
+        m.attachments && m.attachments.length > 0
+          ? `\nAttachments: ${m.attachments.map((a) => `${a.filename} (${a.mimeType})`).join(", ")}`
+          : "";
+      return `[Message ${i + 1}] From: ${from}${date ? ` (${date})` : ""}${attachmentLine}\n${body}`;
     })
     .join("\n\n---\n\n");
 
-  const prompt = `Subject: ${subject}\nParticipants: ${[...participants].join(", ")}\n\nThread:\n${threadText}`;
+  // Collect all unique attachment names for a summary line
+  const allAttachments = messages
+    .flatMap((m) => m.attachments ?? [])
+    .map((a) => a.filename)
+    .filter(Boolean);
+  const attachmentSummary =
+    allAttachments.length > 0 ? `\nAttachments in thread: ${allAttachments.join(", ")}` : "";
+
+  const prompt = `Subject: ${subject}\nParticipants: ${[...participants].join(", ")}${attachmentSummary}\n\nThread:\n${threadText}`;
 
   type RawResult = {
     summary?: string;

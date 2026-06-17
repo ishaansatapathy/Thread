@@ -36,7 +36,7 @@ function buildMeetingPrompt(opts: {
   description?: string;
   start?: string;
   attendees: string[];
-  emails: Array<{ subject: string; from: string; snippet: string }>;
+  emails: Array<{ subject: string; from: string; snippet: string; attachments?: string[] }>;
 }): string {
   const lines = [
     `Meeting: ${opts.summary}`,
@@ -56,6 +56,9 @@ function buildMeetingPrompt(opts: {
     for (const email of opts.emails) {
       lines.push(`- Subject: ${email.subject} | From: ${email.from}`);
       if (email.snippet) lines.push(`  ${email.snippet.slice(0, 200)}`);
+      if (email.attachments && email.attachments.length > 0) {
+        lines.push(`  Attachments: ${email.attachments.join(", ")}`);
+      }
     }
   } else {
     lines.push(``, `No related emails found.`);
@@ -110,7 +113,7 @@ export async function getMeetingPrep(input: {
   }
 
   const gmailStatus = await inbox.getConnectionStatus(input.tenantId);
-  const relatedEmailsRaw: Array<{ id: string; subject: string; from: string; snippet: string }> = [];
+  const relatedEmailsRaw: Array<{ id: string; subject: string; from: string; snippet: string; attachments?: string[] }> = [];
 
   if (gmailStatus.gmail === "connected") {
     const seen = new Set<string>();
@@ -120,11 +123,17 @@ export async function getMeetingPrep(input: {
         for (const t of result.threads) {
           if (!seen.has(t.id)) {
             seen.add(t.id);
+            // Collect attachment names from messages if available
+            const attachmentNames = (t.messages ?? [])
+              .flatMap((m) => m.attachments ?? [])
+              .map((a) => a.filename)
+              .filter(Boolean);
             relatedEmailsRaw.push({
               id: t.id,
               subject: t.subject?.trim() || "No subject",
               from: t.fromName?.trim() || t.from?.trim() || "Unknown",
               snippet: t.snippet?.trim() || "",
+              attachments: attachmentNames.length > 0 ? attachmentNames : undefined,
             });
           }
         }
