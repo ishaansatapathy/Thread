@@ -291,6 +291,7 @@ export async function generateDailyBrief(input: {
   userEmail?: string;
   displayName?: string | null;
   timeZone?: string;
+  dismissedThreadIds?: string[];
 }): Promise<DailyBrief> {
   const context = await gatherDailyBriefContext(input);
 

@@ -50,7 +50,10 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       sendMessage,
       createDraft,
       markThreadRead: vi.fn(async () => undefined),
+      markThreadUnread: vi.fn(async () => undefined),
       archiveThread: vi.fn(async () => undefined),
+      ensureLabel: vi.fn(async () => "label-id"),
+      autoLabelThreads: vi.fn(async () => undefined),
       listLabels: vi.fn(async () => []),
       applyLabel: vi.fn(async () => undefined),
       removeLabel: vi.fn(async () => undefined),
@@ -88,6 +91,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       })),
       disconnect: vi.fn(async () => undefined),
       patchEventDetails: vi.fn(async () => null),
+      quickAddEvent: vi.fn(async () => ({ id: "event-1", summary: "Quick event" })),
       registerWebhook: vi.fn(async () => undefined),
     });
   });

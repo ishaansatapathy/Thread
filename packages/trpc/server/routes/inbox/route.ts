@@ -246,6 +246,20 @@ export const inboxRouter = router({
       }
     }),
 
+  markThreadUnread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/unread"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.markThreadUnread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   archiveThread: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/archive"), tags: TAGS } })
     .input(z.object({ threadId: z.string().min(1) }))

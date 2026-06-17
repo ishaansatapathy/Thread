@@ -73,9 +73,18 @@ function mapEvent(event: {
     organizer?: boolean;
     optional?: boolean;
   }>;
+  conferenceData?: {
+    entryPoints?: Array<{ entryPointType?: string; uri?: string }>;
+    hangoutLink?: string;
+  };
 }): CalendarEvent | null {
   if (!event.id) return null;
   const allDay = Boolean(event.start?.date && !event.start?.dateTime);
+  // Prefer top-level hangoutLink; fall back to conferenceData entry point.
+  const meetLink =
+    event.hangoutLink ??
+    event.conferenceData?.hangoutLink ??
+    event.conferenceData?.entryPoints?.find((e) => e.entryPointType === "video")?.uri;
   return {
     id: event.id,
     summary: event.summary?.trim() || "Untitled event",
@@ -85,7 +94,7 @@ function mapEvent(event: {
     end: event.end?.dateTime ?? event.end?.date,
     allDay,
     htmlLink: event.htmlLink,
-    hangoutLink: event.hangoutLink,
+    hangoutLink: meetLink,
     status: event.status,
     recurringEventId: event.recurringEventId,
     isRecurring: Boolean(event.recurringEventId),
@@ -204,6 +213,27 @@ export class CorsairCalendarService implements CalendarService {
     return { events, nextPageToken: result.nextPageToken };
   }
 
+  /**
+   * Natural-language event creation via Google Calendar's quickAdd endpoint.
+   * E.g. "Lunch with Sarah tomorrow at noon" → creates a real calendar event.
+   * Returns the mapped CalendarEvent.
+   */
+  async quickAddEvent(tenantId: string, text: string): Promise<CalendarEvent> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.googlecalendar !== "connected") {
+      throw new Error("Google Calendar is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const result = await (corsair.googlecalendar.api.events as {
+      quickAdd: (opts: { calendarId: string; text: string; sendUpdates?: string }) => Promise<Record<string, unknown>>;
+    }).quickAdd({ calendarId: "primary", text, sendUpdates: "all" });
+
+    const mapped = mapEvent(result);
+    if (!mapped) throw new Error("quickAdd returned an unrecognizable event");
+    return mapped;
+  }
+
   async createEvent(
     tenantId: string,
     input: {
@@ -216,6 +246,8 @@ export class CorsairCalendarService implements CalendarService {
       attendeeEmails?: string[];
       allDay?: boolean;
       recurrence?: string[];
+      /** When true, auto-generates a Google Meet link via conferenceData. Defaults to true when attendees are provided. */
+      addGoogleMeet?: boolean;
     },
   ) {
     const status = await this.getConnectionStatus(tenantId);
@@ -232,9 +264,18 @@ export class CorsairCalendarService implements CalendarService {
       ? { date: input.endDateTime.slice(0, 10) }
       : { dateTime: input.endDateTime, timeZone };
 
-    const created = await corsair.googlecalendar.api.events.create({
+    // Auto-add Google Meet when there are attendees or explicitly requested.
+    const addMeet = input.addGoogleMeet ?? (Boolean(input.attendeeEmails?.length));
+    const conferenceData = addMeet
+      ? { createRequest: { requestId: `corsair-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } }
+      : undefined;
+
+    const created = await (corsair.googlecalendar.api.events as {
+      create: (opts: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    }).create({
       calendarId: "primary",
       sendUpdates: "all",
+      ...(addMeet ? { conferenceDataVersion: 1 } : {}),
       event: {
         summary: input.summary,
         description: input.description,
@@ -243,6 +284,7 @@ export class CorsairCalendarService implements CalendarService {
         end,
         attendees: input.attendeeEmails?.map((email) => ({ email })),
         recurrence: input.recurrence?.length ? input.recurrence : undefined,
+        ...(conferenceData ? { conferenceData } : {}),
       },
     });
 

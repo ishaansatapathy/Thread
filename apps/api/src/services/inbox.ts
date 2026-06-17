@@ -56,6 +56,11 @@ import { incrementCounter } from "../metrics";
 const CONNECTION_CACHE_TTL_MS = 30_000;
 const connectionCache = new Map<string, { status: string; expiresAt: number }>();
 
+// ── Gmail label ID cache ─────────────────────────────────────────────────────
+// ensureLabel calls labels.list+create — cache by tenantId:name to avoid
+// redundant API calls across requests in the same process lifetime.
+const labelIdCache = new Map<string, string>();
+
 function getCachedConnectionStatus(tenantId: string): string | null {
   const entry = connectionCache.get(tenantId);
   if (!entry || entry.expiresAt <= Date.now()) {
@@ -764,6 +769,21 @@ export class CorsairInboxService implements InboxService {
     await mailCache.upsertMany(tenantId, [{ threadId, unread: false }]);
   }
 
+  async markThreadUnread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") {
+      throw new Error("Gmail is not connected");
+    }
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({
+      id: threadId,
+      addLabelIds: ["UNREAD"],
+    });
+
+    await mailCache.upsertMany(tenantId, [{ threadId, unread: true }]);
+  }
+
   async archiveThread(tenantId: string, threadId: string): Promise<void> {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
@@ -848,6 +868,99 @@ export class CorsairInboxService implements InboxService {
     if (status.gmail !== "connected") throw new Error("Gmail is not connected");
     const corsair = getCorsair().withTenant(tenantId);
     await corsair.gmail.api.threads.modify({ id: threadId, removeLabelIds: ["IMPORTANT"] });
+  }
+
+  /**
+   * Ensure a Gmail label exists (creating it via Corsair if missing) and return its ID.
+   * Uses a per-tenant in-memory cache to avoid redundant label list+create calls.
+   */
+  async ensureLabel(
+    tenantId: string,
+    name: string,
+    opts?: { backgroundColor?: string; textColor?: string },
+  ): Promise<string> {
+    const cacheKey = `${tenantId}:${name}`;
+    if (labelIdCache.has(cacheKey)) return labelIdCache.get(cacheKey)!;
+
+    const corsair = getCorsair().withTenant(tenantId);
+    const labelsApi = corsair.gmail.api.labels as {
+      list: (opts?: Record<string, unknown>) => Promise<{ labels?: Array<{ id?: string; name?: string }> } | Array<{ id?: string; name?: string }>>;
+      create: (opts: Record<string, unknown>) => Promise<{ id?: string; name?: string }>;
+    };
+
+    const result = await labelsApi.list({});
+    const labels = Array.isArray(result) ? result : (result.labels ?? []);
+    const existing = labels.find((l) => l.name === name);
+    if (existing?.id) {
+      labelIdCache.set(cacheKey, existing.id);
+      return existing.id;
+    }
+
+    const created = await labelsApi.create({
+      label: {
+        name,
+        labelListVisibility: "labelShow",
+        messageListVisibility: "show",
+        ...(opts?.backgroundColor || opts?.textColor
+          ? { color: { backgroundColor: opts.backgroundColor, textColor: opts.textColor } }
+          : {}),
+      },
+    });
+
+    if (!created.id) throw new Error(`Failed to create Gmail label: ${name}`);
+    labelIdCache.set(cacheKey, created.id);
+    return created.id;
+  }
+
+  /**
+   * Apply AI-derived Gmail labels to threads based on urgency/category.
+   * Creates the labels if they don't exist. Fire-and-forget safe (non-fatal on error).
+   * Labels applied:
+   *   urgency=critical  → "Corsair/Critical"
+   *   urgency=high      → "Corsair/High Priority"
+   *   category=reply_needed → "Corsair/Reply Needed"
+   *   category=deadline → "Corsair/Deadline"
+   */
+  async autoLabelThreads(
+    tenantId: string,
+    items: Array<{
+      id: string;
+      urgency: "critical" | "high" | "medium" | "low" | "noise";
+      category: "reply_needed" | "deadline" | "meeting" | "billing" | "fyi" | "promo";
+    }>,
+  ): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") return;
+
+    // Determine which labels we'll need.
+    const needsCritical = items.some((i) => i.urgency === "critical");
+    const needsHigh = items.some((i) => i.urgency === "high" || i.urgency === "critical");
+    const needsReply = items.some((i) => i.category === "reply_needed");
+    const needsDeadline = items.some((i) => i.category === "deadline");
+
+    const [criticalId, highId, replyId, deadlineId] = await Promise.all([
+      needsCritical ? this.ensureLabel(tenantId, "Corsair/Critical", { backgroundColor: "#cc3a21", textColor: "#ffffff" }) : Promise.resolve(null),
+      needsHigh ? this.ensureLabel(tenantId, "Corsair/High Priority", { backgroundColor: "#e66550", textColor: "#ffffff" }) : Promise.resolve(null),
+      needsReply ? this.ensureLabel(tenantId, "Corsair/Reply Needed", { backgroundColor: "#f2a60c", textColor: "#ffffff" }) : Promise.resolve(null),
+      needsDeadline ? this.ensureLabel(tenantId, "Corsair/Deadline", { backgroundColor: "#ffd6a2", textColor: "#000000" }) : Promise.resolve(null),
+    ]);
+
+    const corsair = getCorsair().withTenant(tenantId);
+    await Promise.all(
+      items.map(async (item) => {
+        const addLabelIds: string[] = [];
+        if (item.urgency === "critical" && criticalId) addLabelIds.push(criticalId);
+        if ((item.urgency === "critical" || item.urgency === "high") && highId) addLabelIds.push(highId);
+        if (item.category === "reply_needed" && replyId) addLabelIds.push(replyId);
+        if (item.category === "deadline" && deadlineId) addLabelIds.push(deadlineId);
+        if (addLabelIds.length === 0) return;
+        try {
+          await corsair.gmail.api.threads.modify({ id: item.id, addLabelIds });
+        } catch {
+          // Non-fatal — label apply is best-effort
+        }
+      }),
+    );
   }
 
   async trashThread(tenantId: string, threadId: string): Promise<void> {

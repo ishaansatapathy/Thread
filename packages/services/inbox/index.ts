@@ -122,6 +122,11 @@ export interface InboxService {
    */
   markThreadRead(tenantId: string, threadId: string): Promise<void>;
   /**
+   * Add the UNREAD label to a Gmail thread.
+   * Throws if Gmail is not connected or the API call fails.
+   */
+  markThreadUnread(tenantId: string, threadId: string): Promise<void>;
+  /**
    * Archive a thread by removing the INBOX label.
    * Throws if Gmail is not connected or the API call fails.
    */
@@ -144,6 +149,28 @@ export interface InboxService {
   trashThread(tenantId: string, threadId: string): Promise<void>;
   /** Delete a Gmail draft by id via Corsair. */
   deleteDraft(tenantId: string, draftId: string): Promise<void>;
+  /**
+   * Ensure a Gmail label exists (create it via Corsair if missing).
+   * Returns the label ID. Results are cached per-process per tenant+name.
+   */
+  ensureLabel(
+    tenantId: string,
+    name: string,
+    opts?: { backgroundColor?: string; textColor?: string },
+  ): Promise<string>;
+  /**
+   * Apply AI-derived Gmail labels (Corsair/Critical, Corsair/High Priority, etc.)
+   * to a batch of threads based on their urgency and category scores.
+   * Creates labels if missing. Fire-and-forget safe — non-fatal on individual failures.
+   */
+  autoLabelThreads(
+    tenantId: string,
+    items: Array<{
+      id: string;
+      urgency: "critical" | "high" | "medium" | "low" | "noise";
+      category: "reply_needed" | "deadline" | "meeting" | "billing" | "fyi" | "promo";
+    }>,
+  ): Promise<void>;
   /**
    * Register Gmail Pub/Sub push notifications (users.watch).
    * Best-effort when CORSAIR_GMAIL_TOPIC_ID is unset; throws on API failure.

@@ -102,6 +102,11 @@ export interface CalendarService {
     eventId: string,
     patch: { summary?: string; description?: string; location?: string },
   ): Promise<CalendarEvent | null>;
+  /**
+   * Create a calendar event from a natural-language text string using Google Calendar's quickAdd.
+   * E.g. "Lunch with Sarah tomorrow at noon" → real event.
+   */
+  quickAddEvent(tenantId: string, text: string): Promise<CalendarEvent>;
   /** Revoke Google Calendar OAuth credentials (disconnect). Throws on failure. */
   disconnect(tenantId: string): Promise<void>;
   /**

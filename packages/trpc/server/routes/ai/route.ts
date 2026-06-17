@@ -79,6 +79,8 @@ import { getMissedFollowUps } from "@repo/services/ai/missed-followups";
 import { getSmartReplies } from "@repo/services/ai/smart-reply";
 import { getContactIntel } from "@repo/services/ai/contact-intel";
 import { summarizeThread } from "@repo/services/ai/summarize-thread";
+import { getInboxService } from "@repo/services/inbox";
+import { findMeetingSlots } from "@repo/services/ai/meeting-slots";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -175,12 +177,26 @@ export const aiRouter = router({
     .input(
       z.object({
         threads: z.array(inboxRankThreadSchema).min(1).max(50),
+        /** When true, auto-apply Gmail labels (Corsair/Critical, Corsair/High Priority, etc.) via Corsair. */
+        autoLabel: z.boolean().optional(),
       }),
     )
     .output(inboxAnalysisSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       try {
-        return await analyzeInboxThreads(input.threads);
+        const analysis = await analyzeInboxThreads(input.threads);
+        // Fire-and-forget auto-labeling — persists AI priority to Gmail labels via Corsair.
+        if (input.autoLabel !== false) {
+          const labelItems = analysis.items.filter(
+            (i) => i.urgency === "critical" || i.urgency === "high" || i.category === "reply_needed" || i.category === "deadline",
+          );
+          if (labelItems.length > 0) {
+            getInboxService()
+              .autoLabelThreads(ctx.user.id, labelItems)
+              .catch(() => { /* non-fatal */ });
+          }
+        }
+        return analysis;
       } catch (error) {
         mapServiceError(error);
       }
@@ -281,6 +297,43 @@ export const aiRouter = router({
       }
     }),
 
+  /** Find available meeting slots using Corsair Calendar free/busy + optional AI ranking. */
+  findMeetingSlots: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/meeting-slots"), tags: TAGS } })
+    .input(
+      z.object({
+        durationMinutes: z.number().int().min(15).max(480),
+        preferredStartDate: z.string().optional(),
+        preferredEndDate: z.string().optional(),
+        timeZone: z.string().max(64).optional(),
+        attendeeEmail: z.string().email().optional(),
+        context: z.string().max(200).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        slots: z.array(
+          z.object({
+            startIso: z.string(),
+            endIso: z.string(),
+            label: z.string(),
+          }),
+        ),
+        note: z.string().optional(),
+        calendarConnected: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await findMeetingSlots({
+          tenantId: ctx.user.id,
+          ...input,
+        });
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   /** Daily brief — cached per-user per day in DB (falls back to 5-min memory cache). */
   dailyBrief: protectedProcedure
     .meta({ openapi: { method: "GET", path: getPath("/daily-brief"), tags: TAGS } })
@@ -301,11 +354,20 @@ export const aiRouter = router({
           const memCached = getMemCached(ctx.user.id);
           if (memCached) return memCached;
         }
+        // Fetch user's dismissed thread IDs so the brief generator can filter them out.
+        const dismissedRows = await db
+          .select({ threadId: briefDismissalsTable.threadId })
+          .from(briefDismissalsTable)
+          .where(eq(briefDismissalsTable.userId, ctx.user.id))
+          .catch(() => [] as Array<{ threadId: string }>);
+        const dismissedThreadIds = dismissedRows.map((r) => r.threadId);
+
         const brief = await generateDailyBrief({
           tenantId: ctx.user.id,
           userEmail: ctx.user.email,
           displayName: ctx.user.displayName ?? ctx.user.fullName,
           timeZone,
+          dismissedThreadIds,
         });
         // Persist to DB (daily) + memory (5 min fallback) — fire-and-forget.
         setDbCachedBrief(ctx.user.id, timeZone, brief).catch(() => {});
