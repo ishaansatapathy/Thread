@@ -74,10 +74,21 @@ export async function getContactIntel(input: {
     }
   }
 
-  const allThreads = [
-    ...sentThreads.map((t) => ({ ...t, direction: "sent" as const })),
+  // Deduplicate by thread ID — the same thread can appear in both sent and
+  // received results (e.g. a reply thread). Prefer the "received" direction
+  // when both exist so the contact's reply is counted as the interaction.
+  const seenIds = new Set<string>();
+  const allThreads: Array<{ id: string; subject?: string; date?: string; from?: string; direction: "sent" | "received" }> = [];
+  for (const t of [
     ...receivedThreads.map((t) => ({ ...t, direction: "received" as const })),
-  ].sort((a, b) => {
+    ...sentThreads.map((t) => ({ ...t, direction: "sent" as const })),
+  ]) {
+    if (!seenIds.has(t.id)) {
+      seenIds.add(t.id);
+      allThreads.push(t);
+    }
+  }
+  allThreads.sort((a, b) => {
     const da = a.date ? new Date(a.date).getTime() : 0;
     const db = b.date ? new Date(b.date).getTime() : 0;
     return db - da;
