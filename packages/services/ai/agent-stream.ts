@@ -172,9 +172,14 @@ export async function runAgentChatStream(
           kind: "email_queued",
           title: sent ? (mode === "draft" ? "Draft saved" : "Email sent") : (mode === "draft" ? "Draft queued" : "Send queued for approval"),
           detail: `To ${to}`,
-          href: sent ? undefined : "/queue",
+          href: sent
+            ? threadId
+              ? `/inbox?thread=${encodeURIComponent(threadId)}`
+              : undefined
+            : "/queue",
           disposition: sent ? "sent" : "queued",
           queueItemId: sent ? undefined : item.id,
+          threadId: threadId || undefined,
           lines: [`Subject: ${subject}`, body.slice(0, 400)],
         });
         return JSON.stringify({
