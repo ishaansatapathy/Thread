@@ -5,7 +5,7 @@
  * `executeTool` function from this single source of truth, eliminating the ~450-
  * line duplication that previously existed between the two files.
  *
- * 52 tools — in parity with the MCP server.
+ * 57 tools — in full parity with the MCP server (see mcp-server.json).
  */
 
 import { logger } from "@repo/logger";
@@ -640,6 +640,55 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
           limit: args.limit != null ? Number(args.limit) : undefined,
         });
         return JSON.stringify(result);
+      }
+
+      case "search_calendars_db": {
+        const result = await calendar.searchCalendarsDb(tenantId, {
+          query: typeof args.query === "string" ? args.query : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "search_drafts_db": {
+        const result = await inbox.searchDraftsDb(tenantId, {
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "search_labels_db": {
+        const result = await inbox.searchLabelsDb(tenantId, {
+          name: typeof args.name === "string" ? args.name : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "list_messages": {
+        const result = await inbox.listMessages(tenantId, {
+          maxResults: args.maxResults != null ? Number(args.maxResults) : undefined,
+          q: typeof args.q === "string" ? args.q : undefined,
+          labelIds: Array.isArray(args.labelIds) ? args.labelIds.map(String) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "modify_message": {
+        const messageId = String(args.messageId ?? "").trim();
+        if (!messageId) return JSON.stringify({ success: false, error: "messageId is required" });
+        await inbox.modifyMessage(tenantId, messageId, {
+          addLabelIds: Array.isArray(args.addLabelIds) ? args.addLabelIds.map(String) : undefined,
+          removeLabelIds: Array.isArray(args.removeLabelIds) ? args.removeLabelIds.map(String) : undefined,
+        });
+        return JSON.stringify({ success: true, messageId });
+      }
+
+      case "untrash_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.untrashThread(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, untrashed: true });
       }
 
       case "update_draft": {

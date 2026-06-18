@@ -718,6 +718,92 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "search_calendars_db",
+      description: "Search synced Google Calendars via googlecalendar.db.calendars.search.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_drafts_db",
+      description: "Search synced Gmail drafts via corsair.gmail.db.drafts.search (local cache).",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_labels_db",
+      description: "Search synced Gmail labels via corsair.gmail.db.labels.search.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Filter labels whose name contains this text." },
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_messages",
+      description: "List Gmail messages via Corsair messages.list with optional query and label filters.",
+      parameters: {
+        type: "object",
+        properties: {
+          maxResults: { type: "number" },
+          q: { type: "string" },
+          labelIds: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "modify_message",
+      description: "Add or remove labels on a single Gmail message via Corsair messages.modify.",
+      parameters: {
+        type: "object",
+        properties: {
+          messageId: { type: "string" },
+          addLabelIds: { type: "array", items: { type: "string" } },
+          removeLabelIds: { type: "array", items: { type: "string" } },
+        },
+        required: ["messageId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "untrash_thread",
+      description: "Restore a Gmail thread from trash via Corsair threads.untrash.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "update_draft",
       description: "Update an existing Gmail draft via Corsair drafts.update.",
       parameters: {
