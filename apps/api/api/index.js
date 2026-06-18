@@ -74,7 +74,7 @@ async function loadHandler() {
 module.exports = async (req, res) => {
   const pathname = requestPath(req);
 
-  if (pathname === "/health" || pathname === "/" || pathname === "/ping") {
+  if (pathname === "/health" || pathname === "/" || pathname === "/ping" || pathname === "/api") {
     sendJson(res, 200, {
       healthy: true,
       ready: Boolean(handler),

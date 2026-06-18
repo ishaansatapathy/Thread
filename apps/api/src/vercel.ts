@@ -4,7 +4,6 @@
 import type { Express } from "express";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import expressApp from "./server";
 import { runApiBootstrap, validateApiEnv } from "./api-bootstrap";
 
 let app: Express | null = null;
@@ -22,6 +21,7 @@ async function bootExpress(): Promise<Express> {
   }
 
   await runApiBootstrap({ serverless: true });
+  const { default: expressApp } = await import("./server");
   return expressApp;
 }
 
