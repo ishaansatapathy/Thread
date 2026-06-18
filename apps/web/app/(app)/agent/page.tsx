@@ -25,6 +25,7 @@ import { AgentContextPicker } from "~/components/app/agent-context-picker";
 import { AgentFocusChip, type AgentFocusState } from "~/components/app/agent-focus-chip";
 import { AgentSessionSidebar } from "~/components/app/agent-session-sidebar";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { QueryErrorState } from "~/components/app/query-error-state";
 import {
   dismissBriefThread,
   dismissBriefThreadFromQueueItem,
@@ -616,6 +617,20 @@ export default function AgentPage() {
             </div>
 
             <div className="thread-agent-feed" ref={feedRef}>
+              {status.isError ? (
+                <QueryErrorState
+                  title="Agent unavailable"
+                  message={status.error?.message ?? "Could not reach the agent service"}
+                  onRetry={() => void status.refetch()}
+                />
+              ) : null}
+              {sessionsQuery.isError ? (
+                <QueryErrorState
+                  title="Sessions unavailable"
+                  message={sessionsQuery.error?.message ?? "Could not load chat sessions"}
+                  onRetry={() => void sessionsQuery.refetch()}
+                />
+              ) : null}
               {status.isLoading && messages.length === 0 ? (
                 <SkeletonList count={3} />
               ) : null}

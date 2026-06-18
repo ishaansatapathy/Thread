@@ -64,6 +64,8 @@ export const calendarDeletePayloadSchema = z.object({
   htmlLink: z.string().optional(),
   recurringEventId: z.string().optional(),
   editScope: z.enum(["instance", "series", "following"]).optional(),
+  /** When true, approve calls cancel (notify attendees) instead of hard delete. */
+  cancelWithNotify: z.boolean().optional(),
 });
 
 export const draftSendPayloadSchema = z.object({

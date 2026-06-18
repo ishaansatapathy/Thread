@@ -428,7 +428,7 @@ const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "reschedule_event",
-    description: "Reschedule a Google Calendar event to a new time via Corsair. Updates start/end time directly on Google Calendar.",
+    description: "Queue a calendar reschedule for human approval (HITL). Creates a calendar_archive queue item — approve in Queue to apply new times via Corsair.",
     inputSchema: {
       type: "object",
       required: ["eventId", "startDateTime", "endDateTime"],
@@ -442,7 +442,7 @@ const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "cancel_event",
-    description: "Cancel a Google Calendar event via Corsair (sets status to cancelled, notifies attendees).",
+    description: "Queue cancellation of a Google Calendar event for human approval (HITL). Notifies attendees on approve via Corsair cancel — use dismiss to abort.",
     inputSchema: {
       type: "object",
       required: ["eventId"],
@@ -1147,17 +1147,58 @@ async function callTool(
       if (!eventId || !startDateTime || !endDateTime) {
         return toolResult({ success: false, error: "eventId, startDateTime, and endDateTime are required" });
       }
-      const calendar = getCalendarService();
-      const updated = await calendar.updateEventTimes(userId, eventId, { startDateTime, endDateTime, timeZone });
-      return toolResult({ success: true, eventId, updated });
+      const existing = await calendar.getEvent(userId, eventId);
+      if (!existing) return toolResult({ success: false, error: "Event not found" });
+      const item = await queue.enqueueCalendarArchive(
+        userId,
+        {
+          archive: {
+            eventId,
+            summary: existing.summary ?? "Event",
+            startDateTime,
+            endDateTime,
+            timeZone,
+            htmlLink: existing.htmlLink,
+            recurringEventId: existing.recurringEventId,
+          },
+          title: `Reschedule: ${existing.summary ?? "Event"}`,
+        },
+        { origin: "agent" },
+      );
+      return toolResult({
+        success: true,
+        queued: true,
+        queueItemId: item.id,
+        status: item.status,
+        message: "Reschedule queued — approve via approve_queue_item or /queue",
+      });
     }
 
     case "cancel_event": {
       const eventId = String(args.eventId ?? "").trim();
       if (!eventId) return toolResult({ success: false, error: "eventId is required" });
-      const calendar = getCalendarService();
-      await calendar.cancelEvent(userId, eventId);
-      return toolResult({ success: true, eventId, action: "cancelled" });
+      const existing = await calendar.getEvent(userId, eventId);
+      const item = await queue.enqueueCalendarDelete(
+        userId,
+        {
+          delete: {
+            eventId,
+            summary: existing?.summary ?? "Event",
+            htmlLink: existing?.htmlLink,
+            recurringEventId: existing?.recurringEventId,
+            cancelWithNotify: true,
+          },
+          title: `Cancel: ${existing?.summary ?? eventId}`,
+        },
+        { origin: "agent" },
+      );
+      return toolResult({
+        success: true,
+        queued: true,
+        queueItemId: item.id,
+        status: item.status,
+        message: "Cancellation queued — approve via approve_queue_item or /queue",
+      });
     }
 
     case "list_drafts": {

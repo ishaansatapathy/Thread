@@ -1,6 +1,7 @@
 /**
- * Vercel serverless entry — Express app (not the long-running index.ts bootstrap).
+ * Vercel serverless entry — bundled Express app from tsup (dist/server.js).
  */
-import app from "../src/server";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const app = require("../dist/server.js").default;
 
 export default app;

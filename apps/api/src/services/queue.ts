@@ -687,10 +687,14 @@ export class ThreadQueueService implements QueueService {
       }
       case "calendar_delete": {
         const deletePayload = parseCalendarDeletePayload(payload);
-        await calendar.deleteEvent(userId, deletePayload.eventId, {
-          editScope: deletePayload.editScope,
-          recurringEventId: deletePayload.recurringEventId,
-        });
+        if (deletePayload.cancelWithNotify) {
+          await calendar.cancelEvent(userId, deletePayload.eventId);
+        } else {
+          await calendar.deleteEvent(userId, deletePayload.eventId, {
+            editScope: deletePayload.editScope,
+            recurringEventId: deletePayload.recurringEventId,
+          });
+        }
         return;
       }
       default:

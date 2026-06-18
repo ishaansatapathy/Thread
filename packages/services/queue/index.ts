@@ -57,6 +57,7 @@ export type CalendarDeletePayload = {
   htmlLink?: string;
   recurringEventId?: string;
   editScope?: "instance" | "series" | "following";
+  cancelWithNotify?: boolean;
 };
 
 export type QueueItem = {
