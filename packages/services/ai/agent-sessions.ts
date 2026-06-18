@@ -36,6 +36,9 @@ export type AgentSessionListItem = {
 
 const MAX_STORED_MESSAGES = 40;
 
+/** Per-process: skip repeat migration checks on hot list path. */
+const legacyMigrationChecked = new Set<string>();
+
 function deriveSessionTitle(messages: AgentSessionMessage[]): string | null {
   const firstUser = messages.find((m) => m.role === "user");
   if (!firstUser?.content.trim()) return null;
@@ -215,22 +218,32 @@ export async function appendAgentSessionTurn(
 
 /** One-time migration: legacy single-row history → first session. */
 export async function migrateLegacyAgentHistory(userId: string): Promise<string | null> {
-  const [existingSession] = await db
-    .select({ id: agentChatSessionsTable.id })
-    .from(agentChatSessionsTable)
-    .where(eq(agentChatSessionsTable.userId, userId))
-    .limit(1);
+  if (legacyMigrationChecked.has(userId)) return null;
 
-  if (existingSession) return null;
+  const [[existingSession], [legacy]] = await Promise.all([
+    db
+      .select({ id: agentChatSessionsTable.id })
+      .from(agentChatSessionsTable)
+      .where(eq(agentChatSessionsTable.userId, userId))
+      .limit(1),
+    db
+      .select({ messages: agentChatHistoryTable.messages })
+      .from(agentChatHistoryTable)
+      .where(eq(agentChatHistoryTable.userId, userId))
+      .limit(1),
+  ]);
 
-  const [legacy] = await db
-    .select({ messages: agentChatHistoryTable.messages })
-    .from(agentChatHistoryTable)
-    .where(eq(agentChatHistoryTable.userId, userId))
-    .limit(1);
+  if (existingSession) {
+    legacyMigrationChecked.add(userId);
+    return null;
+  }
 
-  if (!legacy?.messages?.length) return null;
+  if (!legacy?.messages?.length) {
+    legacyMigrationChecked.add(userId);
+    return null;
+  }
 
   const session = await createAgentSession(userId, { messages: legacy.messages });
+  legacyMigrationChecked.add(userId);
   return session.id;
 }

@@ -17,6 +17,25 @@
 
 ---
 
+## Judge visuals (screenshots & clips)
+
+Use these when reviewing or for the submission form. **Live URLs** work even without local PNGs.
+
+| Screen | What judges should see | Open |
+|--------|------------------------|------|
+| **Daily Brief** | Corsair Gmail + Calendar + OpenAI synthesis, “Needs attention” cards | [Live `/brief`](https://thread-web.vercel.app/brief) |
+| **AI Agent** | Streaming chat, 57 tools, session sidebar, focus chip (thread/event) | [Live `/agent`](https://thread-web.vercel.app/agent) |
+| **Approval Queue** | HITL — nothing sends until Approve | [Live `/queue`](https://thread-web.vercel.app/queue) |
+| **Inbox** | Cache-first Gmail, priority tab, DB search toggle, attachments | [Live `/inbox`](https://thread-web.vercel.app/inbox) |
+| **Calendar** | Events + queued reschedule/cancel, DB search | [Live `/calendar`](https://thread-web.vercel.app/calendar) |
+| **Scalar API docs** | Full OpenAPI reference, Corsair map, MCP appendix | [Live `/docs`](https://thread-api.vercel.app/docs) |
+
+**Video walkthroughs (X / Twitter):** [Clip 1](https://x.com/i/status/2067065490665824474) · [2](https://x.com/i/status/2066048923446509906) · [3](https://x.com/i/status/2065872033465208947) · [4](https://x.com/i/status/2065345490581962875) · [5](https://x.com/i/status/2065344446368202923) · [6](https://x.com/i/status/2064950664061677607)
+
+> **Contextual memory (not a stateless chatbot):** Agent **sessions** persist in Postgres, **tool memory** recalls prior tool results per session, and **focus** pins a Gmail thread or Calendar event into the system prompt.
+
+---
+
 ## 3-Minute Judge Walkthrough
 
 ### Step 1 — AI Daily Brief (`/brief`) ★ Lead Feature

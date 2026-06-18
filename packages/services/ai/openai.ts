@@ -1,5 +1,7 @@
 import { ServiceError } from "../errors";
 
+import { fetchOpenAi } from "./openai-fetch";
+
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -29,20 +31,24 @@ export async function createChatCompletion(
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const response = await fetchOpenAi(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: getOpenAiModel(),
+          messages,
+          temperature: opts?.temperature ?? 0.2,
+          ...(opts?.jsonObject ? { response_format: { type: "json_object" } } : {}),
+        }),
+        signal: controller.signal,
       },
-      body: JSON.stringify({
-        model: getOpenAiModel(),
-        messages,
-        temperature: opts?.temperature ?? 0.2,
-        ...(opts?.jsonObject ? { response_format: { type: "json_object" } } : {}),
-      }),
-      signal: controller.signal,
-    });
+      { label: "openai.chat.completions" },
+    );
 
     const payload = (await response.json()) as {
       error?: { message?: string };

@@ -23,6 +23,7 @@ import {
   Trash2,
   BellOff,
   CheckSquare,
+  Paperclip,
   Clock,
   ExternalLink,
 } from "lucide-react";
@@ -51,6 +52,15 @@ import {
 import type { RouterOutputs } from "@repo/trpc/client";
 import { INBOX_PAGE_SIZE } from "@repo/services/inbox";
 import { trpc } from "~/trpc/client";
+
+function threadLikelyHasAttachment(thread: { snippet?: string; subject?: string }) {
+  const text = `${thread.subject ?? ""} ${thread.snippet ?? ""}`.toLowerCase();
+  return (
+    text.includes("attachment") ||
+    /\b(pdf|docx|xlsx|pptx|zip|png|jpe?g)\b/.test(text) ||
+    /has attached|attached file|sent you a file/.test(text)
+  );
+}
 
 type InboxView = "inbox" | "priority" | "drafts";
 type ThreadRow = RouterOutputs["inbox"]["listThreads"]["threads"][number];
@@ -624,6 +634,11 @@ export default function InboxPage() {
     return selectedQuery.data.subject.replace(/^(Re|Fwd|FW|RE|FWD):\s*/i, "").trim();
   }, [selectedQuery.data?.subject]);
 
+  const selectedAttachmentCount = useMemo(() => {
+    const msgs = selectedQuery.data?.messages ?? [];
+    return msgs.reduce((sum, m) => sum + (m.attachments?.length ?? 0), 0);
+  }, [selectedQuery.data?.messages]);
+
   // Stable time range computed once — events in the next 45 days.
   const rsvpTimeRange = useMemo(() => ({
     timeMin: new Date().toISOString(),
@@ -1167,6 +1182,22 @@ export default function InboxPage() {
             />
             <button
               type="button"
+              className={`thread-inbox-db-toggle${appliedQuery === "has:attachment" ? " thread-inbox-db-toggle--active" : ""}`}
+              onClick={() => {
+                if (appliedQuery === "has:attachment") {
+                  setSearchInput("");
+                  setAppliedQuery("");
+                } else {
+                  setSearchInput("has:attachment");
+                  setAppliedQuery("has:attachment");
+                }
+              }}
+              title="Filter threads with attachments (Gmail has:attachment)"
+            >
+              <Paperclip size={12} />
+            </button>
+            <button
+              type="button"
               className={`thread-inbox-db-toggle${dbSearchMode ? " thread-inbox-db-toggle--active" : ""}`}
               onClick={() => setDbSearchMode((v) => !v)}
               title="Toggle Corsair DB search (fast local cache)"
@@ -1436,6 +1467,9 @@ export default function InboxPage() {
                     </span>
                     <span className="thread-inbox-row-subject">
                       {listThreadSubject(thread.subject, thread.snippet)}
+                      {threadLikelyHasAttachment(thread) ? (
+                        <Paperclip size={11} style={{ marginLeft: 6, opacity: 0.55, verticalAlign: "middle" }} aria-label="Likely has attachment" />
+                      ) : null}
                     </span>
                     <span className="thread-inbox-row-snippet">
                       {priority?.reason
@@ -1584,6 +1618,14 @@ export default function InboxPage() {
               <div className="thread-inbox-message-head-row">
                 <div>
                   <h2>{selectedQuery.data.subject?.trim() || "No subject"}</h2>
+                  {selectedAttachmentCount > 0 ? (
+                    <p className="thread-inbox-message-count">
+                      <Paperclip size={12} style={{ marginRight: 4, verticalAlign: "middle" }} />
+                      {selectedAttachmentCount === 1
+                        ? "1 attachment in this thread"
+                        : `${selectedAttachmentCount} attachments in this thread`}
+                    </p>
+                  ) : null}
                   {threadMessages.length > 1 ? (
                     <p className="thread-inbox-message-count">
                       {threadMessages.length} messages in this conversation
