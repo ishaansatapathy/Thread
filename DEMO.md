@@ -80,7 +80,7 @@ curl -X POST https://thread-api.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
-# List all 55 tools
+# List all 57 tools
 curl -X POST https://thread-api.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
@@ -196,17 +196,3 @@ After Gmail/Calendar OAuth connect, **`setupCorsair({ backfill: true })`** seeds
 - Prometheus metrics on all key operations
 - OpenTelemetry tracing
 - Structured logging via `@repo/logger` on all tool calls
-
----
-
-## Score Mapping
-
-| Category | Max | Our Coverage |
-|----------|-----|-------------|
-| Corsair Integration | 20 | OAuth, multi-tenancy, 40+ API calls, webhooks, connection status |
-| Gmail Workflow | 15 | Send/draft (cc/bcc), labels, archive, star, important, trash, read |
-| Calendar Workflow | 15 | Create, update, cancel, respond, free/busy, push notifications |
-| Productivity UX | 15 | Brief, Smart Reply, Meeting Prep, Contact Intel, Summarize, Follow-ups |
-| AI + MCP Usage | 15 | 52-tool agent, 55-tool MCP server, resources, prompts, streaming SSE |
-| Engineering Quality | 10 | Type-safe, no duplication, rate limiting, injection guard, ORM, cache |
-| Demo + Docs | 10 | This guide + README + curl examples + live app |

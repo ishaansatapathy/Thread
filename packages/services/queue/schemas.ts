@@ -66,6 +66,10 @@ export const calendarDeletePayloadSchema = z.object({
   editScope: z.enum(["instance", "series", "following"]).optional(),
 });
 
+export const draftSendPayloadSchema = z.object({
+  draftId: z.string().min(1).max(128),
+});
+
 export const meetingBundlePayloadSchema = z.object({
   email: emailQueuePayloadSchema,
   calendar: calendarQueuePayloadSchema,
@@ -85,6 +89,10 @@ export function parseCalendarArchivePayload(payload: Record<string, unknown>) {
 
 export function parseCalendarDeletePayload(payload: Record<string, unknown>) {
   return calendarDeletePayloadSchema.parse(payload);
+}
+
+export function parseDraftSendPayload(payload: Record<string, unknown>) {
+  return draftSendPayloadSchema.parse(payload);
 }
 
 export function parseMeetingBundlePayload(payload: Record<string, unknown>) {

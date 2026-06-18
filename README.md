@@ -11,7 +11,7 @@ A full-stack productivity application built **entirely on the [Corsair SDK](http
 | **AI Daily Brief** | Personalised daily summary: urgent emails, meetings, follow-ups, free windows | `gmail.api.threads.*`, `googlecalendar.api.events.*`, OpenAI |
 | **AI Agent (52 tools)** | Plain-language assistant: send emails, manage calendar, summarize threads, get contact intelligence | All Corsair Gmail + Calendar APIs + DB search |
 | **Human-in-the-Loop Queue** | Every AI-composed email/invite requires approval before sending | `gmail.api.messages.send`, `googlecalendar.api.events.create` |
-| **MCP Server (55 tools)** | Full MCP 2024-11-05 server: tools, resources, prompts — connect Claude/Cursor/any AI | All Corsair APIs + DB search |
+| **MCP Server (57 tools)** | Full MCP 2024-11-05 server: tools, resources, prompts — connect Claude/Cursor/any AI | All Corsair APIs + DB search |
 | **Inbox** | Cache-first Gmail inbox, search, labels, thread reader, keyboard nav | `gmail.api.threads.*`, `gmail.api.labels.*` |
 | **Smart Reply** | 3 AI suggestions per Gmail thread | `gmail.api.threads.get` + OpenAI |
 | **Meeting Prep** | Agenda, risks, talking points, related emails per calendar event | `googlecalendar.api.events.get` + `gmail.api.threads.list` + OpenAI |
@@ -23,7 +23,7 @@ A full-stack productivity application built **entirely on the [Corsair SDK](http
 | **Gmail Push Webhooks** | Real-time inbox updates via Gmail Pub/Sub | `gmail.api.users.watch` |
 | **Calendar Push Webhooks** | Real-time calendar updates | `googlecalendar.api.channels.*` |
 
-**Total Corsair API call sites: 55+** · **Agent tools: 52** · **MCP tools: 55**
+**Total Corsair API call sites: 55+** · **Agent tools: 52** · **MCP tools: 57**
 
 ## What it does
 
@@ -223,7 +223,7 @@ Thread exposes **two** MCP endpoints:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /mcp` | Thread domain tools (55) — inbox, queue, calendar, AI |
+| `POST /mcp` | Thread domain tools (57) — inbox, queue, calendar, AI |
 | `POST /mcp/corsair` | **Official `@corsair-dev/mcp` adapter** — `corsair_setup`, `list_operations`, `get_schema`, `run_script` |
 
 ### Official Corsair MCP (`/mcp/corsair`)
@@ -263,7 +263,7 @@ Destructive Corsair actions (`threads.delete`, `messages.delete`, `events.delete
 | `apply_label` | Apply label to a thread |
 | `remove_label` | Remove label from a thread |
 
-Headless MCP auth: set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` (bound pair — no arbitrary user impersonation). See `mcp-server.json` (v2.3.0, **55 tools**).
+Headless MCP auth: set `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` (bound pair — no arbitrary user impersonation). See `mcp-server.json` (v2.5.0, **57 tools**).
 
 ### Using with Cursor / Claude
 
@@ -470,7 +470,7 @@ Authorization: Bearer <THREAD_MCP_API_KEY>
 
 The API key is scoped to the user id in `THREAD_MCP_USER_ID` — arbitrary impersonation is not supported.
 
-See `mcp-server.json` for all 55 tools.
+See `mcp-server.json` for all 57 tools.
 
 ### 5. Post-deploy smoke
 

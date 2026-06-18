@@ -17,7 +17,7 @@ const getPath = generatePath("/queue");
 
 const queueItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["email_send", "email_draft", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
+  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
   title: z.string(),
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -163,6 +163,48 @@ export const queueRouter = router({
       try {
         const queue = getQueueService();
         return await queue.enqueueCalendarDelete(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  enqueueQuickAdd: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/enqueue/quick-add"), tags: TAGS } })
+    .input(
+      z.object({
+        text: z.string().trim().min(1).max(500),
+        title: z.string().max(200).optional(),
+        preview: z.string().max(500).optional(),
+      }),
+    )
+    .output(queueItemSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const queue = getQueueService();
+        const item = await queue.enqueueQuickAddCalendar(ctx.user.id, input, { origin: "calendar" });
+        invalidateBriefCache(ctx.user.id);
+        return item;
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  enqueueDraftSend: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/enqueue/draft-send"), tags: TAGS } })
+    .input(
+      z.object({
+        draftId: z.string().trim().min(1).max(128),
+        title: z.string().max(200).optional(),
+        preview: z.string().max(500).optional(),
+      }),
+    )
+    .output(queueItemSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const queue = getQueueService();
+        const item = await queue.enqueueDraftSend(ctx.user.id, input, { origin: "inbox" });
+        invalidateBriefCache(ctx.user.id);
+        return item;
       } catch (error) {
         mapServiceError(error);
       }

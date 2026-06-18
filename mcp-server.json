@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP — 55 domain tools at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
-  "version": "2.4.0",
+  "description": "Thread MCP — 57 domain tools at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
+  "version": "2.5.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -241,6 +241,14 @@
     {
       "name": "search_calendars_db",
       "description": "Search synced calendars via googlecalendar.db.calendars.search."
+    },
+    {
+      "name": "search_drafts_db",
+      "description": "Search synced Gmail drafts via corsair.gmail.db.drafts.search."
+    },
+    {
+      "name": "search_labels_db",
+      "description": "Search synced Gmail labels via corsair.gmail.db.labels.search."
     }
   ],
   "resources": [
@@ -293,7 +301,7 @@
   ],
   "examples": [
     {
-      "description": "Discover all 43 tools",
+      "description": "Discover all 57 tools",
       "request": {
         "jsonrpc": "2.0",
         "id": 1,

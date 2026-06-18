@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getCalendarService } from "@repo/services/calendar";
+import { getQueueService } from "@repo/services/queue";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -40,6 +41,19 @@ const calendarEventSchema = z.object({
 });
 
 const isoDateTimeSchema = z.string().min(1);
+
+const queueItemSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
+  title: z.string(),
+  preview: z.string().optional(),
+  payload: z.record(z.string(), z.unknown()),
+  sourceThreadId: z.string().optional(),
+  status: z.enum(["pending", "processing", "approved", "dismissed", "failed"]),
+  errorMessage: z.string().optional(),
+  createdAt: z.string(),
+  resolvedAt: z.string().optional(),
+});
 
 export const calendarRouter = router({
   connectionStatus: protectedProcedure
@@ -87,15 +101,15 @@ export const calendarRouter = router({
     .meta({ openapi: { method: "POST", path: getPath("/events/quick-add"), tags: TAGS } })
     .input(
       z.object({
-        /** Natural language text — e.g. "Lunch with Sarah tomorrow at noon". */
+        /** Natural language text — parsed locally, then queued for approval before events.create. */
         text: z.string().min(1).max(500),
       }),
     )
-    .output(calendarEventSchema)
+    .output(queueItemSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        const calendar = getCalendarService();
-        return await calendar.quickAddEvent(ctx.user.id, input.text);
+        const queue = getQueueService();
+        return await queue.enqueueQuickAddCalendar(ctx.user.id, { text: input.text }, { origin: "calendar" });
       } catch (error) {
         mapServiceError(error);
       }

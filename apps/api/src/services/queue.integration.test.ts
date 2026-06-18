@@ -13,6 +13,7 @@ const hasDatabase = Boolean(process.env.DATABASE_URL?.trim());
 describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
   const sendMessage = vi.fn(async () => ({ id: "msg-1", threadId: "thread-1" }));
   const createDraft = vi.fn(async () => ({ id: "draft-1" }));
+  const sendDraft = vi.fn(async () => ({ id: "msg-1", threadId: "thread-1" }));
   const createEvent = vi.fn(async () => ({
     id: "event-1",
     summary: "Test event",
@@ -65,7 +66,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       muteThread: vi.fn(async () => undefined),
       unmuteThread: vi.fn(async () => undefined),
       deleteDraft: vi.fn(async () => undefined),
-      sendDraft: vi.fn(async () => ({})),
+      sendDraft,
       registerGmailWatch: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
       updateDraft: vi.fn(async () => ({ id: "draft-1" })),
@@ -179,6 +180,19 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     const dismissed = await queue.dismiss(userId, item.id);
     expect(dismissed.status).toBe("dismissed");
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("approves a pending draft send exactly once", async () => {
+    sendDraft.mockClear();
+
+    const item = await queue.enqueueDraftSend(userId, { draftId: "draft-abc" });
+    expect(item.kind).toBe("draft_send");
+    expect(item.status).toBe("pending");
+
+    const approved = await queue.approve(userId, item.id);
+    expect(approved.status).toBe("approved");
+    expect(sendDraft).toHaveBeenCalledTimes(1);
+    expect(sendDraft).toHaveBeenCalledWith(userId, "draft-abc");
   });
 
   it("marks failed when execution throws after claim", async () => {

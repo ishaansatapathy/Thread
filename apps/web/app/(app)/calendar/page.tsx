@@ -24,6 +24,7 @@ import {
 import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { QueryErrorState } from "~/components/app/query-error-state";
 import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
 import { queueResultMessage } from "~/lib/queue-toast";
 import {
@@ -35,6 +36,14 @@ import {
   localDayKey,
   toLocalDateTimeInput,
 } from "~/lib/calendar-datetime";
+import {
+  type CalendarViewMode,
+  getVisibleDays,
+  navigateAnchor,
+  prevNextAriaLabel,
+  queryBoundsForView,
+  viewPeriodLabel,
+} from "~/lib/calendar-view";
 
 function recurrenceToRrule(rule: string, custom?: string): string[] | undefined {
   if (rule === "custom") {
@@ -55,36 +64,7 @@ function recurrenceToRrule(rule: string, custom?: string): string[] | undefined 
 }
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function weekQueryBounds(week: Date[]) {
-  const start = new Date(week[0]!);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(week[6]!);
-  end.setHours(23, 59, 59, 999);
-  const pad = 24 * 60 * 60 * 1000;
-  return {
-    timeMin: new Date(start.getTime() - pad).toISOString(),
-    timeMax: new Date(end.getTime() + pad).toISOString(),
-  };
-}
-
-function startOfWeek(date: Date) {
-  const copy = new Date(date);
-  const day = copy.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  copy.setDate(copy.getDate() + mondayOffset);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function getWeekDays(anchor: Date) {
-  const monday = startOfWeek(anchor);
-  return Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(monday);
-    day.setDate(monday.getDate() + index);
-    return day;
-  });
-}
+const MONTH_EVENT_CAP = 3;
 
 function formatEventTime(value?: string) {
   if (!value) return "";
@@ -178,7 +158,8 @@ export default function CalendarPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const utils = trpc.useUtils();
-  const [weekAnchor, setWeekAnchor] = useState(() => new Date());
+  const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
+  const [viewAnchor, setViewAnchor] = useState(() => new Date());
   const [showCreate, setShowCreate] = useState(false);
   const [summary, setSummary] = useState("");
   const [attendee, setAttendee] = useState("");
@@ -209,14 +190,14 @@ export default function CalendarPage() {
   const [recurringEditScope, setRecurringEditScope] = useState<"instance" | "series" | "following">("instance");
   const [queueAction, setQueueAction] = useState<{ event: CalendarEventItem; item: QueueListItem } | null>(null);
 
-  const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
+  const visibleDays = useMemo(() => getVisibleDays(viewMode, viewAnchor), [viewMode, viewAnchor]);
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const eventQuery = useMemo(() => {
-    const bounds = weekQueryBounds(week);
-    return { ...bounds, maxResults: 100, timeZone: browserTimeZone };
-  }, [week, browserTimeZone]);
+    const bounds = queryBoundsForView(viewMode, viewAnchor);
+    return { ...bounds, maxResults: viewMode === "month" ? 250 : 100, timeZone: browserTimeZone };
+  }, [viewMode, viewAnchor, browserTimeZone]);
   const todayKey = localDayKey(new Date());
-  const monthLabel = week[0]!.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const periodLabel = viewPeriodLabel(viewMode, viewAnchor);
 
   const statusQuery = trpc.calendar.connectionStatus.useQuery({});
   const meQuery = trpc.auth.me.useQuery({});
@@ -342,9 +323,11 @@ export default function CalendarPage() {
 
   const [quickAddText, setQuickAddText] = useState("");
   const quickAddEvent = trpc.calendar.quickAddEvent.useMutation({
-    onSuccess: async (event) => {
+    onSuccess: async (item) => {
       setQuickAddText("");
-      toast.success(`Created: ${event.summary ?? "Event"}`);
+      toast.success(queueResultMessage(item).title);
+      await utils.queue.pendingCount.invalidate();
+      await utils.queue.list.invalidate();
       await utils.calendar.listEvents.invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -403,7 +386,7 @@ export default function CalendarPage() {
       const found = wideEventsQuery.data.events.find((e) => e.id === eventId);
       if (found) {
         // Navigate calendar to that event's week
-        if (found.start) setWeekAnchor(startOfWeek(new Date(found.start)));
+        if (found.start) setViewAnchor(new Date(found.start));
         setSelectedEvent(found as CalendarEventItem);
         setShowPrep(true);
       }
@@ -413,8 +396,8 @@ export default function CalendarPage() {
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
-    for (const day of week) {
-      map.set(localDayKey(day), []);
+    for (const { date } of visibleDays) {
+      map.set(localDayKey(date), []);
     }
     for (const event of eventsQuery.data?.events ?? []) {
       if (event.status?.toLowerCase() === "cancelled") continue;
@@ -481,7 +464,7 @@ export default function CalendarPage() {
       });
     }
     return map;
-  }, [eventsQuery.data?.events, pendingQueue.data?.items, week]);
+  }, [eventsQuery.data?.events, pendingQueue.data?.items, visibleDays]);
 
   const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
@@ -494,16 +477,30 @@ export default function CalendarPage() {
     router.push("/queue");
   };
 
-  const mobileWeekEvents = useMemo(() => {
+  const mobileListEvents = useMemo(() => {
     const items: CalendarEventItem[] = [];
-    for (const day of week) {
-      const key = localDayKey(day);
+    for (const { date } of visibleDays) {
+      const key = localDayKey(date);
       for (const event of eventsByDay.get(key) ?? []) {
         items.push(event);
       }
     }
     return items;
-  }, [week, eventsByDay]);
+  }, [visibleDays, eventsByDay]);
+
+  const openEvent = (event: CalendarEventItem) => {
+    if (event.pending || event.pendingArchive || event.pendingDelete) {
+      openQueueOverlay(event);
+      return;
+    }
+    setSelectedEvent(event);
+    setShowPrep(false);
+  };
+
+  const focusDay = (date: Date) => {
+    setViewAnchor(new Date(date));
+    setViewMode("day");
+  };
 
   return (
     <div>
@@ -588,32 +585,39 @@ export default function CalendarPage() {
         <button
           type="button"
           className="thread-app-iconbtn"
-          aria-label="Previous week"
-          onClick={() => {
-            const next = new Date(weekAnchor);
-            next.setDate(next.getDate() - 7);
-            setWeekAnchor(next);
-          }}
+          aria-label={prevNextAriaLabel(viewMode, -1)}
+          onClick={() => setViewAnchor((current) => navigateAnchor(viewMode, current, -1))}
         >
           <ChevronLeft size={15} />
         </button>
         <button
           type="button"
           className="thread-app-iconbtn"
-          aria-label="Next week"
-          onClick={() => {
-            const next = new Date(weekAnchor);
-            next.setDate(next.getDate() + 7);
-            setWeekAnchor(next);
-          }}
+          aria-label={prevNextAriaLabel(viewMode, 1)}
+          onClick={() => setViewAnchor((current) => navigateAnchor(viewMode, current, 1))}
         >
           <ChevronRight size={15} />
         </button>
-        <span style={{ fontSize: 14, fontWeight: 600, marginLeft: 4 }}>{monthLabel}</span>
+        <span className="thread-cal-period-label">{periodLabel}</span>
+
+        <div className="thread-cal-view-switch" role="tablist" aria-label="Calendar view">
+          {(["day", "week", "month"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={viewMode === mode}
+              data-active={viewMode === mode ? "true" : undefined}
+              onClick={() => setViewMode(mode)}
+            >
+              {mode === "day" ? "Day" : mode === "week" ? "Week" : "Month"}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
-          className="thread-btn-ghost"
-          style={{ marginLeft: "auto", fontSize: 12, padding: "6px 12px" }}
+          className="thread-btn-ghost thread-cal-head-action"
           disabled={eventsQuery.isFetching}
           onClick={() => void refreshEvents()}
         >
@@ -621,9 +625,11 @@ export default function CalendarPage() {
         </button>
         <button
           type="button"
-          className="thread-btn-ghost"
-          style={{ fontSize: 12, padding: "6px 12px" }}
-          onClick={() => setWeekAnchor(new Date())}
+          className="thread-btn-ghost thread-cal-head-action"
+          onClick={() => {
+            setViewAnchor(new Date());
+            setViewMode("week");
+          }}
         >
           Today
         </button>
@@ -631,25 +637,26 @@ export default function CalendarPage() {
 
       {eventsQuery.isLoading && isConnected ? (
         <SkeletonList count={7} />
+      ) : eventsQuery.isError && isConnected ? (
+        <QueryErrorState
+          title="Couldn't load calendar"
+          message={eventsQuery.error.message}
+          onRetry={() => void eventsQuery.refetch()}
+        />
       ) : (
         <>
         <div className="thread-cal-mobile-list">
-          {mobileWeekEvents.length === 0 ? (
-            <div className="thread-cal-empty-note">No events this week</div>
+          {mobileListEvents.length === 0 ? (
+            <div className="thread-cal-empty-note">
+              {viewMode === "day" ? "No events today" : viewMode === "month" ? "No events this month" : "No events this week"}
+            </div>
           ) : (
-            mobileWeekEvents.map((event) => (
+            mobileListEvents.map((event) => (
               <button
                 key={`mobile-${event.id}`}
                 type="button"
                 className="thread-cal-mobile-item"
-                onClick={() => {
-                  if (event.pending || event.pendingArchive || event.pendingDelete) {
-                    openQueueOverlay(event);
-                    return;
-                  }
-                  setSelectedEvent(event);
-                  setShowPrep(false);
-                }}
+                onClick={() => openEvent(event)}
               >
                 <span className="thread-cal-mobile-item-when">
                   {formatEventWhen(event.start, event.end)}
@@ -659,61 +666,96 @@ export default function CalendarPage() {
             ))
           )}
         </div>
-        <div className="thread-cal-grid">
-          {week.map((day) => {
-            const key = localDayKey(day);
+
+        {viewMode === "month" ? (
+          <div className="thread-cal-month-head" aria-hidden="true">
+            {DOW.map((label) => (
+              <div key={label} className="thread-cal-month-dow">
+                {label}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="thread-cal-grid" data-view={viewMode}>
+          {visibleDays.map(({ date, inMonth }) => {
+            const key = localDayKey(date);
             const isToday = key === todayKey;
             const dayEvents = eventsByDay.get(key) ?? [];
+            const compact = viewMode === "month";
+            const visibleEvents = compact ? dayEvents.slice(0, MONTH_EVENT_CAP) : dayEvents;
+            const hiddenCount = compact ? Math.max(0, dayEvents.length - MONTH_EVENT_CAP) : 0;
             return (
-              <div key={day.toISOString()} className="thread-cal-col">
-                <div className="thread-cal-colhead" data-today={isToday}>
-                  <div className="thread-cal-dow">{DOW[(day.getDay() + 6) % 7]}</div>
+              <div
+                key={key}
+                className="thread-cal-col"
+                data-outside={viewMode === "month" && !inMonth ? "true" : undefined}
+              >
+                <button
+                  type="button"
+                  className="thread-cal-colhead"
+                  data-today={isToday}
+                  onClick={() => focusDay(date)}
+                  title={`Open ${date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`}
+                >
+                  {viewMode !== "month" ? (
+                    <div className="thread-cal-dow">{DOW[(date.getDay() + 6) % 7]}</div>
+                  ) : null}
                   <div className="thread-cal-dom" data-today={isToday}>
-                    {day.getDate()}
+                    {date.getDate()}
                   </div>
-                </div>
+                </button>
                 <div className="thread-cal-body">
                   {!isConnected ? (
                     <div className="thread-cal-empty-note">Connect Calendar to sync</div>
                   ) : dayEvents.length === 0 ? (
-                    <div className="thread-cal-empty-note">No events</div>
+                    viewMode === "day" ? (
+                      <div className="thread-cal-empty-note">Nothing scheduled — enjoy the free time.</div>
+                    ) : (
+                      <div className="thread-cal-empty-note">No events</div>
+                    )
                   ) : (
-                    dayEvents.map((event) => (
-                      <button
-                        key={event.id}
-                        type="button"
-                        className="thread-cal-event"
-                        data-selected={selectedEvent?.id === event.id}
-                        data-pending={event.pending ? "true" : undefined}
-                        data-pending-archive={event.pendingArchive ? "true" : undefined}
-                        data-pending-delete={event.pendingDelete ? "true" : undefined}
-                        onClick={() => {
-                          if (event.pending || event.pendingArchive || event.pendingDelete) {
-                            openQueueOverlay(event);
-                            return;
-                          }
-                          setSelectedEvent(event);
-                          setShowPrep(false);
-                        }}
-                      >
-                        <span className="thread-cal-event-time">
-                          {event.pendingArchive
-                            ? "Review pending · "
-                            : event.pendingDelete
-                              ? "Delete queued · "
-                              : event.pending
-                                ? "Queued · "
-                                : ""}
-                          {formatEventTime(event.start)}
-                        </span>
-                        <span className="thread-cal-event-title">
-                          {event.isRecurring ? (
-                            <Repeat size={10} className="thread-cal-event-recur" aria-label="Recurring" />
-                          ) : null}
-                          {event.summary}
-                        </span>
-                      </button>
-                    ))
+                    <>
+                      {visibleEvents.map((event) => (
+                        <button
+                          key={event.id}
+                          type="button"
+                          className="thread-cal-event"
+                          data-compact={compact ? "true" : undefined}
+                          data-selected={selectedEvent?.id === event.id}
+                          data-pending={event.pending ? "true" : undefined}
+                          data-pending-archive={event.pendingArchive ? "true" : undefined}
+                          data-pending-delete={event.pendingDelete ? "true" : undefined}
+                          onClick={() => openEvent(event)}
+                        >
+                          <span className="thread-cal-event-time">
+                            {event.pendingArchive
+                              ? "Review · "
+                              : event.pendingDelete
+                                ? "Delete · "
+                                : event.pending
+                                  ? "Queued · "
+                                  : ""}
+                            {formatEventTime(event.start)}
+                          </span>
+                          <span className="thread-cal-event-title">
+                            {event.isRecurring ? (
+                              <Repeat size={10} className="thread-cal-event-recur" aria-label="Recurring" />
+                            ) : null}
+                            {event.summary}
+                          </span>
+                        </button>
+                      ))}
+                      {hiddenCount > 0 ? (
+                        <button
+                          type="button"
+                          className="thread-cal-more-btn"
+                          onClick={() => focusDay(date)}
+                        >
+                          +{hiddenCount} more
+                        </button>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>

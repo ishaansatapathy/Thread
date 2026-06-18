@@ -32,6 +32,7 @@ import { formatPrioritySummary } from "~/lib/priority-display";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { QueryErrorState } from "~/components/app/query-error-state";
 import { EmailMessageBody } from "~/components/app/email-message-body";
 import { queueResultMessage } from "~/lib/queue-toast";
 import { dismissBriefThreadFromQueueItem } from "~/lib/brief-dismissals";
@@ -171,6 +172,9 @@ function useInboxThreads(query: string, enabled: boolean) {
     nextPageToken,
     loadMore,
     isLoading,
+    isError: result.isError && threads.length === 0,
+    error: result.error,
+    refetch: result.refetch,
     isFetchingMore: result.isFetching && pageToken !== undefined,
     isRefreshing,
     hasCachedPreview,
@@ -220,6 +224,9 @@ function useDrafts(enabled: boolean) {
     nextPageToken,
     loadMore,
     isLoading: result.isLoading && pages.length === 0,
+    isError: result.isError && pages.length === 0,
+    error: result.error,
+    refetch: result.refetch,
     isFetchingMore: result.isFetching && pageToken !== undefined,
   };
 }
@@ -481,10 +488,12 @@ export default function InboxPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const sendDraft = trpc.inbox.sendDraft.useMutation({
-    onSuccess: () => {
-      toast.success("Draft sent");
-      void utils.inbox.listDrafts.invalidate();
+  const sendDraft = trpc.queue.enqueueDraftSend.useMutation({
+    onSuccess: async (item) => {
+      toast.success(queueResultMessage(item).title);
+      await utils.queue.pendingCount.invalidate();
+      await utils.queue.list.invalidate();
+      await utils.inbox.listDrafts.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1187,6 +1196,13 @@ export default function InboxPage() {
           ) : view === "drafts" ? (
             drafts.isLoading ? (
               <SkeletonList count={6} />
+            ) : drafts.isError ? (
+              <QueryErrorState
+                title="Couldn't load drafts"
+                message={drafts.error?.message}
+                onRetry={() => void drafts.refetch()}
+                className="thread-empty-inbox"
+              />
             ) : drafts.drafts.length === 0 ? (
               <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
                 <FileText size={20} style={{ opacity: 0.35 }} />
@@ -1278,6 +1294,13 @@ export default function InboxPage() {
             )
           ) : inbox.isLoading ? (
             <SkeletonList count={10} />
+          ) : inbox.isError ? (
+            <QueryErrorState
+              title="Couldn't load inbox"
+              message={inbox.error?.message}
+              onRetry={() => void inbox.refetch()}
+              className="thread-empty-inbox"
+            />
           ) : visibleThreads.length === 0 ? (
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />

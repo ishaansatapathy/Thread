@@ -6,6 +6,7 @@ import { usersTable } from "./user";
 export const queueItemKindEnum = [
   "email_send",
   "email_draft",
+  "draft_send",
   "calendar_invite",
   "meeting_bundle",
   "calendar_archive",
@@ -37,7 +38,7 @@ export const threadQueueItemsTable = pgTable(
   (table) => ({
     kindCheck: check(
       "thread_queue_items_kind_check",
-      sql`${table.kind} in ('email_send', 'email_draft', 'calendar_invite', 'meeting_bundle', 'calendar_archive', 'calendar_delete')`,
+      sql`${table.kind} in ('email_send', 'email_draft', 'draft_send', 'calendar_invite', 'meeting_bundle', 'calendar_archive', 'calendar_delete')`,
     ),
     statusCheck: check(
       "thread_queue_items_status_check",

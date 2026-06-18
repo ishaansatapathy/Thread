@@ -9,9 +9,11 @@ import {
   parseCalendarArchivePayload,
   parseCalendarDeletePayload,
   parseCalendarQueuePayload,
+  parseDraftSendPayload,
   parseEmailQueuePayload,
   parseMeetingBundlePayload,
 } from "@repo/services/queue/schemas";
+import { parseQuickAddText } from "./parse-quick-add";
 import type {
   CalendarArchivePayload,
   CalendarDeletePayload,
@@ -93,6 +95,7 @@ function wantsAutoApprove(
   switch (kind) {
     case "email_send":
     case "email_draft":
+    case "draft_send":
       return origin === "agent" ? prefs.autoApproveAgentEmail : prefs.autoApproveEmail;
     case "calendar_invite":
     case "calendar_archive":
@@ -469,6 +472,60 @@ export class ThreadQueueService implements QueueService {
     return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
+  async enqueueQuickAddCalendar(
+    userId: string,
+    input: { text: string; title?: string; preview?: string },
+    opts?: QueueEnqueueOptions,
+  ) {
+    const text = input.text.trim();
+    if (!text) throw serviceError("BAD_REQUEST", "text is required");
+
+    const parsed = parseQuickAddText(text);
+    return this.enqueueCalendarInvite(
+      userId,
+      {
+        calendar: {
+          summary: parsed.summary,
+          startDateTime: parsed.startDateTime,
+          endDateTime: parsed.endDateTime,
+          timeZone: parsed.timeZone,
+          allDay: parsed.allDay,
+        },
+        title: input.title?.trim() || `Calendar: ${parsed.summary}`,
+        preview: input.preview?.trim() || truncate(text),
+      },
+      { origin: opts?.origin ?? "calendar" },
+    );
+  }
+
+  async enqueueDraftSend(
+    userId: string,
+    input: { draftId: string; title?: string; preview?: string },
+    opts?: QueueEnqueueOptions,
+  ) {
+    const draftId = input.draftId.trim();
+    if (!draftId) throw serviceError("BAD_REQUEST", "draftId is required");
+
+    const payload = parseDraftSendPayload({ draftId });
+    const title = input.title?.trim() || "Send draft";
+    const preview = input.preview?.trim() || `Draft ${draftId}`;
+
+    const [row] = await db
+      .insert(threadQueueItemsTable)
+      .values({
+        userId,
+        kind: "draft_send",
+        title,
+        preview,
+        payload,
+        status: "pending",
+      })
+      .returning();
+
+    if (!row) throw serviceError("INTERNAL", "Could not queue draft send");
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "inbox" });
+  }
+
   async approve(
     userId: string,
     itemId: string,
@@ -579,6 +636,11 @@ export class ThreadQueueService implements QueueService {
       case "email_draft": {
         const email = parseEmailQueuePayload(payload);
         await inbox.createDraft(userId, email);
+        return;
+      }
+      case "draft_send": {
+        const draft = parseDraftSendPayload(payload);
+        await inbox.sendDraft(userId, draft.draftId);
         return;
       }
       case "calendar_invite": {

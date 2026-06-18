@@ -593,7 +593,7 @@ const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "quick_add_event",
-    description: "Create a Google Calendar event from a natural-language text string via Corsair quickAdd. E.g. 'Lunch with Sarah tomorrow at noon' creates a real event. Faster than create_event for simple scheduling.",
+    description: "Parse natural-language text locally and queue a calendar invite for approval (events.create on approve). E.g. 'Lunch with Sarah tomorrow at noon'.",
     inputSchema: {
       type: "object",
       required: ["text"],
@@ -604,7 +604,7 @@ const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "send_draft",
-    description: "Send an existing Gmail draft immediately via Corsair. The draft is sent and removed from the Drafts folder. Use after create_draft_email when the user confirms they want to send.",
+    description: "Queue sending an existing Gmail draft for approval. On approve, Corsair drafts.send runs via Gmail.",
     inputSchema: {
       type: "object",
       required: ["draftId"],
@@ -757,9 +757,32 @@ const MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  {
+    name: "search_drafts_db",
+    description: "Search synced Gmail drafts via corsair.gmail.db.drafts.search (local Corsair DB cache).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "search_labels_db",
+    description: "Search synced Gmail labels via corsair.gmail.db.labels.search (local Corsair DB cache).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Filter labels whose name contains this text." },
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
 ];
 
-const MCP_SERVER_VERSION = "2.4.0";
+const MCP_SERVER_VERSION = "2.5.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -1247,15 +1270,15 @@ async function callTool(
     case "quick_add_event": {
       const text = String(args.text ?? "");
       if (!text.trim()) return toolResult({ error: "text is required" });
-      const event = await calendar.quickAddEvent(userId, text);
-      return toolResult({ ok: true, event });
+      const item = await queue.enqueueQuickAddCalendar(userId, { text }, { origin: "agent" });
+      return toolResult({ ok: true, queued: item.status !== "approved", item });
     }
 
     case "send_draft": {
       const draftId = String(args.draftId ?? "");
       if (!draftId) return toolResult({ error: "draftId is required" });
-      const result = await inbox.sendDraft(userId, draftId);
-      return toolResult({ ok: true, draftId, sent: true, ...result });
+      const item = await queue.enqueueDraftSend(userId, { draftId }, { origin: "agent" });
+      return toolResult({ ok: true, queued: item.status !== "approved", item });
     }
 
     case "mute_thread": {
@@ -1362,6 +1385,23 @@ async function callTool(
     case "search_calendars_db": {
       const result = await calendar.searchCalendarsDb(userId, {
         query: typeof args.query === "string" ? args.query : undefined,
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "search_drafts_db": {
+      const result = await inbox.searchDraftsDb(userId, {
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "search_labels_db": {
+      const result = await inbox.searchLabelsDb(userId, {
+        name: typeof args.name === "string" ? args.name : undefined,
         limit: args.limit != null ? Number(args.limit) : undefined,
         offset: args.offset != null ? Number(args.offset) : undefined,
       });
