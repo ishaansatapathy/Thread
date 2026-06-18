@@ -11,6 +11,12 @@
       "Content-Type": "application/json"
     }
   },
+  "corsairOfficialAdapter": {
+    "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp/corsair",
+    "package": "@corsair-dev/mcp",
+    "tools": ["corsair_setup", "list_operations", "get_schema", "run_script"],
+    "note": "Official Corsair MCP — agents discover and call any Gmail/Calendar endpoint dynamically via run_script."
+  },
   "auth": {
     "type": "bearer_or_cookie",
     "note": "Option A: jwt + jwt_refresh cookies from Thread sign-in. Option B: Authorization: Bearer <THREAD_MCP_API_KEY> — must match THREAD_MCP_USER_ID env (scoped; no arbitrary X-Thread-User-Id)."

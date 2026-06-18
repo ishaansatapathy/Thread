@@ -7,6 +7,7 @@ import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 import { env } from "../env";
 import { CorsairCalendarService } from "../services/calendar";
 import { CorsairInboxService, invalidateConnectionCache } from "../services/inbox";
+import { backfillCorsairTenant } from "../services/corsair-backfill";
 import { isCorsairConfigured } from "../corsair";
 
 const authService = new AuthService();
@@ -131,6 +132,7 @@ corsairAuthRouter.get("/gmail/callback", async (req, res) => {
     const user = await authService.resolveSession(req, res);
     if (user) {
       invalidateConnectionCache(user.id);
+      void backfillCorsairTenant(user.id);
       // Register Gmail Pub/Sub watch when topic is configured (best-effort).
       void inboxService.registerGmailWatch(user.id).catch((err: unknown) => {
         logger.warn("Gmail watch registration failed (non-critical)", {
@@ -214,6 +216,7 @@ corsairAuthRouter.get("/calendar/callback", async (req, res) => {
     if (webhooksBaseUrl) {
       const user = await authService.resolveSession(req, res);
       if (user) {
+        void backfillCorsairTenant(user.id);
         void calendarService.registerWebhook(user.id, `${webhooksBaseUrl}/webhooks/calendar`).catch(
           (err: unknown) => {
             logger.warn("Calendar webhook registration failed (non-critical)", {

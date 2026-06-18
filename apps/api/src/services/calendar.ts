@@ -56,6 +56,124 @@ function truncateRecurrenceRules(recurrence: string[], splitStart: string, allDa
   });
 }
 
+type ParsedQuickAdd = {
+  summary: string;
+  startDateTime: string;
+  endDateTime: string;
+  timeZone?: string;
+  allDay: boolean;
+};
+
+/** Parse simple natural-language scheduling text into createEvent fields. */
+function parseQuickAddText(text: string, refDate = new Date()): ParsedQuickAdd {
+  let remaining = text.trim();
+  remaining = remaining.replace(
+    /^(please\s+)?(add|create|schedule|book)\s+(an?\s+)?(calendar\s+)?event\s+/i,
+    "",
+  );
+
+  let summary = "";
+  const forMatch = remaining.match(/\bfor\s+(.+)$/i);
+  if (forMatch?.[1]) {
+    summary = forMatch[1].trim();
+    remaining = remaining.slice(0, forMatch.index).trim();
+  }
+
+  let eventDate: Date | null = null;
+  let hour: number | null = null;
+  let minute = 0;
+  let allDay = true;
+
+  const timeMatch = remaining.match(/\bat\s+(noon|midnight|(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\b/i);
+  if (timeMatch) {
+    allDay = false;
+    const token = (timeMatch[1] ?? "").toLowerCase();
+    if (token === "noon") {
+      hour = 12;
+    } else if (token === "midnight") {
+      hour = 0;
+    } else {
+      hour = Number.parseInt(timeMatch[2] ?? "9", 10);
+      minute = timeMatch[3] ? Number.parseInt(timeMatch[3], 10) : 0;
+      const ampm = timeMatch[4]?.toLowerCase();
+      if (ampm === "pm" && hour < 12) hour += 12;
+      if (ampm === "am" && hour === 12) hour = 0;
+    }
+    remaining = remaining.replace(timeMatch[0], "").trim();
+  }
+
+  if (/\btoday\b/i.test(remaining)) {
+    eventDate = new Date(refDate);
+    remaining = remaining.replace(/\btoday\b/i, "").trim();
+  } else if (/\btomorrow\b/i.test(remaining)) {
+    eventDate = new Date(refDate);
+    eventDate.setDate(eventDate.getDate() + 1);
+    remaining = remaining.replace(/\btomorrow\b/i, "").trim();
+  }
+
+  if (!eventDate) {
+    const dayMatch = remaining.match(/\b(?:on\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/);
+    if (dayMatch) {
+      const day = Number.parseInt(dayMatch[1] ?? "", 10);
+      if (day >= 1 && day <= 31) {
+        eventDate = new Date(refDate.getFullYear(), refDate.getMonth(), day);
+        const todayStart = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+        if (eventDate < todayStart) {
+          eventDate = new Date(refDate.getFullYear(), refDate.getMonth() + 1, day);
+        }
+        remaining = remaining.replace(dayMatch[0], "").trim();
+      }
+    }
+  }
+
+  const isoMatch = remaining.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (!eventDate && isoMatch?.[1]) {
+    eventDate = new Date(`${isoMatch[1]}T12:00:00`);
+    remaining = remaining.replace(isoMatch[0], "").trim();
+  }
+
+  if (!eventDate) {
+    eventDate = new Date(refDate);
+  }
+
+  if (!summary) {
+    summary =
+      remaining
+        .replace(/^(on|at)\s+/i, "")
+        .replace(/\s+/g, " ")
+        .trim() || text.trim();
+  }
+
+  if (allDay) {
+    const startDate = [
+      eventDate.getFullYear(),
+      pad2(eventDate.getMonth() + 1),
+      pad2(eventDate.getDate()),
+    ].join("-");
+    const endDateObj = new Date(eventDate);
+    endDateObj.setDate(endDateObj.getDate() + 1);
+    const endDate = [
+      endDateObj.getFullYear(),
+      pad2(endDateObj.getMonth() + 1),
+      pad2(endDateObj.getDate()),
+    ].join("-");
+    return { summary, startDateTime: startDate, endDateTime: endDate, allDay: true };
+  }
+
+  const start = new Date(eventDate);
+  start.setHours(hour ?? 9, minute, 0, 0);
+  const end = new Date(start);
+  end.setHours(start.getHours() + 1);
+
+  return {
+    summary,
+    startDateTime: start.toISOString(),
+    endDateTime: end.toISOString(),
+    timeZone: "UTC",
+    allDay: false,
+  };
+}
+
 function mapEvent(event: {
   id?: string;
   summary?: string;
@@ -215,24 +333,12 @@ export class CorsairCalendarService implements CalendarService {
   }
 
   /**
-   * Natural-language event creation via Google Calendar's quickAdd endpoint.
-   * E.g. "Lunch with Sarah tomorrow at noon" → creates a real calendar event.
-   * Returns the mapped CalendarEvent.
+   * Natural-language event creation — parses text locally, then uses Corsair events.create.
+   * E.g. "Lunch with Sarah tomorrow at noon" or "add an event on 21 for team sync".
    */
   async quickAddEvent(tenantId: string, text: string): Promise<CalendarEvent> {
-    const status = await this.getConnectionStatus(tenantId);
-    if (status.googlecalendar !== "connected") {
-      throw new Error("Google Calendar is not connected");
-    }
-
-    const corsair = getCorsair().withTenant(tenantId);
-    const result = await (corsair.googlecalendar.api.events as {
-      quickAdd: (opts: { calendarId: string; text: string; sendUpdates?: string }) => Promise<Record<string, unknown>>;
-    }).quickAdd({ calendarId: "primary", text, sendUpdates: "all" });
-
-    const mapped = mapEvent(result);
-    if (!mapped) throw new Error("quickAdd returned an unrecognizable event");
-    return mapped;
+    const parsed = parseQuickAddText(text);
+    return this.createEvent(tenantId, parsed);
   }
 
   async createEvent(
@@ -271,9 +377,7 @@ export class CorsairCalendarService implements CalendarService {
       ? { createRequest: { requestId: `corsair-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } }
       : undefined;
 
-    const created = await (corsair.googlecalendar.api.events as {
-      create: (opts: Record<string, unknown>) => Promise<Record<string, unknown>>;
-    }).create({
+    const created = await corsair.googlecalendar.api.events.create({
       calendarId: "primary",
       sendUpdates: "all",
       ...(addMeet ? { conferenceDataVersion: 1 } : {}),
