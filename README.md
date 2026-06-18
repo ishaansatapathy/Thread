@@ -13,6 +13,7 @@ Short demo clips — click to watch on X:
 | # | Link |
 |---|------|
 | Pitch | [**Pitch deck**](https://x.com/i/status/2067656941967679952) |
+| YC style | [It is what it is ep-2](https://x.com/i/status/2067686374627754123) |
 | 1 | [Demo clip 1](https://x.com/i/status/2067065490665824474) |
 | 2 | [Demo clip 2](https://x.com/i/status/2066048923446509906) |
 | 3 | [Demo clip 3](https://x.com/i/status/2065872033465208947) |
