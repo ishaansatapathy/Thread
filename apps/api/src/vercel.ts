@@ -32,6 +32,8 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
 }
 
 async function handler(req: IncomingMessage, res: ServerResponse) {
+  const path = req.url?.split("?")[0] ?? "/";
+
   if (bootError) {
     sendJson(res, 503, {
       ok: false,
@@ -49,6 +51,17 @@ async function handler(req: IncomingMessage, res: ServerResponse) {
         throw err;
       });
     }
+
+    if (!app && (path === "/health" || path === "/")) {
+      sendJson(res, 200, {
+        healthy: true,
+        ready: false,
+        message: "Thread API is starting — wait a few seconds and retry",
+      });
+      void bootPromise.catch(() => undefined);
+      return;
+    }
+
     app ??= await bootPromise;
     app(req, res);
   } catch (err) {

@@ -63,6 +63,8 @@ build
 
 dist
 
+apps/api/api/dist
+
 
 
 # Debug

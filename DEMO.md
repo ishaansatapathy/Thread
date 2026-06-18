@@ -13,6 +13,7 @@
 | **Scalar API Docs** | `https://thread-api.vercel.app/docs` |
 | OpenAPI JSON | `https://thread-api.vercel.app/openapi.json` |
 | MCP Server | `POST https://thread-api.vercel.app/mcp` |
+| **Pitch deck (X)** | [Full walkthrough](https://x.com/i/status/2067656941967679952) |
 | Demo clips (X) | [Clip 1](https://x.com/i/status/2067065490665824474) · [2](https://x.com/i/status/2066048923446509906) · [3](https://x.com/i/status/2065872033465208947) · [4](https://x.com/i/status/2065345490581962875) · [5](https://x.com/i/status/2065344446368202923) · [6](https://x.com/i/status/2064950664061677607) |
 
 ---
