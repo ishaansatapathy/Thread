@@ -1,7 +1,24 @@
 /**
  * Shared API bootstrap — used by Railway (index.ts) and Vercel (api/index.ts).
+ *
+ * Static service imports keep the Vercel serverless bundle self-contained
+ * (dynamic import() would resolve missing ./services/* at runtime).
  */
 import { logger } from "@repo/logger";
+import { registerCalendarService } from "@repo/services/calendar";
+import { registerContactsService } from "@repo/services/contacts";
+import { isEmailConfigured } from "@repo/services/env";
+import { registerInboxService } from "@repo/services/inbox";
+import { registerQueueService } from "@repo/services/queue";
+import { registerSettingsService } from "@repo/services/settings";
+
+import { bootstrapCorsair } from "./corsair-bootstrap";
+import { runMigrations } from "./migrate";
+import { CorsairCalendarService } from "./services/calendar";
+import { DbContactsService } from "./services/contacts";
+import { CorsairInboxService } from "./services/inbox";
+import { ThreadQueueService } from "./services/queue";
+import { DbSettingsService } from "./services/settings";
 
 export type ApiBootstrapOptions = {
   /** Skip long-running cron / Redis when running as a serverless function. */
@@ -12,7 +29,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   const { serverless = false } = opts;
 
   try {
-    const { runMigrations } = await import("./migrate");
     await runMigrations();
     logger.info("Database schema patches applied");
   } catch (err) {
@@ -20,8 +36,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { registerInboxService } = await import("@repo/services/inbox");
-    const { CorsairInboxService } = await import("./services/inbox");
     const inbox = new CorsairInboxService();
     if (process.env.THREAD_E2E_MOCK_GMAIL === "true") {
       const { createE2eMockInboxService } = await import("./services/inbox-e2e-mock");
@@ -37,8 +51,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { registerCalendarService } = await import("@repo/services/calendar");
-    const { CorsairCalendarService } = await import("./services/calendar");
     registerCalendarService(new CorsairCalendarService());
   } catch (err) {
     logger.warn("Calendar service registration failed", {
@@ -47,8 +59,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { registerQueueService } = await import("@repo/services/queue");
-    const { ThreadQueueService } = await import("./services/queue");
     registerQueueService(new ThreadQueueService());
   } catch (err) {
     logger.warn("Queue service registration failed", {
@@ -57,8 +67,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { registerContactsService } = await import("@repo/services/contacts");
-    const { DbContactsService } = await import("./services/contacts");
     registerContactsService(new DbContactsService());
   } catch (err) {
     logger.warn("Contacts service registration failed", {
@@ -67,8 +75,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { registerSettingsService } = await import("@repo/services/settings");
-    const { DbSettingsService } = await import("./services/settings");
     registerSettingsService(new DbSettingsService());
   } catch (err) {
     logger.warn("Settings service registration failed", {
@@ -77,7 +83,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
   }
 
   try {
-    const { bootstrapCorsair } = await import("./corsair-bootstrap");
     await bootstrapCorsair();
   } catch (err) {
     logger.warn("Corsair bootstrap skipped", {
@@ -105,7 +110,6 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
     }
   }
 
-  const { isEmailConfigured } = await import("@repo/services/env");
   logger.info(
     isEmailConfigured()
       ? "Email: provider configured"

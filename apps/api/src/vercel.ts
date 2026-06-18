@@ -21,7 +21,8 @@ async function bootExpress(): Promise<Express> {
   }
 
   await runApiBootstrap({ serverless: true });
-  const { default: expressApp } = await import("./server");
+  const serverPath = require("node:path").join(__dirname, "server.js");
+  const { default: expressApp } = require(serverPath);
   return expressApp;
 }
 
