@@ -13,8 +13,10 @@
       "maxDuration": 10
     }
   },
+  "redirects": [
+    { "source": "/", "destination": "/health", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/", "destination": "/api" },
     { "source": "/health", "destination": "/api/health" },
     { "source": "/ping", "destination": "/api/health" },
     { "source": "/(.*)", "destination": "/api" }
