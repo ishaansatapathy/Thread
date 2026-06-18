@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP server — 55 tools exposing Gmail inbox (read/write/mute/star/label/draft/send/batch), Corsair DB search (gmail.db.*, googlecalendar.db.*), approval queue, calendar (CRUD/RSVP/getAvailability/quick-add), and AI features via the Model Context Protocol. Backed by the Corsair SDK for Gmail and Google Calendar. Includes 4 MCP resources and 5 MCP prompts.",
-  "version": "2.3.0",
+  "description": "Thread MCP — 55 domain tools at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
+  "version": "2.4.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",

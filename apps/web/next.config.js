@@ -35,6 +35,18 @@ const nextConfig = {
         destination: `${apiInternalUrl}/mcp`,
       },
       {
+        source: "/mcp/corsair",
+        destination: `${apiInternalUrl}/mcp/corsair`,
+      },
+      {
+        source: "/corsair/permissions/:path*",
+        destination: `${apiInternalUrl}/corsair/permissions/:path*`,
+      },
+      {
+        source: "/api/corsair/:path*",
+        destination: `${apiInternalUrl}/api/corsair/:path*`,
+      },
+      {
         source: "/sync/events",
         destination: `${apiInternalUrl}/sync/events`,
       },

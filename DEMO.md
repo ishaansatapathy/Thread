@@ -145,7 +145,12 @@ MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `pr
 | Free/busy check | `corsair.googlecalendar.api.calendar.getAvailability` | Agent, MCP, Calendar UI |
 | Gmail DB search | `corsair.gmail.db.{threads,messages,drafts,labels}.search` | Inbox cache, Agent, MCP |
 | Calendar DB search | `googlecalendar.db.{events,calendars}.search` | Agent, MCP |
-| Webhooks | `processWebhook` + `webhookHooks` | `POST /webhooks/corsair` |
+| Webhooks | `processWebhook` + `webhookHooks` | `POST /webhooks/corsair` (also `/webhooks/gmail`, `/webhooks/calendar`) |
+| Permissions | `cautious` mode + `executePermission` | `/corsair/approve/:token`, `POST /corsair/permissions/:token/approve` |
+| API hooks | `hooks` on gmail + googlecalendar plugins | Metrics via `incrementCounter` |
+| Error handling | Root `errorHandlers` (429 + 5xx retry) | `createCorsair({ errorHandlers })` |
+| Management API | `toExpressHandler` | `GET/POST /api/corsair/*` |
+| Official MCP | `@corsair-dev/mcp` | `POST /mcp/corsair` |
 | Webhook channel | `corsair.googlecalendar.api.channels.stop/watch` | Webhook registration |
 | Tenant management | `getCorsair().manage.connectionStatus.get` | Connection checks |
 | Multi-tenancy | `getCorsair().withTenant(tenantId)` | All Corsair calls |

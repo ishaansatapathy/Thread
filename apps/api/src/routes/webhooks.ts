@@ -222,6 +222,34 @@ async function refreshTenantCalendar(tenantId: string) {
   }
 }
 
+async function runCorsairProcessWebhook(
+  req: Request,
+  tenantId: string | null,
+): Promise<void> {
+  if (!isCorsairConfigured()) return;
+
+  const corsair = getCorsair();
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (typeof value === "string") headers[key] = value;
+    else if (Array.isArray(value) && value[0]) headers[key] = value[0];
+  }
+
+  try {
+    await processWebhook(
+      corsair,
+      headers,
+      req.body,
+      tenantId ? { tenantId } : undefined,
+    );
+  } catch (error) {
+    logger.warn("processWebhook failed", {
+      tenantId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 webhooksRouter.post("/gmail", async (req, res) => {
   if (!isAuthorized(req)) {
     return res.status(env.CORSAIR_WEBHOOK_SECRET ? 401 : 503).json({
@@ -235,6 +263,8 @@ webhooksRouter.post("/gmail", async (req, res) => {
   const tenantId = await resolveTenantId(req.body);
   const pubsub = decodePubSubData(req.body);
   const incomingHistoryId = pubsub?.historyId?.trim();
+
+  void runCorsairProcessWebhook(req, tenantId);
 
   if (tenantId) {
     void refreshTenantInboxIncremental(tenantId, incomingHistoryId);
@@ -256,6 +286,8 @@ webhooksRouter.post("/calendar", async (req, res) => {
   }
 
   const tenantId = tenantFromCalendarChannel(req) ?? (await resolveTenantId(req.body));
+  void runCorsairProcessWebhook(req, tenantId);
+
   if (tenantId) {
     void refreshTenantCalendar(tenantId);
   } else {
@@ -301,29 +333,14 @@ webhooksRouter.post("/corsair", async (req, res) => {
     (await resolveTenantId(req.body)) ??
     (typeof req.query.tenantId === "string" ? req.query.tenantId.trim() : null);
 
-  try {
-    const corsair = getCorsair();
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(req.headers)) {
-      if (typeof value === "string") headers[key] = value;
-      else if (Array.isArray(value) && value[0]) headers[key] = value[0];
-    }
+  await runCorsairProcessWebhook(req, tenantId);
 
-    await processWebhook(
-      corsair,
-      headers,
-      req.body,
-      tenantId ? { tenantId } : undefined,
-    );
+  if (tenantId && pubsub?.historyId) {
+    await setLastHistoryId(tenantId, pubsub.historyId);
+  }
 
-    if (tenantId && pubsub?.historyId) {
-      await setLastHistoryId(tenantId, pubsub.historyId);
-    }
-  } catch (error) {
-    logger.warn("Corsair processWebhook failed", {
-      tenantId,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  if (tenantId) {
+    void refreshTenantInboxIncremental(tenantId, pubsub?.historyId?.trim());
   }
 
   return res.status(200).json({ ok: true });
