@@ -4,11 +4,26 @@ import { threadQueueItemsTable, usersTable } from "@repo/database/schema";
 import { registerCalendarService } from "@repo/services/calendar";
 import { ServiceError } from "@repo/services/errors";
 import { registerInboxService, type InboxService } from "@repo/services/inbox";
+import { createPgClient, getMigrationDatabaseUrl } from "@repo/database/pg";
 import { describe, expect, it, beforeAll, afterAll, vi } from "vitest";
 
 import { ThreadQueueService } from "./queue";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL?.trim());
+
+async function ensureQueueKindConstraint() {
+  const databaseUrl = getMigrationDatabaseUrl();
+  if (!databaseUrl) return;
+  const client = await createPgClient(databaseUrl);
+  try {
+    await client.query(`
+      ALTER TABLE "thread_queue_items" DROP CONSTRAINT IF EXISTS "thread_queue_items_kind_check";
+      ALTER TABLE "thread_queue_items" ADD CONSTRAINT "thread_queue_items_kind_check" CHECK ("kind" IN ('email_send', 'email_draft', 'draft_send', 'calendar_invite', 'meeting_bundle', 'calendar_archive', 'calendar_delete'));
+    `);
+  } finally {
+    await client.end();
+  }
+}
 
 describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
   const sendMessage = vi.fn(async () => ({ id: "msg-1", threadId: "thread-1" }));
@@ -25,6 +40,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
   let queue: ThreadQueueService;
 
   beforeAll(async () => {
+    await ensureQueueKindConstraint();
     queue = new ThreadQueueService();
 
     const [user] = await db
