@@ -1,13 +1,21 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "cd ../.. && pnpm install",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "buildCommand": "cd ../.. && pnpm --filter @repo/api build",
   "functions": {
     "api/index.js": {
       "memory": 1024,
       "maxDuration": 60,
-      "includeFiles": "{dist/**,api/dist/**}"
+      "includeFiles": "api/dist/**"
+    },
+    "api/health.js": {
+      "memory": 128,
+      "maxDuration": 10
     }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+  "rewrites": [
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/ping", "destination": "/api/health" },
+    { "source": "/(.*)", "destination": "/api" }
+  ]
 }

@@ -64,6 +64,7 @@ build
 dist
 
 apps/api/api/dist
+apps/api/api/_bundle.js
 
 
 
