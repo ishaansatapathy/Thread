@@ -172,6 +172,8 @@ export default function CalendarPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEventItem | null>(null);
   const [showPrep, setShowPrep] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [eventSearchInput, setEventSearchInput] = useState("");
   const [conflicts, setConflicts] = useState<CalendarEventItem[]>([]);
   const [isAllDay, setIsAllDay] = useState(false);
   // All-day event date pickers (date only, no time).
@@ -194,8 +196,14 @@ export default function CalendarPage() {
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const eventQuery = useMemo(() => {
     const bounds = queryBoundsForView(viewMode, viewAnchor);
-    return { ...bounds, maxResults: viewMode === "month" ? 250 : 100, timeZone: browserTimeZone };
-  }, [viewMode, viewAnchor, browserTimeZone]);
+    const q = eventSearchInput.trim();
+    return {
+      ...bounds,
+      maxResults: viewMode === "month" ? 250 : 100,
+      timeZone: browserTimeZone,
+      ...(q ? { q } : {}),
+    };
+  }, [viewMode, viewAnchor, browserTimeZone, eventSearchInput]);
   const todayKey = localDayKey(new Date());
   const periodLabel = viewPeriodLabel(viewMode, viewAnchor);
 
@@ -284,6 +292,7 @@ export default function CalendarPage() {
       await utils.queue.list.invalidate();
       setSelectedEvent(null);
       setShowDeleteConfirm(false);
+      setShowCancelConfirm(false);
       toast.success(queueResultMessage(item).title);
     },
     onError: (error) => toast.error(error.message),
@@ -633,6 +642,15 @@ export default function CalendarPage() {
         >
           Today
         </button>
+        <div className="thread-cal-search">
+          <input
+            type="search"
+            value={eventSearchInput}
+            onChange={(e) => setEventSearchInput(e.target.value)}
+            placeholder="Search events…"
+            aria-label="Search calendar events"
+          />
+        </div>
       </div>
 
       {eventsQuery.isLoading && isConnected ? (
@@ -1246,6 +1264,15 @@ export default function CalendarPage() {
               </button>
               <button
                 type="button"
+                className="thread-btn-ghost"
+                disabled={eventBusy}
+                onClick={() => setShowCancelConfirm(true)}
+              >
+                <XCircle size={14} />
+                Cancel
+              </button>
+              <button
+                type="button"
                 className="thread-btn-ghost thread-cal-event-delete"
                 disabled={eventBusy}
                 onClick={() => setShowDeleteConfirm(true)}
@@ -1348,6 +1375,63 @@ export default function CalendarPage() {
                 }
               >
                 <Trash2 size={14} />
+                {queueDelete.isPending ? "Queuing…" : "Add to queue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showCancelConfirm && selectedEvent ? (
+        <div
+          className="thread-modal-backdrop thread-modal-backdrop--confirm"
+          onClick={() => !queueDelete.isPending && setShowCancelConfirm(false)}
+        >
+          <div
+            className="thread-modal thread-cal-delete-modal thread-cal-confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="thread-modal-head">
+              <h3>Queue cancellation?</h3>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                disabled={queueDelete.isPending}
+                onClick={() => setShowCancelConfirm(false)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="thread-cal-event-detail">
+              <p className="thread-cal-confirm-title">{selectedEvent.summary}</p>
+              <p className="thread-cal-event-detail-copy">
+                Cancels the event and notifies attendees after you approve in Queue. The event stays until approved.
+              </p>
+            </div>
+            <div className="thread-modal-actions">
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                disabled={queueDelete.isPending}
+                onClick={() => setShowCancelConfirm(false)}
+              >
+                Keep event
+              </button>
+              <button
+                type="button"
+                className="thread-btn-accent"
+                disabled={queueDelete.isPending}
+                onClick={() =>
+                  queueDelete.mutate({
+                    delete: {
+                      ...eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
+                      cancelWithNotify: true,
+                    },
+                    title: `Cancel: ${selectedEvent.summary}`,
+                  })
+                }
+              >
+                <XCircle size={14} />
                 {queueDelete.isPending ? "Queuing…" : "Add to queue"}
               </button>
             </div>

@@ -144,7 +144,7 @@
     },
     {
       "name": "reschedule_event",
-      "description": "Reschedule a Google Calendar event to a new time via Corsair Calendar API. Supports recurring event scope: instance, series, or following."
+      "description": "Queue a calendar reschedule for human approval (HITL). Creates a calendar_archive queue item — approve to apply new times via Corsair."
     },
     {
       "name": "update_event_details",
@@ -156,7 +156,7 @@
     },
     {
       "name": "cancel_event",
-      "description": "Cancel a Google Calendar event via Corsair Calendar API. Optionally sends cancellation notifications to attendees."
+      "description": "Queue calendar event cancellation for human approval (HITL). On approve, sets status cancelled and notifies attendees via Corsair."
     },
     {
       "name": "check_free_busy",

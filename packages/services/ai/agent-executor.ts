@@ -411,18 +411,65 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         const startDateTime = String(args.startDateTime ?? "").trim();
         const endDateTime = String(args.endDateTime ?? "").trim();
         const timeZone = String(args.timeZone ?? "UTC").trim();
-        if (!eventId || !startDateTime || !endDateTime) return JSON.stringify({ success: false, error: "eventId, startDateTime, and endDateTime are required" });
-        const updated = await calendar.updateEventTimes(tenantId, eventId, { startDateTime, endDateTime, timeZone });
-        actions.push({ kind: "calendar", title: "Event rescheduled", detail: updated.summary, href: `/calendar?event=${encodeURIComponent(eventId)}` });
-        return JSON.stringify({ success: true, eventId, updated });
+        if (!eventId || !startDateTime || !endDateTime) {
+          return JSON.stringify({ success: false, error: "eventId, startDateTime, and endDateTime are required" });
+        }
+        const existing = await calendar.getEvent(tenantId, eventId);
+        if (!existing) return JSON.stringify({ success: false, error: "Event not found" });
+        const item = await queue.enqueueCalendarArchive(
+          tenantId,
+          {
+            archive: {
+              eventId,
+              summary: existing.summary ?? "Event",
+              startDateTime,
+              endDateTime,
+              timeZone,
+              htmlLink: existing.htmlLink,
+              recurringEventId: existing.recurringEventId,
+            },
+            title: `Reschedule: ${existing.summary ?? "Event"}`,
+          },
+          { origin: "agent" },
+        );
+        actions.push({
+          kind: "calendar_queued",
+          title: "Reschedule queued",
+          detail: existing.summary ?? eventId,
+          href: "/queue",
+          queueItemId: item.id,
+          disposition: item.status === "approved" ? "sent" : "queued",
+        });
+        return JSON.stringify({ success: true, queued: true, queueItemId: item.id, status: item.status });
       }
 
       case "cancel_event": {
         const eventId = String(args.eventId ?? "").trim();
         if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
-        await calendar.cancelEvent(tenantId, eventId);
-        actions.push({ kind: "calendar", title: "Event cancelled", detail: eventId, href: "/calendar" });
-        return JSON.stringify({ success: true, eventId, action: "cancelled" });
+        const existing = await calendar.getEvent(tenantId, eventId);
+        const item = await queue.enqueueCalendarDelete(
+          tenantId,
+          {
+            delete: {
+              eventId,
+              summary: existing?.summary ?? "Event",
+              htmlLink: existing?.htmlLink,
+              recurringEventId: existing?.recurringEventId,
+              cancelWithNotify: true,
+            },
+            title: `Cancel: ${existing?.summary ?? eventId}`,
+          },
+          { origin: "agent" },
+        );
+        actions.push({
+          kind: "calendar_queued",
+          title: "Cancel queued",
+          detail: existing?.summary ?? eventId,
+          href: "/queue",
+          queueItemId: item.id,
+          disposition: item.status === "approved" ? "sent" : "queued",
+        });
+        return JSON.stringify({ success: true, queued: true, queueItemId: item.id, status: item.status });
       }
 
       // ── AI ───────────────────────────────────────────────────────────────────

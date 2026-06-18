@@ -4,8 +4,8 @@ export function buildThreadApiDescription(clientUrl: string, baseUrl: string): s
   return [
     "# Thread API Reference",
     "",
-    "> **AI Chief of Staff** for Gmail + Google Calendar — 100% powered by the [Corsair SDK](https://corsair.dev).",
-    "> Every endpoint below maps to live Corsair Gmail / Google Calendar APIs or Corsair DB search — **no mocked data**.",
+    "> **AI Chief of Staff** for Gmail + Google Calendar — powered by the [Corsair SDK](https://corsair.dev).",
+    "> Production flows use live Corsair OAuth + Gmail/Calendar APIs; demo mode uses seeded fixtures when Gmail is not connected.",
     "",
     "---",
     "",

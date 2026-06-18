@@ -238,6 +238,9 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
+  const [dbSearchMode, setDbSearchMode] = useState(false);
+  const [mutedThreadIds, setMutedThreadIds] = useState<Set<string>>(() => new Set());
+  const priorityBootstrapped = useRef(false);
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -476,6 +479,7 @@ export default function InboxPage() {
   const muteThread = trpc.inbox.muteThread.useMutation({
     onSuccess: (_data, variables) => {
       toast.success("Thread muted");
+      setMutedThreadIds((prev) => new Set(prev).add(variables.threadId));
       utils.inbox.listThreads.setData(
         { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
         (old) => {
@@ -484,6 +488,19 @@ export default function InboxPage() {
         }
       );
       setSelectedId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const unmuteThread = trpc.inbox.unmuteThread.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success("Thread unmuted");
+      setMutedThreadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.threadId);
+        return next;
+      });
+      void utils.inbox.listThreads.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -566,8 +583,12 @@ export default function InboxPage() {
     return parts.join(" ").trim();
   }, [appliedQuery, labelFilter, labelsQuery.data]);
 
-  const inbox = useInboxThreads(effectiveQuery, isConnected);
-  const threads = inbox.threads;
+  const inbox = useInboxThreads(effectiveQuery, isConnected && !dbSearchMode);
+  const dbSearch = trpc.inbox.searchThreadsDb.useQuery(
+    { query: appliedQuery || undefined, limit: PAGE_SIZE },
+    { enabled: isConnected && dbSearchMode && view === "inbox", staleTime: 30_000 },
+  );
+  const threads = dbSearchMode && view === "inbox" ? (dbSearch.data?.threads ?? []) : inbox.threads;
 
   const displayThreads = hasDemoFixtures ? (demoCacheQuery.data?.threads ?? []) : threads;
 
@@ -677,6 +698,31 @@ export default function InboxPage() {
 
   const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
   const aiReady = aiStatus.data?.openai === true;
+
+  useEffect(() => {
+    if (!isConnected || !aiReady || priorityBootstrapped.current) return;
+    priorityBootstrapped.current = true;
+    void (async () => {
+      try {
+        const batch = await utils.client.inbox.listThreads.query({
+          maxResults: 50,
+          query: "-category:promotions -category:social -category:forums",
+          refresh: true,
+        });
+        if (batch.threads.length === 0) return;
+        rankThreads.mutate({
+          threads: batch.threads.slice(0, 40).map((thread) => ({
+            id: thread.id,
+            snippet: thread.snippet,
+            subject: thread.subject,
+            from: thread.fromName ?? thread.from,
+          })),
+        });
+      } catch {
+        // Non-fatal — user can open Priority tab manually
+      }
+    })();
+  }, [isConnected, aiReady, utils.client.inbox.listThreads, rankThreads]);
 
   const smartRepliesQuery = trpc.ai.smartReplies.useQuery(
     { threadId: selectedId ?? "" },
@@ -1022,6 +1068,9 @@ export default function InboxPage() {
             >
               <Sparkles size={11} />
               Priority
+              {priorityAnalysis ? (
+                <span className="thread-inbox-tab-badge">{priorityAnalysis.items.length}</span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -1097,9 +1146,21 @@ export default function InboxPage() {
               type="search"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search mail (from:, subject:, has:attachment…)"
+              placeholder={
+                dbSearchMode
+                  ? "Corsair DB search (local cache, sub-second)…"
+                  : "Search mail (from:, subject:, has:attachment…)"
+              }
               aria-label="Search mail"
             />
+            <button
+              type="button"
+              className={`thread-inbox-db-toggle${dbSearchMode ? " thread-inbox-db-toggle--active" : ""}`}
+              onClick={() => setDbSearchMode((v) => !v)}
+              title="Toggle Corsair DB search (fast local cache)"
+            >
+              DB
+            </button>
             {searchInput ? (
               <button
                 type="button"
@@ -1316,7 +1377,10 @@ export default function InboxPage() {
           ) : (
             <>
               {visibleThreads.map((thread) => {
-                const priority = view === "priority" ? priorityByThreadId.get(thread.id) : undefined;
+                const priority =
+                  view === "priority" || priorityAnalysis
+                    ? priorityByThreadId.get(thread.id)
+                    : undefined;
                 const isSnoozed = snoozedIds.has(thread.id);
                 if (isSnoozed) return null;
                 const isSelected = selectedId === thread.id;
@@ -1615,11 +1679,22 @@ export default function InboxPage() {
                   <button
                     type="button"
                     className="thread-inbox-action-btn"
-                    disabled={muteThread.isPending}
-                    onClick={() => { if (selectedId) muteThread.mutate({ threadId: selectedId }); }}
-                    title="Mute thread (m) — future messages skip inbox"
+                    disabled={muteThread.isPending || unmuteThread.isPending}
+                    onClick={() => {
+                      if (!selectedId) return;
+                      if (mutedThreadIds.has(selectedId)) {
+                        unmuteThread.mutate({ threadId: selectedId });
+                      } else {
+                        muteThread.mutate({ threadId: selectedId });
+                      }
+                    }}
+                    title={
+                      mutedThreadIds.has(selectedId ?? "")
+                        ? "Unmute thread"
+                        : "Mute thread (m) — future messages skip inbox"
+                    }
                   >
-                    <BellOff size={15} style={{ opacity: 0.6 }} />
+                    <BellOff size={15} style={{ opacity: mutedThreadIds.has(selectedId ?? "") ? 1 : 0.6 }} />
                   </button>
                   <div className="thread-inbox-action-divider" />
                   <div ref={labelPickerRef} style={{ position: "relative" }}>

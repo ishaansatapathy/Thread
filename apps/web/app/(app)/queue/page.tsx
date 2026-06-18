@@ -51,7 +51,10 @@ function kindIcon(kind: string) {
   return Mail;
 }
 
-function readArchivePayload(payload: Record<string, unknown>) {
+function kindLabel(kind: string, payload: Record<string, unknown>) {
+  if (kind === "calendar_delete" && payload.cancelWithNotify === true) return "Cancel event";
+  return KIND_LABEL[kind] ?? kind;
+}
   return {
     startDateTime: String(payload.startDateTime ?? ""),
     endDateTime: String(payload.endDateTime ?? ""),
@@ -183,7 +186,7 @@ export default function QueuePage() {
       (item) =>
         item.title.toLowerCase().includes(q) ||
         (item.preview ?? "").toLowerCase().includes(q) ||
-        (KIND_LABEL[item.kind] ?? item.kind).toLowerCase().includes(q),
+        kindLabel(item.kind, item.payload).toLowerCase().includes(q),
     );
   }, [items, search]);
 
@@ -195,7 +198,9 @@ export default function QueuePage() {
       return "Sending…";
     }
     if (item.kind === "calendar_archive") return "Review dates";
-    if (item.kind === "calendar_delete") return "Approve delete";
+    if (item.kind === "calendar_delete") {
+      return item.payload.cancelWithNotify === true ? "Approve cancel" : "Approve delete";
+    }
     if (item.kind === "draft_send") return "Approve & send draft";
     return "Approve & send";
   };
@@ -328,7 +333,7 @@ export default function QueuePage() {
                   <div className="thread-queue-card-meta">
                     <h3>{item.title}</h3>
                     <div className="thread-queue-card-tags">
-                      <span className="thread-mono-tag">{KIND_LABEL[item.kind] ?? item.kind}</span>
+                      <span className="thread-mono-tag">{kindLabel(item.kind, item.payload)}</span>
                       <span className="thread-queue-card-time">
                         <Clock3 size={12} />
                         {new Date(item.createdAt).toLocaleString()}

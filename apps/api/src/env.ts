@@ -21,7 +21,10 @@ const envSchema = z.object({
 });
 
 function defaultPublicOpenApiDocs(nodeEnv: string) {
-  return nodeEnv === "development" || nodeEnv === "test" ? "true" : "false";
+  if (nodeEnv === "development" || nodeEnv === "test") return "true";
+  const baseUrl = (process.env.BASE_URL ?? "").toLowerCase();
+  if (baseUrl.includes("vercel.app") || baseUrl.includes("railway.app")) return "true";
+  return "false";
 }
 
 function createEnv(env: NodeJS.ProcessEnv) {

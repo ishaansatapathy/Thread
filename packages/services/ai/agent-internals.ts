@@ -341,7 +341,7 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "reschedule_event",
-      description: "Reschedule a Google Calendar event to a new time via Corsair. Use when user wants to move a meeting.",
+      description: "Queue a calendar reschedule for human approval (HITL). Creates a queue item — user must approve before Corsair applies new times.",
       parameters: {
         type: "object",
         properties: {
@@ -358,7 +358,7 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "cancel_event",
-      description: "Cancel a Google Calendar event via Corsair. Use only when user explicitly asks to cancel a meeting.",
+      description: "Queue cancellation of a calendar event for human approval (HITL). Notifies attendees on approve — use only when user explicitly asks to cancel.",
       parameters: {
         type: "object",
         properties: {
