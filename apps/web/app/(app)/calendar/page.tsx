@@ -174,6 +174,7 @@ export default function CalendarPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [eventSearchInput, setEventSearchInput] = useState("");
+  const [dbSearchMode, setDbSearchMode] = useState(false);
   const [conflicts, setConflicts] = useState<CalendarEventItem[]>([]);
   const [isAllDay, setIsAllDay] = useState(false);
   // All-day event date pickers (date only, no time).
@@ -214,11 +215,25 @@ export default function CalendarPage() {
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
   const eventsQuery = trpc.calendar.listEvents.useQuery(eventQuery, {
-    enabled: isConnected,
+    enabled: isConnected && (!dbSearchMode || !eventSearchInput.trim()),
     refetchOnMount: "always",
-    refetchInterval: isConnected ? 30_000 : false,
+    refetchInterval: isConnected && !dbSearchMode ? 30_000 : false,
     staleTime: 0,
   });
+
+  const dbSearchTerm = eventSearchInput.trim();
+  const dbEventsQuery = trpc.calendar.searchEventsDb.useQuery(
+    { query: dbSearchTerm, limit: 100 },
+    { enabled: isConnected && dbSearchMode && dbSearchTerm.length > 0, staleTime: 30_000 },
+  );
+
+  const calendarEvents = useMemo(() => {
+    if (dbSearchMode && dbSearchTerm) return dbEventsQuery.data?.events ?? [];
+    return eventsQuery.data?.events ?? [];
+  }, [dbSearchMode, dbSearchTerm, dbEventsQuery.data?.events, eventsQuery.data?.events]);
+
+  const eventsLoading =
+    dbSearchMode && dbSearchTerm ? dbEventsQuery.isLoading : eventsQuery.isLoading;
 
   useEffect(() => {
     if (!selectedEvent) return;
@@ -408,7 +423,7 @@ export default function CalendarPage() {
     for (const { date } of visibleDays) {
       map.set(localDayKey(date), []);
     }
-    for (const event of eventsQuery.data?.events ?? []) {
+    for (const event of calendarEvents) {
       if (event.status?.toLowerCase() === "cancelled") continue;
       const key = eventDayKey(event.start);
       if (!key || !map.has(key)) continue;
@@ -473,7 +488,7 @@ export default function CalendarPage() {
       });
     }
     return map;
-  }, [eventsQuery.data?.events, pendingQueue.data?.items, visibleDays]);
+  }, [calendarEvents, pendingQueue.data?.items, visibleDays]);
 
   const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
@@ -647,13 +662,21 @@ export default function CalendarPage() {
             type="search"
             value={eventSearchInput}
             onChange={(e) => setEventSearchInput(e.target.value)}
-            placeholder="Search events…"
+            placeholder={dbSearchMode ? "Corsair DB search (local cache)…" : "Search events…"}
             aria-label="Search calendar events"
           />
+          <button
+            type="button"
+            className={`thread-inbox-db-toggle${dbSearchMode ? " thread-inbox-db-toggle--active" : ""}`}
+            onClick={() => setDbSearchMode((v) => !v)}
+            title="Toggle Corsair DB search (fast local cache)"
+          >
+            DB
+          </button>
         </div>
       </div>
 
-      {eventsQuery.isLoading && isConnected ? (
+      {eventsLoading && isConnected ? (
         <SkeletonList count={7} />
       ) : eventsQuery.isError && isConnected ? (
         <QueryErrorState

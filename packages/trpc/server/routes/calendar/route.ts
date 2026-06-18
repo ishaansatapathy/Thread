@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { getCalendarService } from "@repo/services/calendar";
 import { getQueueService } from "@repo/services/queue";
+import { calendarUpdatePayloadSchema } from "@repo/services/queue/schemas";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -44,7 +45,7 @@ const isoDateTimeSchema = z.string().min(1);
 
 const queueItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
+  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete", "calendar_update"]),
   title: z.string(),
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -176,11 +177,25 @@ export const calendarRouter = router({
     .mutation(async ({ ctx, input }) => {
       try {
         const calendar = getCalendarService();
-        return await calendar.patchEventDetails(ctx.user.id, input.eventId, {
-          summary: input.summary,
+        const queue = getQueueService();
+        const existing = await calendar.getEvent(ctx.user.id, input.eventId);
+        if (!existing) return null;
+        const update = calendarUpdatePayloadSchema.parse({
+          eventId: input.eventId,
+          summary: existing.summary ?? "Event",
+          newSummary: input.summary,
           description: input.description,
           location: input.location,
         });
+        const item = await queue.enqueueCalendarUpdate(
+          ctx.user.id,
+          { update, title: `Update: ${existing.summary ?? "Event"}` },
+          { origin: "calendar" },
+        );
+        if (item.status === "approved") {
+          return calendar.getEvent(ctx.user.id, input.eventId);
+        }
+        return existing as z.infer<typeof calendarEventSchema>;
       } catch (error) {
         mapServiceError(error);
       }

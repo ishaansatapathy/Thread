@@ -47,7 +47,7 @@ The agent has **57 tools** backed by Corsair — **full parity** with the Thread
 | Labels | `list_labels`, `apply_label`, `remove_label` |
 | Drafts | `list_drafts`, `get_draft`, `update_draft`, `delete_draft`, `send_draft` (queued) |
 | Queue | `list_queue`, `approve_queue_item`, `dismiss_queue_item` |
-| Calendar | `queue_calendar_invite`, `quick_add_event` (queued), `list_calendar_events`, `check_free_busy`, `respond_to_event`, `reschedule_event`, `cancel_event`, `update_event_details` |
+| Calendar | `queue_calendar_invite`, `quick_add_event` (queued), `list_calendar_events`, `check_free_busy`, `respond_to_event`, `reschedule_event` (queued), `cancel_event` (queued), `update_event_details` (queued) |
 | Corsair DB search | `search_threads_db`, `search_messages_db`, `search_drafts_db`, `search_labels_db`, `search_events_db`, `search_calendars_db` |
 | AI | `get_daily_brief`, `get_smart_replies`, `get_meeting_prep`, `get_thread_context`, `get_missed_followups`, `get_contact_intel`, `summarize_thread` |
 
@@ -227,7 +227,7 @@ These show **live Corsair + MCP + human-in-the-loop** in one flow:
 - **Rate limiting** — Redis per-user and per-IP rate limits on both API and MCP server
 
 ### Architecture
-- **Shared tool executor** (`agent-executor.ts`) — single source of truth for 52 tools, used by both blocking and streaming agent variants
+- **Shared tool executor** (`agent-executor.ts`) — single source of truth for 57 tools, used by both blocking and streaming agent variants
 - **Zero duplication** — `agent.ts` and `agent-stream.ts` are thin wrappers over `buildToolExecutor()`
 - **Brief server cache** — 5-minute per-user TTL cache prevents 6 Corsair calls per browser focus event
 - **Meeting prep O(1)** — `calendar.getEvent(id)` direct fetch vs. previous list+find scan

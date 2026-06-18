@@ -116,6 +116,7 @@ All REST routes live under **`/api/*`** and are documented in Scalar with:
 | `meeting_bundle` | `events.create` + `messages.send` |
 | `calendar_archive` | `events.patch` (reschedule) |
 | `calendar_delete` | `events.delete` |
+| `calendar_update` | `events.patch` (title, description, location) |
 
 State machine: `pending → processing → approved | failed` · dismiss → `dismissed`
 

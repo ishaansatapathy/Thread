@@ -283,6 +283,20 @@ export const inboxRouter = router({
       return inbox.listLabels(ctx.user.id);
     }),
 
+  createLabel: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/labels"), tags: TAGS } })
+    .input(z.object({ name: z.string().trim().min(1).max(200) }))
+    .output(z.object({ id: z.string(), name: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        const id = await inbox.ensureLabel(ctx.user.id, input.name);
+        return { id, name: input.name };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   applyLabel: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/labels"), tags: TAGS } })
     .input(z.object({ threadId: z.string().min(1), labelId: z.string().min(1) }))

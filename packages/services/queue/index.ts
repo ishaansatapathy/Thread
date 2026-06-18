@@ -5,7 +5,8 @@ export type QueueItemKind =
   | "calendar_invite"
   | "meeting_bundle"
   | "calendar_archive"
-  | "calendar_delete";
+  | "calendar_delete"
+  | "calendar_update";
 
 export type DraftSendPayload = {
   draftId: string;
@@ -58,6 +59,15 @@ export type CalendarDeletePayload = {
   recurringEventId?: string;
   editScope?: "instance" | "series" | "following";
   cancelWithNotify?: boolean;
+};
+
+export type CalendarUpdatePayload = {
+  eventId: string;
+  summary: string;
+  newSummary?: string;
+  description?: string;
+  location?: string;
+  htmlLink?: string;
 };
 
 export type QueueItem = {
@@ -124,6 +134,15 @@ export interface QueueService {
     userId: string,
     input: {
       delete: CalendarDeletePayload;
+      title?: string;
+      preview?: string;
+    },
+    opts?: QueueEnqueueOptions,
+  ): Promise<QueueItem>;
+  enqueueCalendarUpdate(
+    userId: string,
+    input: {
+      update: CalendarUpdatePayload;
       title?: string;
       preview?: string;
     },

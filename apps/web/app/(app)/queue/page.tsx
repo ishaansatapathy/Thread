@@ -35,6 +35,7 @@ const KIND_LABEL: Record<string, string> = {
   meeting_bundle: "Meeting + email",
   calendar_archive: "Reschedule event",
   calendar_delete: "Delete event",
+  calendar_update: "Update event details",
 };
 
 type ArchiveConfirmState = {
@@ -46,6 +47,7 @@ type ArchiveConfirmState = {
 
 function kindIcon(kind: string) {
   if (kind === "calendar_delete") return Trash2;
+  if (kind === "calendar_update") return Sparkles;
   if (kind === "calendar_archive") return Archive;
   if (kind.includes("calendar") || kind === "meeting_bundle") return Calendar;
   return Mail;

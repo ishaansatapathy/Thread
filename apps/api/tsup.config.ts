@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["./src/index.ts", "./src/server.ts", "./src/api-bootstrap.ts"],
+  entry: ["./src/index.ts", "./src/server.ts", "./src/api-bootstrap.ts", "./src/vercel.ts"],
   external: [/^@scalar\//],
   noExternal: [/^@repo\//],
   splitting: false,

@@ -9,6 +9,7 @@ import {
   parseCalendarArchivePayload,
   parseCalendarDeletePayload,
   parseCalendarQueuePayload,
+  parseCalendarUpdatePayload,
   parseDraftSendPayload,
   parseEmailQueuePayload,
   parseMeetingBundlePayload,
@@ -18,6 +19,7 @@ import type {
   CalendarArchivePayload,
   CalendarDeletePayload,
   CalendarQueuePayload,
+  CalendarUpdatePayload,
   EmailQueuePayload,
   MeetingBundlePayload,
   QueueEnqueueOptions,
@@ -100,6 +102,7 @@ function wantsAutoApprove(
     case "calendar_invite":
     case "calendar_archive":
     case "calendar_delete":
+    case "calendar_update":
     case "meeting_bundle":
       return prefs.autoApproveCalendar;
     default:
@@ -472,6 +475,45 @@ export class ThreadQueueService implements QueueService {
     return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
   }
 
+  async enqueueCalendarUpdate(
+    userId: string,
+    input: {
+      update: CalendarUpdatePayload;
+      title?: string;
+      preview?: string;
+    },
+    opts?: QueueEnqueueOptions,
+  ) {
+    const payload = parseCalendarUpdatePayload(input.update);
+    const title = input.title?.trim() || `Update: ${payload.summary}`;
+    const preview =
+      input.preview?.trim() ||
+      truncate(
+        [
+          payload.newSummary ? `Title → ${payload.newSummary}` : null,
+          payload.description ? "Description updated" : null,
+          payload.location ? `Location → ${payload.location}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || payload.summary,
+      );
+
+    const [row] = await db
+      .insert(threadQueueItemsTable)
+      .values({
+        userId,
+        kind: "calendar_update",
+        title,
+        preview,
+        payload,
+        status: "pending",
+      })
+      .returning();
+
+    if (!row) throw serviceError("INTERNAL", "Could not queue calendar update");
+    return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "calendar" });
+  }
+
   async enqueueQuickAddCalendar(
     userId: string,
     input: { text: string; title?: string; preview?: string },
@@ -695,6 +737,15 @@ export class ThreadQueueService implements QueueService {
             recurringEventId: deletePayload.recurringEventId,
           });
         }
+        return;
+      }
+      case "calendar_update": {
+        const updatePayload = parseCalendarUpdatePayload(payload);
+        await calendar.patchEventDetails(userId, updatePayload.eventId, {
+          summary: updatePayload.newSummary,
+          description: updatePayload.description,
+          location: updatePayload.location,
+        });
         return;
       }
       default:

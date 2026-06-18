@@ -5,6 +5,7 @@ import {
   calendarArchivePayloadSchema,
   calendarDeletePayloadSchema,
   calendarQueuePayloadSchema,
+  calendarUpdatePayloadSchema,
   emailQueuePayloadSchema,
 } from "@repo/services/queue/schemas";
 
@@ -17,7 +18,7 @@ const getPath = generatePath("/queue");
 
 const queueItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete"]),
+  kind: z.enum(["email_send", "email_draft", "draft_send", "calendar_invite", "meeting_bundle", "calendar_archive", "calendar_delete", "calendar_update"]),
   title: z.string(),
   preview: z.string().optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -163,6 +164,25 @@ export const queueRouter = router({
       try {
         const queue = getQueueService();
         return await queue.enqueueCalendarDelete(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  enqueueCalendarUpdate: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/enqueue/calendar-update"), tags: TAGS } })
+    .input(
+      z.object({
+        update: calendarUpdatePayloadSchema,
+        title: z.string().max(200).optional(),
+        preview: z.string().max(500).optional(),
+      }),
+    )
+    .output(queueItemSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const queue = getQueueService();
+        return await queue.enqueueCalendarUpdate(ctx.user.id, input, { origin: "calendar" });
       } catch (error) {
         mapServiceError(error);
       }
