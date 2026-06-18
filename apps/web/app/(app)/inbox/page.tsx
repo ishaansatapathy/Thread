@@ -945,96 +945,90 @@ export default function InboxPage() {
   return (
     <div className="thread-inbox" data-selected={selectedId ? "true" : undefined}>
       <div className="thread-inbox-list">
+        {/* Single header row: tabs + compose + bulk toggle */}
         <div className="thread-inbox-list-head">
-          <button
-            type="button"
-            className="thread-inbox-tab"
-            data-active={view === "inbox"}
-            onClick={() => setView("inbox")}
-          >
-            Inbox
-          </button>
-          <button
-            type="button"
-            className="thread-inbox-tab"
-            data-active={view === "priority"}
-            data-disabled={!aiReady ? "true" : undefined}
-            onClick={() => handleViewChange("priority")}
-            title={aiReady ? "Rank by urgency with OpenAI" : "Set OPENAI_API_KEY to enable"}
-          >
-            <Sparkles size={12} />
-            Priority
-          </button>
-          <button
-            type="button"
-            className="thread-inbox-tab"
-            data-active={view === "drafts"}
-            onClick={() => setView("drafts")}
-          >
-            <FileText size={12} />
-            Drafts
-          </button>
-          <Link
-            href="/queue"
-            className="thread-inbox-queue-link"
-            aria-label={`Open approval queue${queueCount ? `, ${queueCount} pending` : ""}`}
-          >
-            <ListChecks size={14} />
-            Queue
-            {queueCount > 0 ? <span className="thread-inbox-queue-badge">{queueCount}</span> : null}
-          </Link>
-        </div>
-
-        {isConnected ? (
-          <div className="thread-inbox-compose-cta">
+          <div className="thread-inbox-list-head-tabs">
             <button
               type="button"
-              className="thread-inbox-compose-btn thread-btn-accent"
-              onClick={() => setShowCompose(true)}
+              className="thread-inbox-tab"
+              data-active={view === "inbox"}
+              onClick={() => setView("inbox")}
             >
-              <FilePenLine size={14} />
-              Compose
+              Inbox
             </button>
             <button
               type="button"
-              className={`thread-inbox-bulk-btn${bulkMode ? " thread-inbox-bulk-btn--active" : ""}`}
-              onClick={() => { setBulkMode((v) => { if (v) clearBulk(); return !v; }); }}
-              title="Multi-select mode (x)"
+              className="thread-inbox-tab"
+              data-active={view === "priority"}
+              onClick={() => handleViewChange("priority")}
+              title={aiReady ? "Rank by urgency with OpenAI" : "Set OPENAI_API_KEY to enable"}
             >
-              <CheckSquare size={13} />
+              <Sparkles size={11} />
+              Priority
+            </button>
+            <button
+              type="button"
+              className="thread-inbox-tab"
+              data-active={view === "drafts"}
+              onClick={() => setView("drafts")}
+            >
+              Drafts
             </button>
           </div>
-        ) : null}
+          <div className="thread-inbox-list-head-actions">
+            {isConnected ? (
+              <>
+                <button
+                  type="button"
+                  className={`thread-inbox-bulk-btn${bulkMode ? " thread-inbox-bulk-btn--active" : ""}`}
+                  onClick={() => { setBulkMode((v) => { if (v) clearBulk(); return !v; }); }}
+                  title="Multi-select (x)"
+                >
+                  <CheckSquare size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="thread-inbox-compose-icon-btn"
+                  onClick={() => setShowCompose(true)}
+                  title="Compose new email"
+                >
+                  <FilePenLine size={14} />
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
 
         {/* Bulk action bar */}
         {bulkMode && bulkSelected.size > 0 ? (
           <div className="thread-inbox-bulk-bar">
             <span className="thread-inbox-bulk-count">{bulkSelected.size} selected</span>
             <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkArchive()}>
-              <Archive size={12} /> Archive
+              <Archive size={11} /> Archive
             </button>
             <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkMarkRead()}>
-              <Mail size={12} /> Mark read
+              <Mail size={11} /> Mark read
             </button>
             <button type="button" className="thread-inbox-bulk-action" onClick={bulkSnooze}>
-              <BellOff size={12} /> Snooze
+              <BellOff size={11} /> Snooze
             </button>
             <button type="button" className="thread-inbox-bulk-action thread-inbox-bulk-action--cancel" onClick={clearBulk}>
-              <X size={12} /> Cancel
+              <X size={11} /> Cancel
             </button>
           </div>
         ) : bulkMode ? (
           <div className="thread-inbox-bulk-bar">
-            <span className="thread-inbox-bulk-count">Select threads to act on</span>
+            <span className="thread-inbox-bulk-count" style={{ color: "var(--thread-dim)" }}>Select threads…</span>
             <button type="button" className="thread-inbox-bulk-action thread-inbox-bulk-action--cancel" onClick={clearBulk}>
-              <X size={12} /> Cancel
+              <X size={11} /> Cancel
             </button>
           </div>
         ) : null}
 
+        {/* Search bar */}
         {isConnected && showThreadList ? (
           <div className="thread-inbox-search">
-            <Search size={14} />
+            <Search size={13} />
             <input
               ref={searchRef}
               type="search"
@@ -1050,7 +1044,7 @@ export default function InboxPage() {
                 onClick={() => setSearchInput("")}
                 aria-label="Clear search"
               >
-                <X size={13} />
+                <X size={12} />
               </button>
             ) : (
               <kbd className="thread-app-kbd">/</kbd>
@@ -1058,9 +1052,10 @@ export default function InboxPage() {
           </div>
         ) : null}
 
+        {/* Label filter */}
         {isConnected && showThreadList && labelsQuery.data && labelsQuery.data.length > 0 ? (
-          <div className="thread-inbox-label-filter">
-            <Tag size={12} />
+          <div className="thread-inbox-label-filter-row">
+            <Tag size={11} />
             <select
               value={labelFilter}
               onChange={(event) => setLabelFilter(event.target.value)}
@@ -1077,22 +1072,6 @@ export default function InboxPage() {
                 ))}
             </select>
           </div>
-        ) : null}
-
-        {view === "inbox" && isConnected && inbox.isRefreshing ? (
-          <p
-            style={{
-              margin: "8px 12px 0",
-              fontSize: 11,
-              color: "var(--thread-dim)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <Loader2 size={12} className="thread-spin" />
-            Updating from Gmail…
-          </p>
         ) : null}
 
         {view === "priority" && isConnected ? (
@@ -1331,10 +1310,10 @@ export default function InboxPage() {
         {isConnected && view === "inbox" && visibleThreads.length > 0 ? (
           <div className="thread-inbox-list-footer">
             {inbox.isRefreshing ? (
-              <p className="thread-inbox-list-footer-hint">
-                <Loader2 size={12} className="thread-spin" style={{ display: "inline", marginRight: 6 }} />
-                Syncing from Gmail…
-              </p>
+              <div className="thread-inbox-sync-dot">
+                <Loader2 size={11} className="thread-spin" />
+                <span>Syncing…</span>
+              </div>
             ) : inbox.nextPageToken ? (
               <button
                 type="button"
@@ -1448,185 +1427,173 @@ export default function InboxPage() {
                     </p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0 }}
-                  disabled={!calendarConnected || !replyTo.trim()}
-                  onClick={() => setShowSchedule(true)}
-                >
-                  <CalendarPlus size={14} />
-                  Schedule meeting
-                </button>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: selectedId && starredIds.has(selectedId) ? "#fbbf24" : undefined }}
-                  disabled={starThread.isPending || unstarThread.isPending}
-                  onClick={() => {
-                    if (!selectedId) return;
-                    starredIds.has(selectedId)
-                      ? unstarThread.mutate({ threadId: selectedId })
-                      : starThread.mutate({ threadId: selectedId });
-                  }}
-                  title={selectedId && starredIds.has(selectedId) ? "Unstar" : "Star this thread"}
-                >
-                  <Star size={14} fill={selectedId && starredIds.has(selectedId) ? "#fbbf24" : "none"} />
-                  {selectedId && starredIds.has(selectedId) ? "Starred" : "Star"}
-                </button>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: selectedId && importantIds.has(selectedId) ? "#a78bfa" : undefined }}
-                  disabled={markImportant.isPending || markNotImportant.isPending}
-                  onClick={() => {
-                    if (!selectedId) return;
-                    importantIds.has(selectedId)
-                      ? markNotImportant.mutate({ threadId: selectedId })
-                      : markImportant.mutate({ threadId: selectedId });
-                  }}
-                  title={selectedId && importantIds.has(selectedId) ? "Remove important" : "Mark as important"}
-                >
-                  <Zap size={14} fill={selectedId && importantIds.has(selectedId) ? "#a78bfa" : "none"} />
-                  {selectedId && importantIds.has(selectedId) ? "Important" : "Important"}
-                </button>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0, color: "#ef4444" }}
-                  disabled={trashThread.isPending}
-                  onClick={() => { if (selectedId) trashThread.mutate({ threadId: selectedId }); }}
-                  title="Move to trash"
-                >
-                  <Trash2 size={14} />
-                  Trash
-                </button>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 12px", flexShrink: 0 }}
-                  disabled={archiveThread.isPending}
-                  onClick={() => { if (selectedId) { archiveThread.mutate({ threadId: selectedId }); setSelectedId(null); } }}
-                  title="Archive thread (e)"
-                >
-                  <Archive size={14} />
-                  {archiveThread.isPending ? "Archiving…" : "Archive"}
-                </button>
-                <div style={{ position: "relative", flexShrink: 0 }}>
+                {/* Reading pane action toolbar — icon buttons */}
+                <div className="thread-inbox-reading-toolbar">
                   <button
                     type="button"
-                    className="thread-btn-ghost"
-                    style={{ fontSize: 12, padding: "7px 12px" }}
-                    title="Snooze thread (b)"
+                    className="thread-inbox-action-primary"
+                    disabled={!calendarConnected || !replyTo.trim()}
+                    onClick={() => setShowSchedule(true)}
+                    title="Schedule meeting"
+                  >
+                    <CalendarPlus size={13} />
+                    Schedule
+                  </button>
+                  <div className="thread-inbox-action-divider" />
+                  <button
+                    type="button"
+                    className="thread-inbox-action-btn"
+                    data-active={selectedId && starredIds.has(selectedId) ? "true" : undefined}
+                    disabled={starThread.isPending || unstarThread.isPending}
                     onClick={() => {
-                      const el = document.getElementById("thread-snooze-menu");
-                      if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+                      if (!selectedId) return;
+                      starredIds.has(selectedId)
+                        ? unstarThread.mutate({ threadId: selectedId })
+                        : starThread.mutate({ threadId: selectedId });
                     }}
+                    title={selectedId && starredIds.has(selectedId) ? "Unstar" : "Star (s)"}
                   >
-                    <BellOff size={14} />
-                    Snooze
+                    <Star size={15} fill={selectedId && starredIds.has(selectedId) ? "#fbbf24" : "none"} />
                   </button>
-                  <div id="thread-snooze-menu" className="thread-snooze-menu" style={{ display: "none" }}>
-                    {([
-                      { label: "Tomorrow 8am", when: "tomorrow" as const },
-                      { label: "Next week", when: "nextweek" as const },
-                    ]).map(({ label, when }) => (
-                      <button
-                        key={when}
-                        type="button"
-                        className="thread-snooze-option"
-                        onClick={() => {
-                          if (selectedId) {
-                            snoozeThread(selectedId, when);
-                            setSelectedId(null);
-                          }
-                          const el = document.getElementById("thread-snooze-menu");
-                          if (el) el.style.display = "none";
-                        }}
-                      >
-                        <Clock size={11} />
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{
-                    fontSize: 12,
-                    padding: "7px 12px",
-                    flexShrink: 0,
-                    color: showContextPanel ? "var(--thread-accent)" : undefined,
-                  }}
-                  onClick={() => setShowContextPanel((v) => !v)}
-                  title="AI context panel"
-                >
-                  <PanelRight size={14} />
-                  {showContextPanel ? "Hide AI" : "AI Context"}
-                </button>
-                <div ref={labelPickerRef} style={{ position: "relative", flexShrink: 0 }}>
                   <button
                     type="button"
-                    className="thread-btn-ghost"
-                    style={{ fontSize: 12, padding: "7px 12px" }}
-                    onClick={() => setShowLabelPicker((v) => !v)}
-                    title="Apply a label"
+                    className="thread-inbox-action-btn"
+                    data-important={selectedId && importantIds.has(selectedId) ? "true" : undefined}
+                    disabled={markImportant.isPending || markNotImportant.isPending}
+                    onClick={() => {
+                      if (!selectedId) return;
+                      importantIds.has(selectedId)
+                        ? markNotImportant.mutate({ threadId: selectedId })
+                        : markImportant.mutate({ threadId: selectedId });
+                    }}
+                    title={selectedId && importantIds.has(selectedId) ? "Remove important" : "Mark important (i)"}
                   >
-                    <Tag size={14} />
-                    Label
+                    <Zap size={15} fill={selectedId && importantIds.has(selectedId) ? "#a78bfa" : "none"} />
                   </button>
-                  {showLabelPicker ? (
-                    <div className="thread-label-picker">
-                      {labelsQuery.isLoading ? (
-                        <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>Loading labels…</p>
-                      ) : labelsQuery.isError ? (
-                        <p className="thread-label-picker-head" style={{ padding: "8px 12px", color: "var(--thread-danger, #f87171)" }}>Failed to load labels</p>
-                      ) : !labelsQuery.data?.length ? (
-                        <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>No labels found</p>
-                      ) : (
-                        <>
-                      <p className="thread-label-picker-head">Apply label</p>
-                      {labelsQuery.data
-                        .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
-                        .slice(0, 15)
-                        .map((label) => (
-                          <button
-                            key={`apply-${label.id}`}
-                            type="button"
-                            className="thread-label-picker-item"
-                            onClick={() => {
-                              if (selectedId) applyLabel.mutate({ threadId: selectedId, labelId: label.id });
-                              setShowLabelPicker(false);
-                            }}
-                          >
-                            {label.name}
-                          </button>
-                        ))}
-                      <p className="thread-label-picker-head" style={{ marginTop: 8 }}>
-                        Remove label
-                      </p>
-                      {labelsQuery.data
-                        .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
-                        .slice(0, 15)
-                        .map((label) => (
-                          <button
-                            key={`remove-${label.id}`}
-                            type="button"
-                            className="thread-label-picker-item"
-                            data-variant="remove"
-                            onClick={() => {
-                              if (selectedId) removeLabel.mutate({ threadId: selectedId, labelId: label.id });
-                              setShowLabelPicker(false);
-                            }}
-                          >
-                            {label.name}
-                          </button>
-                        ))}
-                        </>
-                      )}
+                  <div className="thread-inbox-action-divider" />
+                  <button
+                    type="button"
+                    className="thread-inbox-action-btn"
+                    disabled={archiveThread.isPending}
+                    onClick={() => { if (selectedId) { archiveThread.mutate({ threadId: selectedId }); setSelectedId(null); } }}
+                    title="Archive (e)"
+                  >
+                    <Archive size={15} />
+                  </button>
+                  <div style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      className="thread-inbox-action-btn"
+                      title="Snooze (b)"
+                      onClick={() => {
+                        const el = document.getElementById("thread-snooze-menu");
+                        if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+                      }}
+                    >
+                      <BellOff size={15} />
+                    </button>
+                    <div id="thread-snooze-menu" className="thread-snooze-menu" style={{ display: "none" }}>
+                      {([
+                        { label: "Tomorrow 8am", when: "tomorrow" as const },
+                        { label: "Next week", when: "nextweek" as const },
+                      ]).map(({ label, when }) => (
+                        <button
+                          key={when}
+                          type="button"
+                          className="thread-snooze-option"
+                          onClick={() => {
+                            if (selectedId) {
+                              snoozeThread(selectedId, when);
+                              setSelectedId(null);
+                            }
+                            const el = document.getElementById("thread-snooze-menu");
+                            if (el) el.style.display = "none";
+                          }}
+                        >
+                          <Clock size={11} />
+                          {label}
+                        </button>
+                      ))}
                     </div>
-                  ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="thread-inbox-action-btn thread-inbox-action-btn--danger"
+                    disabled={trashThread.isPending}
+                    onClick={() => { if (selectedId) trashThread.mutate({ threadId: selectedId }); }}
+                    title="Move to trash"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                  <div className="thread-inbox-action-divider" />
+                  <div ref={labelPickerRef} style={{ position: "relative" }}>
+                    <button
+                      type="button"
+                      className="thread-inbox-action-btn"
+                      onClick={() => setShowLabelPicker((v) => !v)}
+                      title="Apply label"
+                    >
+                      <Tag size={15} />
+                    </button>
+                    {showLabelPicker ? (
+                      <div className="thread-label-picker">
+                        {labelsQuery.isLoading ? (
+                          <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>Loading labels…</p>
+                        ) : labelsQuery.isError ? (
+                          <p className="thread-label-picker-head" style={{ padding: "8px 12px", color: "var(--thread-danger, #f87171)" }}>Failed to load labels</p>
+                        ) : !labelsQuery.data?.length ? (
+                          <p className="thread-label-picker-head" style={{ padding: "8px 12px" }}>No labels found</p>
+                        ) : (
+                          <>
+                            <p className="thread-label-picker-head">Apply label</p>
+                            {labelsQuery.data
+                              .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
+                              .slice(0, 15)
+                              .map((label) => (
+                                <button
+                                  key={`apply-${label.id}`}
+                                  type="button"
+                                  className="thread-label-picker-item"
+                                  onClick={() => {
+                                    if (selectedId) applyLabel.mutate({ threadId: selectedId, labelId: label.id });
+                                    setShowLabelPicker(false);
+                                  }}
+                                >
+                                  {label.name}
+                                </button>
+                              ))}
+                            <p className="thread-label-picker-head" style={{ marginTop: 8 }}>Remove label</p>
+                            {labelsQuery.data
+                              .filter((l) => l.type !== "system" || ["STARRED", "IMPORTANT"].includes(l.id))
+                              .slice(0, 15)
+                              .map((label) => (
+                                <button
+                                  key={`remove-${label.id}`}
+                                  type="button"
+                                  className="thread-label-picker-item"
+                                  data-variant="remove"
+                                  onClick={() => {
+                                    if (selectedId) removeLabel.mutate({ threadId: selectedId, labelId: label.id });
+                                    setShowLabelPicker(false);
+                                  }}
+                                >
+                                  {label.name}
+                                </button>
+                              ))}
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="thread-inbox-action-btn"
+                    style={showContextPanel ? { color: "var(--thread-accent-bright)" } : undefined}
+                    onClick={() => setShowContextPanel((v) => !v)}
+                    title="AI context panel"
+                  >
+                    <PanelRight size={15} />
+                  </button>
                 </div>
               </div>
             </div>
