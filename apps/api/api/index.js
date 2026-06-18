@@ -29,10 +29,7 @@ function withPath(req, pathname) {
 
 const BUNDLE_CANDIDATES = [
   path.join(__dirname, "dist", "vercel.mjs"),
-  path.join(__dirname, "dist", "vercel.js"),
-  path.join(__dirname, ".bundle", "vercel.mjs"),
   path.join(__dirname, "_bundle.mjs"),
-  path.join(__dirname, "_bundle.js"),
 ];
 
 function resolveBundlePath() {
