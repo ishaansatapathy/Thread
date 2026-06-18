@@ -65,6 +65,7 @@ dist
 
 apps/api/api/dist
 apps/api/api/_bundle.js
+apps/api/api/_bundle.mjs
 
 
 

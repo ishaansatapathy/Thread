@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("url");
 
 function sendJson(res, status, body) {
   res.statusCode = status;
@@ -27,8 +28,10 @@ function withPath(req, pathname) {
 }
 
 const BUNDLE_CANDIDATES = [
+  path.join(__dirname, "dist", "vercel.mjs"),
   path.join(__dirname, "dist", "vercel.js"),
-  path.join(__dirname, ".bundle", "vercel.js"),
+  path.join(__dirname, ".bundle", "vercel.mjs"),
+  path.join(__dirname, "_bundle.mjs"),
   path.join(__dirname, "_bundle.js"),
 ];
 
@@ -58,11 +61,11 @@ async function loadHandler() {
   const resolved = tracedBundlePath ?? resolveBundlePath();
   if (!resolved) {
     throw new Error(
-      `Serverless bundle missing after build (expected api/dist/vercel.js). Checked: ${BUNDLE_CANDIDATES.join(", ")}`,
+      `Serverless bundle missing after build (expected api/dist/vercel.mjs). Checked: ${BUNDLE_CANDIDATES.join(", ")}`,
     );
   }
 
-  const mod = require(resolved);
+  const mod = await import(pathToFileURL(resolved).href);
   const fn = mod.default ?? mod;
   if (typeof fn !== "function") {
     throw new Error("Serverless bundle must export a default async function");
