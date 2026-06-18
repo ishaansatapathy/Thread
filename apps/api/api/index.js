@@ -1,12 +1,5 @@
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const { createRequire } = require("node:module");
-
-/** createRequire needs a FILE path — __dirname alone breaks relative resolution. */
-const requireFromHere = createRequire(path.join(__dirname, "index.js"));
-
 let handler = null;
 
 function sendJson(res, status, body) {
@@ -15,29 +8,12 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-function resolveHandlerPath() {
-  const candidates = [
-    path.join(__dirname, "dist", "vercel.js"),
-    path.join(__dirname, "..", "dist", "vercel.js"),
-    path.join(process.cwd(), "dist", "vercel.js"),
-  ];
-  for (const file of candidates) {
-    if (fs.existsSync(file)) return file;
-  }
-  return null;
-}
-
 async function loadHandler() {
   if (handler) return handler;
 
-  const handlerPath = resolveHandlerPath();
-  if (!handlerPath) {
-    throw new Error(
-      "Serverless bundle missing (api/dist/vercel.js). Build must run: pnpm --filter @repo/api build",
-    );
-  }
-
-  const mod = requireFromHere(handlerPath);
+  // Statically require the bundle so that Vercel Node File Trace (NFT)
+  // parses the import chain and includes external dependencies in the function deployment.
+  const mod = require("./dist/vercel.js");
   const fn = mod.default ?? mod;
   if (typeof fn !== "function") {
     throw new Error("Serverless bundle must export a default async function");
