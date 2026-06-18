@@ -481,7 +481,7 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "summarize_thread",
-      description: "Summarize an email thread: key decisions, action items, next steps, and sentiment — using Corsair Gmail + OpenAI. Use when user asks 'what's this email about?' or 'what are the action items?'",
+      description: "Summarize an email thread: key decisions, action items, next steps, and sentiment. Use when user asks to summarize 'this email', 'this thread', or 'this one' — prefer the threadId from CURRENT USER FOCUS if set.",
       parameters: {
         type: "object",
         properties: {
@@ -780,6 +780,8 @@ export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefa
     "Use search_inbox / get_thread before drafting replies to existing threads.",
     "Use list_inbox to show recent emails; use search_inbox for filtered searches.",
     "Be concise and friendly. Match your wording to what actually happened (sent vs queued).",
+    'When CURRENT USER FOCUS is set in the system prompt, pronouns like "this", "this one", and "summarize this" refer to that focused email thread or calendar event — not unrelated topics from earlier messages.',
+    "Do not answer about calendar events from old conversation history when the user is clearly continuing a focused email thread.",
     userEmail ? `The signed-in user's email is ${userEmail}.` : "",
   ]
     .filter(Boolean)

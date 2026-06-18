@@ -212,10 +212,7 @@ export function SmartContextPanel({ threadId, onOpenThread }: Props) {
           {contactQuery.data.recentTopics.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
               {contactQuery.data.recentTopics.map((topic) => (
-                <span
-                  key={topic}
-                  style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "var(--thread-surface-2, #f3f4f6)", color: "var(--thread-dim)", border: "1px solid var(--thread-border, #e5e7eb)" }}
-                >
+                <span key={topic} className="thread-topic-chip">
                   {topic}
                 </span>
               ))}
