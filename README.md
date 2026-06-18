@@ -219,9 +219,31 @@ E2E_GMAIL_AVAILABLE=true E2E_SESSION_COOKIE="jwt=...; jwt_refresh=..." \
 
 ## MCP Server
 
-Thread exposes a full [Model Context Protocol](https://modelcontextprotocol.io) server at `POST /mcp`.
+Thread exposes **two** MCP endpoints:
 
-### Tools
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /mcp` | Thread domain tools (55) — inbox, queue, calendar, AI |
+| `POST /mcp/corsair` | **Official `@corsair-dev/mcp` adapter** — `corsair_setup`, `list_operations`, `get_schema`, `run_script` |
+
+### Official Corsair MCP (`/mcp/corsair`)
+
+Per [Corsair MCP docs](https://corsair.dev): agents discover and call any Gmail/Calendar endpoint dynamically.
+
+```json
+{
+  "mcpServers": {
+    "corsair": {
+      "url": "http://localhost:8000/mcp/corsair",
+      "type": "http"
+    }
+  }
+}
+```
+
+Destructive Corsair actions (`threads.delete`, `messages.delete`, `events.delete`) use **Corsair Permissions** (`cautious` mode) — approve at `/corsair/approve/:token` or via `POST /corsair/permissions/:token/approve`.
+
+### Thread MCP (`/mcp`)
 
 | Tool | Description |
 |------|-------------|

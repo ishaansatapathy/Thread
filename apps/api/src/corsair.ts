@@ -5,10 +5,11 @@ import { googlecalendar } from "@corsair-dev/googlecalendar";
 import { createPgPool } from "@repo/database/pg";
 
 import { env } from "./env";
+import { formatCorsairApprovalMessage } from "./services/corsair-approval";
 import {
-  buildGmailWebhookHooks,
-  buildGoogleCalendarWebhookHooks,
-} from "./services/corsair-webhook-sync";
+  buildGmailPluginOptions,
+  buildGoogleCalendarPluginOptions,
+} from "./services/corsair-plugin-config";
 
 let pool: Pool | null = null;
 let corsairInstance: ReturnType<typeof createCorsair> | null = null;
@@ -42,12 +43,46 @@ export function getCorsair() {
     const kek = process.env.CORSAIR_KEK!.trim();
     corsairInstance = createCorsair({
       plugins: [
-        gmail({ webhookHooks: buildGmailWebhookHooks() }),
-        googlecalendar({ webhookHooks: buildGoogleCalendarWebhookHooks() }),
+        gmail(buildGmailPluginOptions()),
+        googlecalendar(buildGoogleCalendarPluginOptions()),
       ],
       database: getCorsairPool(),
       kek,
       multiTenancy: true,
+      errorHandlers: {
+        RATE_LIMIT_ERROR: {
+          match: (error: unknown) => {
+            const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+            const status =
+              (error as { status?: number; response?: { status?: number } }).status ??
+              (error as { response?: { status?: number } }).response?.status;
+            return status === 429 || msg.includes("rate") || msg.includes("quota");
+          },
+          handler: async () => ({
+            maxRetries: 4,
+            retryStrategy: "exponential_backoff_jitter" as const,
+          }),
+        },
+        DEFAULT: {
+          match: () => true,
+          handler: async (error: unknown) => {
+            const status =
+              (error as { status?: number; response?: { status?: number } }).status ??
+              (error as { response?: { status?: number } }).response?.status;
+            if (status !== undefined && status >= 500) {
+              return { maxRetries: 2, retryStrategy: "exponential_backoff_jitter" as const };
+            }
+            return { maxRetries: 0 };
+          },
+        },
+      },
+      approval: {
+        timeout: "30m",
+        onTimeout: "deny",
+        mode: "asynchronous",
+        formatAsyncMessage: ({ token, plugin, endpoint }) =>
+          formatCorsairApprovalMessage({ token, plugin, endpoint }),
+      },
       connect: {
         baseUrl: `${env.CLIENT_URL}/connect`,
         redirectUri:

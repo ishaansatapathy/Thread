@@ -26,6 +26,9 @@ import { googleAuthRouter } from "./routes/google-auth";
 import { corsairAuthRouter } from "./routes/corsair-auth";
 import { webhooksRouter } from "./routes/webhooks";
 import { mcpRouter } from "./routes/mcp";
+import { corsairMcpGate, corsairOfficialMcpRouter } from "./routes/corsair-mcp";
+import { corsairManagementRouter } from "./routes/corsair-management";
+import { corsairPermissionsRouter } from "./routes/corsair-permissions";
 import { agentStreamRouter } from "./routes/agent-stream";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
@@ -222,6 +225,8 @@ app.get("/", (_req, res) => {
   return res.json({
     message: "Thread API is up and running...",
     mcp: `${env.BASE_URL}/mcp`,
+    corsairMcp: `${env.BASE_URL}/mcp/corsair`,
+    corsairManagement: `${env.BASE_URL}/api/corsair`,
     docs: `${env.BASE_URL}/docs`,
     health: `${env.BASE_URL}/health`,
   });
@@ -291,7 +296,10 @@ import("@scalar/express-api-reference")
 app.use("/auth", googleAuthRouter);
 app.use("/auth/corsair", corsairAuthRouter);
 app.use("/webhooks", webhooksRouter);
+app.use("/mcp/corsair", corsairMcpGate, corsairOfficialMcpRouter);
 app.use("/mcp", mcpRouter);
+app.use("/corsair/permissions", corsairPermissionsRouter);
+app.use("/api/corsair", corsairManagementRouter);
 app.use("/agent/stream", agentStreamRouter);
 app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);

@@ -759,7 +759,7 @@ const MCP_TOOLS: McpTool[] = [
   },
 ];
 
-const MCP_SERVER_VERSION = "2.3.0";
+const MCP_SERVER_VERSION = "2.4.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers

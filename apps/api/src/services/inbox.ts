@@ -326,11 +326,20 @@ export class CorsairInboxService implements InboxService {
         "Gmail thread list timed out",
       );
     } catch (error) {
-      logger.warn("Gmail thread list failed, serving local cache", {
+      logger.warn("Gmail thread list failed, serving Corsair DB / local cache", {
         tenantId,
         message: error instanceof Error ? error.message : String(error),
       });
       incrementCounter("inbox.gmail_list_error");
+      const dbRows = query
+        ? await searchGmailThreadsDb(tenantId, { snippet: { contains: query } }, { limit: maxResults })
+        : await searchGmailThreadsDb(tenantId, {}, { limit: maxResults });
+      if (dbRows.length > 0) {
+        return {
+          threads: dbRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+          stale: true,
+        };
+      }
       const threads = query
         ? await mailCache.search(tenantId, query, maxResults)
         : await mailCache.recent(tenantId, maxResults);
