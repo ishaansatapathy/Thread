@@ -12,8 +12,11 @@ import {
   estimateTokenCount,
   MAX_AGENT_CONTEXT_TOKENS,
 } from "./agent-guard";
-import { AGENT_TOOLS, buildSystemPromptFor } from "./agent-internals";
+import { AGENT_TOOLS } from "./agent-internals";
 import { buildToolExecutor } from "./agent-executor";
+import { createToolMemoryTracker, prepareAgentRun } from "./agent-run";
+import { summarizeToolResult } from "./agent-tool-memory";
+import type { AgentFocus } from "./agent-focus";
 
 export type AgentHistoryMessage = {
   role: "user" | "assistant";
@@ -34,6 +37,10 @@ export type AgentActionCard = {
 export type AgentChatResult = {
   reply: string;
   actions: AgentActionCard[];
+  focusCleared?: boolean;
+  effectiveFocus?: AgentFocus;
+  toolMemory?: import("./agent-tool-memory").AgentToolMemoryEntry[];
+  newToolMemoryEntries?: import("./agent-tool-memory").AgentToolMemoryEntry[];
 };
 
 export function isAgentConfigured() {
@@ -42,7 +49,13 @@ export function isAgentConfigured() {
 
 export async function runAgentChat(
   tenantId: string,
-  input: { message: string; history?: AgentHistoryMessage[]; userEmail?: string },
+  input: {
+    message: string;
+    history?: AgentHistoryMessage[];
+    userEmail?: string;
+    focus?: AgentFocus;
+    toolMemory?: import("./agent-tool-memory").AgentToolMemoryEntry[];
+  },
 ): Promise<AgentChatResult> {
   if (!isOpenAiConfigured()) {
     throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
@@ -63,7 +76,11 @@ export async function runAgentChat(
     };
   }
 
-  const history = input.history ?? [];
+  const history =
+    input.focus?.threadId || input.focus?.eventId
+      ? (input.history ?? []).slice(-4)
+      : (input.history ?? []);
+
   const previewMessages: OpenAiConversationMessage[] = [
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user" as const, content: input.message.trim() },
@@ -86,7 +103,10 @@ export async function runAgentChat(
   const emailQueueFingerprints = new Set<string>();
   const sendCounter = { count: 0 };
 
-  const executeTool = buildToolExecutor({
+  const prepared = await prepareAgentRun(tenantId, input, approvalDefaults);
+  const memoryTracker = createToolMemoryTracker(prepared, input.toolMemory ?? []);
+
+  const baseExecutor = buildToolExecutor({
     tenantId,
     userEmail: input.userEmail,
     approvalDefaults,
@@ -98,9 +118,15 @@ export async function runAgentChat(
     sendCounter,
   });
 
+  const executeTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
+    const result = await baseExecutor(name, args);
+    memoryTracker.track(summarizeToolResult(name, result, args));
+    return result;
+  };
+
   const messages: OpenAiConversationMessage[] = [
-    { role: "system", content: buildSystemPromptFor(input.userEmail, approvalDefaults) },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "system", content: prepared.systemPrompt },
+    ...prepared.history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: input.message.trim() },
   ];
 
@@ -109,5 +135,12 @@ export async function runAgentChat(
     timeoutMs: 120_000,
   });
 
-  return { reply: content, actions };
+  return {
+    reply: content,
+    actions,
+    focusCleared: prepared.focusCleared,
+    effectiveFocus: prepared.effectiveFocus,
+    toolMemory: memoryTracker.getMergedMemory(),
+    newToolMemoryEntries: memoryTracker.getNewEntries(),
+  };
 }

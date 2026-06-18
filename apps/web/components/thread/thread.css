@@ -1,7 +1,10 @@
 .thread-page {
   --thread-bg: #000000;
   --thread-surface: #050505;
+  --thread-surface-2: rgba(255, 255, 255, 0.06);
+  --thread-surface-raised: #0f0f10;
   --thread-line: rgba(168, 174, 186, 0.32);
+  --thread-border: rgba(168, 174, 186, 0.32);
   --thread-line-strong: rgba(192, 198, 210, 0.45);
   --thread-line-soft: rgba(148, 156, 170, 0.16);
   --thread-text: #f5f5f7;

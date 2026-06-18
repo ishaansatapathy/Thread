@@ -76,6 +76,12 @@ export default function QueuePage() {
       const prev = utils.queue.list.getData({ status: tab === "pending" ? "pending" : "all" });
       utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, (old) => {
         if (!old) return old;
+        if (tab === "pending") {
+          return {
+            ...old,
+            items: old.items.filter((item) => item.id !== id),
+          };
+        }
         return {
           ...old,
           items: old.items.map((item) =>
@@ -123,11 +129,17 @@ export default function QueuePage() {
     onMutate: async ({ id }) => {
       setActiveItemId(id);
       setActiveAction("dismiss");
-      // Optimistic update: mark item as dismissed immediately
       await utils.queue.list.cancel();
       const prev = utils.queue.list.getData({ status: tab === "pending" ? "pending" : "all" });
+      const dismissedItem = prev?.items.find((item) => item.id === id);
       utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, (old) => {
         if (!old) return old;
+        if (tab === "pending") {
+          return {
+            ...old,
+            items: old.items.filter((item) => item.id !== id),
+          };
+        }
         return {
           ...old,
           items: old.items.map((item) =>
@@ -135,12 +147,16 @@ export default function QueuePage() {
           ),
         };
       });
-      return { prev };
+      return { prev, dismissedItem };
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, _vars, ctx) => {
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
-      toast.success("Removed from queue");
+      if (ctx?.dismissedItem?.kind === "calendar_delete") {
+        toast.success("Delete request cancelled — event stays on your calendar");
+      } else {
+        toast.success("Removed from queue");
+      }
     },
     onError: (error, _vars, ctx) => {
       toast.error(error.message);
@@ -334,10 +350,10 @@ export default function QueuePage() {
                     <button
                       type="button"
                       className="thread-btn-ghost"
-                      disabled={anyBusy || isProcessing}
+                      disabled={anyBusy}
                       onClick={() => dismiss.mutate({ id: item.id })}
                     >
-                      {activeItemId === item.id && activeAction === "dismiss" ? "Removing…" : "Dismiss"}
+                      {activeItemId === item.id && activeAction === "dismiss" ? "Removing…" : isProcessing ? "Cancel" : "Dismiss"}
                     </button>
                     <button
                       type="button"

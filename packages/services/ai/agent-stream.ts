@@ -22,12 +22,23 @@ import {
   MAX_AGENT_CONTEXT_TOKENS,
 } from "./agent-guard";
 import type { AgentActionCard, AgentChatResult, AgentHistoryMessage } from "./agent";
-import { AGENT_TOOLS, buildSystemPromptFor } from "./agent-internals";
 import { buildToolExecutor } from "./agent-executor";
+
+import { AGENT_TOOLS } from "./agent-internals";
+import { createToolMemoryTracker, prepareAgentRun } from "./agent-run";
+import { summarizeToolResult } from "./agent-tool-memory";
+import type { AgentToolMemoryEntry } from "./agent-tool-memory";
+import type { AgentFocus } from "./agent-focus";
 
 export async function runAgentChatStream(
   tenantId: string,
-  input: { message: string; history?: AgentHistoryMessage[]; userEmail?: string },
+  input: {
+    message: string;
+    history?: AgentHistoryMessage[];
+    userEmail?: string;
+    focus?: AgentFocus;
+    toolMemory?: AgentToolMemoryEntry[];
+  },
   onToolCall: (toolName: string) => void,
   onTokenDelta?: (delta: string) => void,
 ): Promise<AgentChatResult> {
@@ -46,7 +57,10 @@ export async function runAgentChatStream(
     };
   }
 
-  const history = input.history ?? [];
+  const history =
+    input.focus?.threadId || input.focus?.eventId
+      ? (input.history ?? []).slice(-4)
+      : (input.history ?? []);
   const previewMessages: OpenAiConversationMessage[] = [
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user" as const, content: input.message.trim() },
@@ -67,6 +81,9 @@ export async function runAgentChatStream(
   const emailQueueFingerprints = new Set<string>();
   const sendCounter = { count: 0 };
 
+  const prepared = await prepareAgentRun(tenantId, input, approvalDefaults);
+  const memoryTracker = createToolMemoryTracker(prepared, input.toolMemory ?? []);
+
   const baseExecutor = buildToolExecutor({
     tenantId,
     userEmail: input.userEmail,
@@ -79,16 +96,16 @@ export async function runAgentChatStream(
     sendCounter,
   });
 
-  // Wrap base executor to emit SSE "status" events before each tool executes.
   const executeTool = async (name: string, args: Record<string, unknown>): Promise<string> => {
     onToolCall(name);
-    return baseExecutor(name, args);
+    const result = await baseExecutor(name, args);
+    memoryTracker.track(summarizeToolResult(name, result, args));
+    return result;
   };
 
-  const systemPrompt = buildSystemPromptFor(input.userEmail, approvalDefaults);
   const messages: OpenAiConversationMessage[] = [
-    { role: "system", content: systemPrompt },
-    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "system", content: prepared.systemPrompt },
+    ...prepared.history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: input.message.trim() },
   ];
 
@@ -98,5 +115,12 @@ export async function runAgentChatStream(
     onToken: onTokenDelta,
   });
 
-  return { reply: content, actions };
+  return {
+    reply: content,
+    actions,
+    focusCleared: prepared.focusCleared,
+    effectiveFocus: prepared.effectiveFocus,
+    toolMemory: memoryTracker.getMergedMemory(),
+    newToolMemoryEntries: memoryTracker.getNewEntries(),
+  };
 }

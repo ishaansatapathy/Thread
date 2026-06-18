@@ -424,6 +424,32 @@ export class ThreadQueueService implements QueueService {
     opts?: QueueEnqueueOptions,
   ) {
     const payload = parseCalendarDeletePayload(input.delete);
+
+    const existingRows = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(
+        and(
+          eq(threadQueueItemsTable.userId, userId),
+          eq(threadQueueItemsTable.kind, "calendar_delete"),
+          inArray(threadQueueItemsTable.status, ["pending", "processing"]),
+        ),
+      )
+      .orderBy(desc(threadQueueItemsTable.createdAt))
+      .limit(20);
+
+    const duplicate = existingRows.find((row) => {
+      try {
+        return parseCalendarDeletePayload(row.payload).eventId === payload.eventId;
+      } catch {
+        return false;
+      }
+    });
+
+    if (duplicate) {
+      return mapRow(duplicate);
+    }
+
     const title = input.title?.trim() || `Delete: ${payload.summary}`;
     const preview = input.preview?.trim() || truncate(payload.summary);
 
@@ -518,12 +544,12 @@ export class ThreadQueueService implements QueueService {
   async dismiss(userId: string, itemId: string) {
     const [updated] = await db
       .update(threadQueueItemsTable)
-      .set({ status: "dismissed", resolvedAt: new Date(), errorMessage: null })
+      .set({ status: "dismissed", resolvedAt: new Date(), errorMessage: null, processingAt: null })
       .where(
         and(
           eq(threadQueueItemsTable.id, itemId),
           eq(threadQueueItemsTable.userId, userId),
-          eq(threadQueueItemsTable.status, "pending"),
+          inArray(threadQueueItemsTable.status, ["pending", "processing"]),
         ),
       )
       .returning();

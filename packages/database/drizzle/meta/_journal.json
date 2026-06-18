@@ -225,6 +225,13 @@
       "when": 1781666339995,
       "tag": "0031_milky_calypso",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781666340000,
+      "tag": "0032_agent_chat_sessions",
+      "breakpoints": true
     }
   ]
 }

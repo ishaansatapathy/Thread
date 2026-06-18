@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
 import { queueResultMessage } from "~/lib/queue-toast";
@@ -142,6 +143,37 @@ function readQueuedCalendar(payload: Record<string, unknown>) {
   return null;
 }
 
+type QueueListItem = RouterOutputs["queue"]["list"]["items"][number];
+
+function resolveQueueItemForEvent(event: CalendarEventItem, items: QueueListItem[]): QueueListItem | null {
+  const active = items.filter((item) => item.status === "pending" || item.status === "processing");
+
+  if (event.pending && event.id.startsWith("queue-")) {
+    const queueItemId = event.id.slice("queue-".length);
+    return active.find((item) => item.id === queueItemId) ?? null;
+  }
+
+  if (event.pendingDelete) {
+    return (
+      active.find((item) => {
+        if (item.kind !== "calendar_delete") return false;
+        return String(item.payload.eventId ?? "") === event.id;
+      }) ?? null
+    );
+  }
+
+  if (event.pendingArchive) {
+    return (
+      active.find((item) => {
+        if (item.kind !== "calendar_archive") return false;
+        return String(item.payload.eventId ?? "") === event.id;
+      }) ?? null
+    );
+  }
+
+  return null;
+}
+
 export default function CalendarPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -175,6 +207,7 @@ export default function CalendarPage() {
   const [rescheduleStart, setRescheduleStart] = useState("");
   const [rescheduleEnd, setRescheduleEnd] = useState("");
   const [recurringEditScope, setRecurringEditScope] = useState<"instance" | "series" | "following">("instance");
+  const [queueAction, setQueueAction] = useState<{ event: CalendarEventItem; item: QueueListItem } | null>(null);
 
   const week = useMemo(() => getWeekDays(weekAnchor), [weekAnchor]);
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -186,6 +219,8 @@ export default function CalendarPage() {
   const monthLabel = week[0]!.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
   const statusQuery = trpc.calendar.connectionStatus.useQuery({});
+  const meQuery = trpc.auth.me.useQuery({});
+  const userEmail = meQuery.data?.email?.toLowerCase();
   const isConnected = statusQuery.data?.googlecalendar === "connected";
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
@@ -208,7 +243,10 @@ export default function CalendarPage() {
     }
   }, [selectedEvent]);
 
-  const pendingQueue = trpc.queue.list.useQuery({ status: "pending" }, { enabled: isConnected });
+  const pendingQueue = trpc.queue.list.useQuery(
+    { status: "pending" },
+    { enabled: isConnected, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true },
+  );
 
   const checkFreeBusy = trpc.calendar.checkFreeBusy.useMutation({
     onSuccess: (data) => {
@@ -266,6 +304,38 @@ export default function CalendarPage() {
       setSelectedEvent(null);
       setShowDeleteConfirm(false);
       toast.success(queueResultMessage(item).title);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const dismissQueueItem = trpc.queue.dismiss.useMutation({
+    onSuccess: async (_data, vars) => {
+      const item = queueAction?.item.id === vars.id ? queueAction.item : null;
+      setQueueAction(null);
+      utils.queue.list.setData({ status: "pending" }, (old) => {
+        if (!old) return old;
+        return { ...old, items: old.items.filter((entry) => entry.id !== vars.id) };
+      });
+      await utils.queue.list.invalidate();
+      await utils.queue.pendingCount.invalidate();
+      if (item?.kind === "calendar_delete") {
+        toast.success("Delete request cancelled — event stays on your calendar");
+      } else if (item?.kind === "calendar_invite" || item?.kind === "meeting_bundle") {
+        toast.success("Queued invite removed");
+      } else {
+        toast.success("Removed from queue");
+      }
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const approveQueueItem = trpc.queue.approve.useMutation({
+    onSuccess: async (data) => {
+      setQueueAction(null);
+      await utils.queue.list.invalidate();
+      await utils.queue.pendingCount.invalidate();
+      await utils.calendar.listEvents.invalidate();
+      toast.success(queueResultMessage(data).title);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -353,6 +423,7 @@ export default function CalendarPage() {
       map.get(key)!.push(event);
     }
     for (const item of pendingQueue.data?.items ?? []) {
+      if (item.status !== "pending" && item.status !== "processing") continue;
       if (item.kind === "calendar_archive") {
         const payload = item.payload;
         const eventId = String(payload.eventId ?? "");
@@ -414,6 +485,15 @@ export default function CalendarPage() {
 
   const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
+  const openQueueOverlay = (event: CalendarEventItem) => {
+    const item = resolveQueueItemForEvent(event, pendingQueue.data?.items ?? []);
+    if (item) {
+      setQueueAction({ event, item });
+      return;
+    }
+    router.push("/queue");
+  };
+
   const mobileWeekEvents = useMemo(() => {
     const items: CalendarEventItem[] = [];
     for (const day of week) {
@@ -468,7 +548,7 @@ export default function CalendarPage() {
                   type="text"
                   value={quickAddText}
                   onChange={(e) => setQuickAddText(e.target.value)}
-                  placeholder="e.g. Lunch with Sarah tomorrow at noon"
+                  placeholder="e.g. Meeting 22 June 5-6pm or Lunch tomorrow at noon"
                   style={{
                     border: "none", outline: "none", background: "transparent",
                     color: "var(--thread-text)", fontSize: 12, width: 240,
@@ -564,7 +644,7 @@ export default function CalendarPage() {
                 className="thread-cal-mobile-item"
                 onClick={() => {
                   if (event.pending || event.pendingArchive || event.pendingDelete) {
-                    router.push("/queue");
+                    openQueueOverlay(event);
                     return;
                   }
                   setSelectedEvent(event);
@@ -609,7 +689,7 @@ export default function CalendarPage() {
                         data-pending-delete={event.pendingDelete ? "true" : undefined}
                         onClick={() => {
                           if (event.pending || event.pendingArchive || event.pendingDelete) {
-                            router.push("/queue");
+                            openQueueOverlay(event);
                             return;
                           }
                           setSelectedEvent(event);
@@ -1010,7 +1090,12 @@ export default function CalendarPage() {
                     {(["accepted", "tentative", "declined"] as const).map((resp) => {
                       const Icon = resp === "accepted" ? Check : resp === "tentative" ? HelpCircle : XCircle;
                       const label = resp === "accepted" ? "Accept" : resp === "tentative" ? "Maybe" : "Decline";
-                      const isCurrent = selectedEvent.attendees?.find((a) => a.responseStatus === resp && !a.organizer);
+                      const isCurrent = userEmail
+                        ? selectedEvent.attendees?.some(
+                            (a) =>
+                              a.email?.toLowerCase() === userEmail && a.responseStatus === resp,
+                          )
+                        : selectedEvent.attendees?.find((a) => a.responseStatus === resp && !a.organizer);
                       return (
                         <button
                           key={resp}
@@ -1224,6 +1309,87 @@ export default function CalendarPage() {
                 {queueDelete.isPending ? "Queuing…" : "Add to queue"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {queueAction ? (
+        <div
+          className="thread-modal-backdrop thread-modal-backdrop--confirm"
+          onClick={() => !dismissQueueItem.isPending && !approveQueueItem.isPending && setQueueAction(null)}
+        >
+          <div className="thread-modal thread-cal-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            {(() => {
+              const isProcessing = queueAction.item.status === "processing";
+              return (
+                <>
+            <div className="thread-modal-head">
+              <h3>
+                {isProcessing
+                  ? "Processing…"
+                  : queueAction.item.kind === "calendar_delete"
+                  ? "Delete queued"
+                  : queueAction.item.kind === "calendar_archive"
+                    ? "Reschedule pending"
+                    : "Queued on calendar"}
+              </h3>
+              <button
+                type="button"
+                className="thread-app-iconbtn"
+                disabled={dismissQueueItem.isPending || approveQueueItem.isPending}
+                onClick={() => setQueueAction(null)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="thread-cal-event-detail">
+              <p className="thread-cal-confirm-title">{queueAction.event.summary}</p>
+              <p className="thread-cal-event-detail-copy">
+                {isProcessing
+                  ? "This item is being processed. You can cancel it if it appears stuck."
+                  : queueAction.item.kind === "calendar_delete"
+                  ? "Approve to remove this event from Google Calendar. Cancel request keeps the event and removes the dashed overlay."
+                  : queueAction.item.kind === "calendar_invite" || queueAction.item.kind === "meeting_bundle"
+                    ? "This invite is only queued — it is not on Google Calendar yet. Cancel removes it from this preview."
+                    : "Review this queued calendar change in Queue or take action here."}
+              </p>
+            </div>
+            <div className="thread-modal-actions">
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                disabled={dismissQueueItem.isPending || approveQueueItem.isPending}
+                onClick={() => dismissQueueItem.mutate({ id: queueAction.item.id })}
+              >
+                {isProcessing
+                  ? "Cancel processing"
+                  : queueAction.item.kind === "calendar_delete"
+                    ? "Cancel delete"
+                    : "Remove from queue"}
+              </button>
+              <button
+                type="button"
+                className="thread-btn-ghost"
+                disabled={dismissQueueItem.isPending || approveQueueItem.isPending}
+                onClick={() => {
+                  setQueueAction(null);
+                  router.push("/queue");
+                }}
+              >
+                Open Queue
+              </button>
+              <button
+                type="button"
+                className="thread-btn-accent"
+                disabled={isProcessing || dismissQueueItem.isPending || approveQueueItem.isPending}
+                onClick={() => approveQueueItem.mutate({ id: queueAction.item.id })}
+              >
+                {approveQueueItem.isPending ? "Approving…" : "Approve"}
+              </button>
+            </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       ) : null}

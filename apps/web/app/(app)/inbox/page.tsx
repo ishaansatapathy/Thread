@@ -1932,43 +1932,35 @@ export default function InboxPage() {
               />
               {/* AI Thread Summary */}
               {aiReady && selectedId ? (
-                <div className="thread-smart-reply-wrap" style={{ borderColor: "var(--thread-border, #e5e7eb)" }}>
+                <div className="thread-smart-reply-wrap thread-ai-panel">
                   {summarizeQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
-                      <Sparkles size={11} style={{ color: "var(--thread-accent, #6366f1)" }} className="thread-spin" />
+                      <Sparkles size={11} style={{ color: "var(--thread-accent)" }} className="thread-spin" />
                       <span>Summarizing thread…</span>
                     </div>
                   ) : summarizeQuery.isError ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <p className="thread-smart-reply-label" style={{ color: "var(--thread-danger, #f87171)", margin: 0 }}>Summary failed</p>
+                      <p className="thread-smart-reply-label" style={{ color: "#f87171", margin: 0 }}>Summary failed</p>
                       <button type="button" onClick={() => summarizeQuery.refetch()} style={{ fontSize: 11, color: "var(--thread-accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Retry</button>
                     </div>
                   ) : summarizeQuery.data ? (
                     <>
                       <p className="thread-smart-reply-label" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                        <Sparkles size={11} style={{ color: "var(--thread-accent, #6366f1)" }} />
+                        <Sparkles size={11} style={{ color: "var(--thread-accent)" }} />
                         AI Summary
                         {summarizeQuery.data.sentiment && summarizeQuery.data.sentiment !== "neutral" ? (
-                          <span style={{
-                            fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600, textTransform: "capitalize",
-                            background: summarizeQuery.data.sentiment === "urgent" ? "#fef3c7" : summarizeQuery.data.sentiment === "positive" ? "#d1fae5" : "#fee2e2",
-                            color: summarizeQuery.data.sentiment === "urgent" ? "#92400e" : summarizeQuery.data.sentiment === "positive" ? "#065f46" : "#991b1b",
-                          }}>
+                          <span className={`thread-ai-sentiment thread-ai-sentiment--${summarizeQuery.data.sentiment === "urgent" ? "urgent" : summarizeQuery.data.sentiment === "positive" ? "positive" : "negative"}`}>
                             {summarizeQuery.data.sentiment}
                           </span>
                         ) : null}
                       </p>
-                      <p style={{ fontSize: 12, color: "var(--thread-muted)", lineHeight: 1.5, margin: "0 0 6px" }}>
+                      <p className="thread-ai-summary-text">
                         {summarizeQuery.data.summary}
                       </p>
                       {summarizeQuery.data.actionItems?.length ? (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        <div className="thread-ai-action-list">
                           {summarizeQuery.data.actionItems.slice(0, 3).map((item, i) => (
-                            <span key={i} style={{
-                              fontSize: 11, padding: "2px 8px", borderRadius: 4,
-                              background: "var(--thread-surface-2, #f3f4f6)", color: "var(--thread-text, #374151)",
-                              border: "1px solid var(--thread-border, #e5e7eb)",
-                            }}>
+                            <span key={i} className="thread-ai-action-chip">
                               ✓ {item.action}
                             </span>
                           ))}
@@ -1980,7 +1972,7 @@ export default function InboxPage() {
               ) : null}
               {/* Smart Reply suggestions */}
               {aiReady && selectedId ? (
-                <div className="thread-smart-reply-wrap">
+                <div className="thread-smart-reply-wrap thread-ai-panel">
                   {smartRepliesQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
                       <Loader2 size={11} className="thread-spin" />

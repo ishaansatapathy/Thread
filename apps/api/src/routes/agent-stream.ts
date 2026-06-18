@@ -1,23 +1,5 @@
 /**
  * Agent SSE streaming endpoint — POST /agent/stream
- *
- * Instead of waiting up to 120s for the complete agent response, this endpoint
- * streams Server-Sent Events in real-time as the agent works:
- *
- *   event: status
- *   data: {"tool":"search_inbox","label":"Searching inbox…"}
- *
- *   event: status
- *   data: {"tool":"queue_email","label":"Queuing email…"}
- *
- *   event: complete
- *   data: {"reply":"Done! …","actions":[…]}
- *
- *   event: error
- *   data: {"message":"OpenAI timed out"}
- *
- * The client uses the native EventSource API (or fetch with ReadableStream).
- * Auth: same JWT cookies as tRPC.
  */
 
 import { Router } from "express";
@@ -26,10 +8,25 @@ import { z } from "zod";
 import { logger } from "@repo/logger";
 import { authService } from "@repo/trpc/server/services";
 import { runAgentChatStream } from "@repo/services/ai/agent-stream";
+import {
+  appendAgentSessionTurn,
+  getAgentSession,
+} from "@repo/services/ai/agent-sessions";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
+import { invalidateBriefCache } from "@repo/trpc/server/routes/ai/route";
+
+const toolMemoryEntrySchema = z.object({
+  at: z.string(),
+  tool: z.string(),
+  summary: z.string(),
+  threadId: z.string().optional(),
+  eventId: z.string().optional(),
+  query: z.string().optional(),
+});
 
 const agentStreamBodySchema = z.object({
   message: z.string().trim().min(1, "message is required").max(4000),
+  sessionId: z.string().uuid().optional(),
   history: z
     .array(
       z.object({
@@ -39,7 +36,14 @@ const agentStreamBodySchema = z.object({
     )
     .max(24)
     .optional(),
+  toolMemory: z.array(toolMemoryEntrySchema).max(12).optional(),
   userEmail: z.string().email().optional(),
+  focusThreadId: z.string().trim().min(1).max(128).optional(),
+  focusEventId: z.string().trim().min(1).max(256).optional(),
+  focusThreadLabel: z.string().trim().min(1).max(200).optional(),
+  focusEventLabel: z.string().trim().min(1).max(200).optional(),
+  /** When true, client intentionally cleared focus — do not reload from session. */
+  focusCleared: z.boolean().optional(),
 });
 
 export const agentStreamRouter = Router();
@@ -52,7 +56,6 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     return res.status(401).json({ error: "Authentication required" });
   }
 
-  // Per-user rate limit (same as tRPC agent — 20 calls/min).
   if (!skipInTests()) {
     const result = await checkDistributedRateLimit(`agent:${user.id}`, 20, 60_000);
     res.setHeader("RateLimit-Remaining", String(result.remaining));
@@ -68,27 +71,75 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     });
   }
 
-  const { message, history, userEmail } = parsed.data;
+  const {
+    message,
+    sessionId,
+    history,
+    toolMemory,
+    userEmail,
+    focusThreadId,
+    focusEventId,
+    focusThreadLabel,
+    focusEventLabel,
+    focusCleared,
+  } = parsed.data;
 
-  // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no"); // Disable Nginx buffering
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   function send(event: string, data: unknown) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    // Flush immediately so the browser receives it without buffering.
     if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
       (res as unknown as { flush: () => void }).flush();
     }
   }
 
   try {
+    let effectiveHistory = history;
+    let effectiveToolMemory = toolMemory ?? [];
+    let effectiveFocus = {
+      threadId: focusThreadId,
+      eventId: focusEventId,
+    };
+    let effectiveThreadLabel = focusThreadLabel;
+    let effectiveEventLabel = focusEventLabel;
+
+    if (sessionId) {
+      const session = await getAgentSession(user.id, sessionId);
+      if (!session) {
+        send("error", { message: "Session not found" });
+        return;
+      }
+      effectiveHistory = session.messages;
+      effectiveToolMemory = session.toolMemory;
+      if (focusCleared) {
+        effectiveFocus = { threadId: undefined, eventId: undefined };
+        effectiveThreadLabel = undefined;
+        effectiveEventLabel = undefined;
+      } else if (focusThreadId || focusEventId) {
+        effectiveFocus = { threadId: focusThreadId, eventId: focusEventId };
+      } else {
+        effectiveFocus = {
+          threadId: session.focus.threadId,
+          eventId: session.focus.eventId,
+        };
+        effectiveThreadLabel = session.focus.threadLabel;
+        effectiveEventLabel = session.focus.eventLabel;
+      }
+    }
+
     const result = await runAgentChatStream(
       user.id,
-      { message: message.trim(), history, userEmail },
+      {
+        message: message.trim(),
+        history: effectiveHistory,
+        toolMemory: effectiveToolMemory,
+        userEmail,
+        focus: effectiveFocus,
+      },
       (toolName) => {
         send("status", { tool: toolName, label: toolStatusLabel(toolName) });
       },
@@ -97,11 +148,44 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
       },
     );
 
-    send("complete", { reply: result.reply, actions: result.actions });
+    let persistedSessionId = sessionId;
+
+    if (sessionId) {
+      const updated = await appendAgentSessionTurn(user.id, sessionId, {
+        userMessage: message.trim(),
+        assistantReply: result.reply,
+        toolMemory: result.toolMemory ?? effectiveToolMemory,
+        focusCleared: result.focusCleared,
+        focus: result.focusCleared
+          ? null
+          : {
+              threadId: effectiveFocus.threadId,
+              eventId: effectiveFocus.eventId,
+              threadLabel: effectiveThreadLabel,
+              eventLabel: effectiveEventLabel,
+            },
+      });
+      if (!updated) {
+        logger.warn("agent.stream.session_persist_failed", { userId: user.id, sessionId });
+      }
+    }
+
+    if (result.actions.some((a) => a.kind === "email_queued" || a.kind === "calendar_queued")) {
+      invalidateBriefCache(user.id);
+    }
+
+    send("complete", {
+      reply: result.reply,
+      actions: result.actions,
+      sessionId: persistedSessionId,
+      focusCleared: result.focusCleared ?? false,
+      effectiveFocus: result.effectiveFocus ?? effectiveFocus,
+      toolMemory: result.toolMemory ?? effectiveToolMemory,
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Agent encountered an error";
-    logger.warn("agent.stream.error", { userId: user.id, error: message });
-    send("error", { message });
+    const errMessage = error instanceof Error ? error.message : "Agent encountered an error";
+    logger.warn("agent.stream.error", { userId: user.id, error: errMessage });
+    send("error", { message: errMessage });
   } finally {
     res.end();
   }
@@ -111,6 +195,7 @@ function toolStatusLabel(tool: string): string {
   const labels: Record<string, string> = {
     search_inbox: "Searching inbox…",
     get_thread: "Reading thread…",
+    summarize_thread: "Summarizing email…",
     rank_inbox: "Ranking threads by urgency…",
     queue_email: "Preparing email…",
     queue_calendar_invite: "Preparing calendar invite…",

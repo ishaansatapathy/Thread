@@ -3,6 +3,7 @@ export * from "./models/queue-item";
 export * from "./models/mail-cache";
 export * from "./models/thread-contact";
 export * from "./models/agent-chat-history";
+export * from "./models/agent-chat-session";
 export * from "./models/brief-dismissals";
 export * from "./models/brief-cache";
 export * from "./models/gmail-state";
