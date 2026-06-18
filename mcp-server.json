@@ -140,7 +140,7 @@
     },
     {
       "name": "quick_add_event",
-      "description": "Create a Google Calendar event from a natural language phrase via Corsair Calendar quickAdd API (e.g. 'Lunch with Sarah tomorrow at noon'). No approval queue — fast creation."
+      "description": "Queue a calendar event from natural language (parsed locally, then human approval before Corsair events.create). Example: 'Lunch with Sarah tomorrow at noon'."
     },
     {
       "name": "reschedule_event",

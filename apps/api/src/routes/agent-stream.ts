@@ -90,6 +90,12 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
+  const abortController = new AbortController();
+  const onClientClose = () => {
+    if (!res.writableEnded) abortController.abort();
+  };
+  req.on("close", onClientClose);
+
   function send(event: string, data: unknown) {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
@@ -146,6 +152,7 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
       (delta) => {
         send("token", { text: delta });
       },
+      { signal: abortController.signal },
     );
 
     let persistedSessionId = sessionId;
@@ -183,10 +190,12 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
       toolMemory: result.toolMemory ?? effectiveToolMemory,
     });
   } catch (error) {
+    if (abortController.signal.aborted) return;
     const errMessage = error instanceof Error ? error.message : "Agent encountered an error";
     logger.warn("agent.stream.error", { userId: user.id, error: errMessage });
     send("error", { message: errMessage });
   } finally {
+    req.off("close", onClientClose);
     res.end();
   }
 });

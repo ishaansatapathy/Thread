@@ -30,7 +30,7 @@ export async function runOpenAiToolLoop(
   messages: OpenAiConversationMessage[],
   tools: OpenAiToolDefinition[],
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>,
-  opts?: { maxRounds?: number; timeoutMs?: number; onToken?: (delta: string) => void },
+  opts?: { maxRounds?: number; timeoutMs?: number; onToken?: (delta: string) => void; signal?: AbortSignal },
 ): Promise<{ content: string; messages: OpenAiConversationMessage[] }> {
   if (!isOpenAiConfigured()) {
     throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
@@ -42,8 +42,14 @@ export async function runOpenAiToolLoop(
   const transcript = [...messages];
 
   for (let round = 0; round < maxRounds; round += 1) {
+    if (opts?.signal?.aborted) {
+      throw new ServiceError("INTERNAL", "Agent request cancelled.");
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const onExternalAbort = () => controller.abort();
+    opts?.signal?.addEventListener("abort", onExternalAbort);
 
     let choice: { content?: string | null; tool_calls?: ToolCall[] };
 
@@ -51,12 +57,16 @@ export async function runOpenAiToolLoop(
       choice = await fetchOpenAiChoice(transcript, tools, controller.signal, onToken);
     } catch (error) {
       if (error instanceof ServiceError) throw error;
+      if (opts?.signal?.aborted) {
+        throw new ServiceError("INTERNAL", "Agent request cancelled.");
+      }
       if (error instanceof Error && error.name === "AbortError") {
         throw new ServiceError("INTERNAL", "OpenAI request timed out.");
       }
       throw new ServiceError("INTERNAL", "OpenAI request failed. Try again shortly.");
     } finally {
       clearTimeout(timeout);
+      opts?.signal?.removeEventListener("abort", onExternalAbort);
     }
 
     if (choice.tool_calls?.length) {

@@ -41,6 +41,7 @@ export async function runAgentChatStream(
   },
   onToolCall: (toolName: string) => void,
   onTokenDelta?: (delta: string) => void,
+  opts?: { signal?: AbortSignal },
 ): Promise<AgentChatResult> {
   if (!isOpenAiConfigured()) {
     throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
@@ -113,6 +114,7 @@ export async function runAgentChatStream(
     maxRounds: 6,
     timeoutMs: 120_000,
     onToken: onTokenDelta,
+    signal: opts?.signal,
   });
 
   return {

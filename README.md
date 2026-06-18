@@ -9,7 +9,7 @@ A full-stack productivity application built **entirely on the [Corsair SDK](http
 | Feature | Description | Corsair APIs Used |
 |---------|-------------|------------------|
 | **AI Daily Brief** | Personalised daily summary: urgent emails, meetings, follow-ups, free windows | `gmail.api.threads.*`, `googlecalendar.api.events.*`, OpenAI |
-| **AI Agent (52 tools)** | Plain-language assistant: send emails, manage calendar, summarize threads, get contact intelligence | All Corsair Gmail + Calendar APIs + DB search |
+| **AI Agent (57 tools)** | Plain-language assistant: send emails, manage calendar, summarize threads, get contact intelligence | All Corsair Gmail + Calendar APIs + DB search |
 | **Human-in-the-Loop Queue** | Every AI-composed email/invite requires approval before sending | `gmail.api.messages.send`, `googlecalendar.api.events.create` |
 | **MCP Server (57 tools)** | Full MCP 2024-11-05 server: tools, resources, prompts — connect Claude/Cursor/any AI | All Corsair APIs + DB search |
 | **Inbox** | Cache-first Gmail inbox, search, labels, thread reader, keyboard nav | `gmail.api.threads.*`, `gmail.api.labels.*` |
@@ -23,14 +23,14 @@ A full-stack productivity application built **entirely on the [Corsair SDK](http
 | **Gmail Push Webhooks** | Real-time inbox updates via Gmail Pub/Sub | `gmail.api.users.watch` |
 | **Calendar Push Webhooks** | Real-time calendar updates | `googlecalendar.api.channels.*` |
 
-**Total Corsair API call sites: 55+** · **Agent tools: 52** · **MCP tools: 57**
+**Total Corsair API call sites: 55+** · **Agent tools: 57** · **MCP tools: 57** (verified by CI parity test)
 
 ## What it does
 
 - **Inbox** — Cache-first Gmail inbox with stale-while-revalidate, search, thread reader, CC/BCC compose, and keyboard navigation (`j/k/Enter`)
 - **AI Priority** — Rank inbox threads by urgency using OpenAI + Corsair Gmail data
 - **Queue** — Every outbound action (email send, draft save, calendar invite) is staged here for your approval before it executes — nothing sends without your OK
-- **Agent** — Plain-language AI assistant with streaming responses and 52 Corsair-backed tools. Full parity with the MCP server.
+- **Agent** — Plain-language AI assistant with streaming responses and 57 Corsair-backed tools. Full parity with the MCP server (CI-verified).
 - **Calendar** — View and manage events; create/reschedule/cancel through the approval queue
 - **MCP Server** — Full MCP 2024-11-05 server at `/mcp`: `tools`, `resources`, `prompts` — so Claude, Cursor, and any AI tool can use your inbox and queue directly
 

@@ -36,16 +36,17 @@ The brief calls 6 live Corsair APIs per render:
 
 Open: `https://thread-web.vercel.app/agent`
 
-The agent has **52 tools** backed by Corsair — in full parity with the MCP server:
+The agent has **57 tools** backed by Corsair — **full parity** with the Thread MCP server (`mcp-server.json` v2.5.0):
 
 | Category | Tools |
 |----------|-------|
-| Gmail reads | `list_inbox`, `search_inbox`, `get_thread`, `rank_inbox`, `get_gmail_connection_status` |
-| Gmail writes | `queue_email` (cc/bcc), `archive_thread`, `star_thread`, `unstar_thread`, `mark_important`, `trash_thread`, `mark_thread_read` |
+| Gmail reads | `list_inbox`, `search_inbox`, `get_thread`, `list_messages`, `rank_inbox`, `get_gmail_connection_status` |
+| Gmail writes | `queue_email`, `archive_thread`, `star_thread`, `unstar_thread`, `mark_important`, `trash_thread`, `untrash_thread`, `mark_thread_read`, `modify_message`, `batch_modify_threads` |
 | Labels | `list_labels`, `apply_label`, `remove_label` |
-| Drafts | `list_drafts`, `get_draft`, `delete_draft` |
+| Drafts | `list_drafts`, `get_draft`, `update_draft`, `delete_draft`, `send_draft` (queued) |
 | Queue | `list_queue`, `approve_queue_item`, `dismiss_queue_item` |
-| Calendar | `queue_calendar_invite`, `list_calendar_events`, `check_free_busy`, `respond_to_event`, `reschedule_event`, `cancel_event` |
+| Calendar | `queue_calendar_invite`, `quick_add_event` (queued), `list_calendar_events`, `check_free_busy`, `respond_to_event`, `reschedule_event`, `cancel_event`, `update_event_details` |
+| Corsair DB search | `search_threads_db`, `search_messages_db`, `search_drafts_db`, `search_labels_db`, `search_events_db`, `search_calendars_db` |
 | AI | `get_daily_brief`, `get_smart_replies`, `get_meeting_prep`, `get_thread_context`, `get_missed_followups`, `get_contact_intel`, `summarize_thread` |
 
 **Try these prompts:**
@@ -109,17 +110,19 @@ curl -X POST https://thread-api.vercel.app/mcp \
 
 MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`, `initialize` — **full MCP 2024-11-05 compliance**.
 
-**Official Corsair MCP** (`@corsair-dev/mcp` at `/mcp/corsair`):
+**Official Corsair MCP** (`@corsair-dev/mcp` at `/mcp/corsair`) — **same auth as `/mcp`** (session cookie or `Authorization: Bearer` + env-bound API key):
 
 ```bash
 # List Corsair dynamic tools (list_operations, get_schema, run_script, corsair_setup)
 curl -X POST https://thread-api.vercel.app/mcp/corsair \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_THREAD_MCP_API_KEY" \
   -d '{"jsonrpc":"2.0","id":10,"method":"tools/list"}'
 
 # Discover all Gmail + Calendar SDK operations
 curl -X POST https://thread-api.vercel.app/mcp/corsair \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_THREAD_MCP_API_KEY" \
   -d '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"list_operations","arguments":{}}}'
 ```
 
@@ -127,7 +130,23 @@ After Gmail/Calendar OAuth connect, **`setupCorsair({ backfill: true })`** seeds
 
 ---
 
-### Step 5 — More AI Features
+### Step 5 — MCP + AI Workflows (★ Corsair depth for judges)
+
+These show **live Corsair + MCP + human-in-the-loop** in one flow:
+
+| # | Workflow | How to demo | Corsair signal |
+|---|----------|-------------|----------------|
+| 1 | **Inbox → Agent → Queue → Send** | Agent: *"Draft a thank-you to the last email from [name]"* → `/queue` → Approve | Gmail read + draft queue + `messages.send` on approve |
+| 2 | **Calendar quick-add via MCP** | MCP `quick_add_event` with *"Standup tomorrow 10am"* → dashed block on `/calendar` → Approve | Local NLP → queue → `events.create` |
+| 3 | **DB search (offline-fast)** | Agent: *"Search my synced threads for hackathon"* → uses `search_threads_db` | `corsair.gmail.db.threads.search` — no live API round-trip |
+| 4 | **Webhook sync** | Send yourself a Gmail → inbox updates within ~15s (SSE + webhook) | Pub/Sub watch + `history.list` incremental sync |
+| 5 | **Official Corsair MCP** | `/mcp/corsair` → `list_operations` → `run_script` for any SDK endpoint | Dynamic discovery — full Corsair platform |
+
+**Cursor / Claude Desktop config:** point MCP at `POST /mcp` with your Thread session or API key — all 57 domain tools + 4 official Corsair adapter tools.
+
+---
+
+### Step 6 — More AI Features
 
 | Feature | Route | What it does |
 |---------|-------|-------------|
