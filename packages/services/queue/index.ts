@@ -1,10 +1,15 @@
 export type QueueItemKind =
   | "email_send"
   | "email_draft"
+  | "draft_send"
   | "calendar_invite"
   | "meeting_bundle"
   | "calendar_archive"
   | "calendar_delete";
+
+export type DraftSendPayload = {
+  draftId: string;
+};
 
 export type QueueItemStatus = "pending" | "processing" | "approved" | "dismissed" | "failed";
 
@@ -121,6 +126,16 @@ export interface QueueService {
       title?: string;
       preview?: string;
     },
+    opts?: QueueEnqueueOptions,
+  ): Promise<QueueItem>;
+  enqueueQuickAddCalendar(
+    userId: string,
+    input: { text: string; title?: string; preview?: string },
+    opts?: QueueEnqueueOptions,
+  ): Promise<QueueItem>;
+  enqueueDraftSend(
+    userId: string,
+    input: { draftId: string; title?: string; preview?: string },
     opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   approve(

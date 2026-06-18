@@ -18,6 +18,12 @@ export function queueResultMessage(item: QueueToastItem): { title: string; queue
       : { title: "Draft queued for review", queued: true };
   }
 
+  if (item.kind === "draft_send") {
+    return approved
+      ? { title: "Draft sent via Gmail", queued: false }
+      : { title: "Draft send queued — approve in Queue", queued: true };
+  }
+
   if (item.kind === "calendar_invite") {
     return approved
       ? { title: "Calendar invite sent", queued: false }

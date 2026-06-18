@@ -5,7 +5,7 @@
  * `executeTool` function from this single source of truth, eliminating the ~450-
  * line duplication that previously existed between the two files.
  *
- * 43 tools — in parity with the MCP server.
+ * 52 tools — in parity with the MCP server.
  */
 
 import { logger } from "@repo/logger";
@@ -558,17 +558,33 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
       case "quick_add_event": {
         const text = String(args.text ?? "").trim();
         if (!text) return JSON.stringify({ success: false, error: "text is required" });
-        const event = await calendar.quickAddEvent(tenantId, text);
-        actions.push({ kind: "calendar", title: "Event created", detail: event.summary, href: "/calendar" });
-        return JSON.stringify({ success: true, event });
+        const item = await queue.enqueueQuickAddCalendar(tenantId, { text }, { origin: "agent" });
+        const disposition = item.status === "approved" ? "sent" : "queued";
+        actions.push({
+          kind: "calendar_queued",
+          title: item.title,
+          detail: text,
+          href: "/queue",
+          disposition,
+          queueItemId: item.id,
+        });
+        return JSON.stringify({ success: true, queued: disposition === "queued", itemId: item.id });
       }
 
       case "send_draft": {
         const draftId = String(args.draftId ?? "").trim();
         if (!draftId) return JSON.stringify({ success: false, error: "draftId is required" });
-        const result = await inbox.sendDraft(tenantId, draftId);
-        actions.push({ kind: "email", title: "Draft sent", detail: `Draft ${draftId} sent` });
-        return JSON.stringify({ success: true, ...result });
+        const item = await queue.enqueueDraftSend(tenantId, { draftId }, { origin: "agent" });
+        const disposition = item.status === "approved" ? "sent" : "queued";
+        actions.push({
+          kind: "email_queued",
+          title: item.title,
+          detail: `Draft ${draftId}`,
+          href: "/queue",
+          disposition,
+          queueItemId: item.id,
+        });
+        return JSON.stringify({ success: true, queued: disposition === "queued", itemId: item.id });
       }
 
       case "get_calendar_connection_status": {

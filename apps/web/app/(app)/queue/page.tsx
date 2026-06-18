@@ -19,6 +19,7 @@ import {
 
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { QueryErrorState } from "~/components/app/query-error-state";
 import { dismissBriefThreadFromQueueItem } from "~/lib/brief-dismissals";
 import {
   isoToLocalDateTimeInput,
@@ -29,6 +30,7 @@ import {
 const KIND_LABEL: Record<string, string> = {
   email_send: "Send email",
   email_draft: "Save draft",
+  draft_send: "Send draft",
   calendar_invite: "Calendar invite",
   meeting_bundle: "Meeting + email",
   calendar_archive: "Reschedule event",
@@ -189,10 +191,12 @@ export default function QueuePage() {
     if (activeItemId === item.id && activeAction === "approve") {
       if (item.kind === "calendar_archive") return "Proceeding…";
       if (item.kind === "email_draft") return "Saving…";
+      if (item.kind === "draft_send") return "Sending…";
       return "Sending…";
     }
     if (item.kind === "calendar_archive") return "Review dates";
     if (item.kind === "calendar_delete") return "Approve delete";
+    if (item.kind === "draft_send") return "Approve & send draft";
     return "Approve & send";
   };
 
@@ -284,6 +288,14 @@ export default function QueuePage() {
 
       {itemsQuery.isLoading ? (
         <SkeletonList count={6} />
+      ) : itemsQuery.isError ? (
+        <QueryErrorState
+          title="Couldn't load queue"
+          message={itemsQuery.error.message}
+          onRetry={() => void itemsQuery.refetch()}
+          className="thread-app-empty"
+          style={{ marginTop: 24 }}
+        />
       ) : tab === "pending" && pending.length === 0 ? (
         <div className="thread-app-empty" style={{ marginTop: 24 }}>
           <div className="thread-app-empty-icon">
