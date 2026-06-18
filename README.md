@@ -4,12 +4,15 @@
 
 A full-stack productivity application built **entirely on the [Corsair SDK](https://corsair.dev)** that brings Gmail and Google Calendar into a focused, AI-driven, human-in-the-loop workflow. Built for the Corsair Hackathon.
 
-## Demo clips (X / Twitter)
+## Demo & pitch deck (X / Twitter)
 
-Short video walkthroughs of Thread — click to watch on X:
+**Pitch deck (full walkthrough):** [Watch on X](https://x.com/i/status/2067656941967679952)
+
+Short demo clips — click to watch on X:
 
 | # | Link |
 |---|------|
+| Pitch | [**Pitch deck**](https://x.com/i/status/2067656941967679952) |
 | 1 | [Demo clip 1](https://x.com/i/status/2067065490665824474) |
 | 2 | [Demo clip 2](https://x.com/i/status/2066048923446509906) |
 | 3 | [Demo clip 3](https://x.com/i/status/2065872033465208947) |
