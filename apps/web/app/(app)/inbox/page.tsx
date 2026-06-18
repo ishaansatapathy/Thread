@@ -257,6 +257,7 @@ export default function InboxPage() {
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
   const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
   const [showLabelPicker, setShowLabelPicker] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
   const labelPickerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -546,6 +547,17 @@ export default function InboxPage() {
 
   const removeLabel = trpc.inbox.removeLabel.useMutation({
     onSuccess: () => toast.success("Label removed"),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const createLabel = trpc.inbox.createLabel.useMutation({
+    onSuccess: async (label) => {
+      toast.success(`Label "${label.name}" created`);
+      setNewLabelName("");
+      await utils.inbox.listLabels.invalidate();
+      if (selectedId) applyLabel.mutate({ threadId: selectedId, labelId: label.id });
+      setShowLabelPicker(false);
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -1751,6 +1763,32 @@ export default function InboxPage() {
                                   {label.name}
                                 </button>
                               ))}
+                            <div className="thread-label-picker-create" style={{ padding: "8px 12px", borderTop: "1px solid var(--thread-border, #222)" }}>
+                              <p className="thread-label-picker-head">Create label</p>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <input
+                                  type="text"
+                                  value={newLabelName}
+                                  onChange={(e) => setNewLabelName(e.target.value)}
+                                  placeholder="Label name"
+                                  maxLength={200}
+                                  style={{ flex: 1, fontSize: 13 }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && newLabelName.trim()) {
+                                      createLabel.mutate({ name: newLabelName.trim() });
+                                    }
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="thread-btn-ghost"
+                                  disabled={!newLabelName.trim() || createLabel.isPending}
+                                  onClick={() => createLabel.mutate({ name: newLabelName.trim() })}
+                                >
+                                  {createLabel.isPending ? "…" : "Create"}
+                                </button>
+                              </div>
+                            </div>
                           </>
                         )}
                       </div>

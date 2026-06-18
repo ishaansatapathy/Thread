@@ -563,7 +563,7 @@ const MCP_TOOLS: McpTool[] = [
   },
   {
     name: "update_event_details",
-    description: "Update the title, description, or location of a Google Calendar event via Corsair patch API. Use for metadata changes only — for time changes use reschedule_event.",
+    description: "Queue an update to the title, description, or location of a Google Calendar event for human approval (HITL). Creates a calendar_update queue item — approve in Queue to apply via Corsair patch API. For time changes use reschedule_event.",
     inputSchema: {
       type: "object",
       required: ["eventId"],
@@ -1288,13 +1288,36 @@ async function callTool(
     case "update_event_details": {
       const eventId = String(args.eventId ?? "").trim();
       if (!eventId) return toolResult({ success: false, error: "eventId is required" });
-      const calendar = getCalendarService();
-      const updated = await calendar.patchEventDetails(userId, eventId, {
-        summary: args.summary ? String(args.summary) : undefined,
-        description: args.description ? String(args.description) : undefined,
-        location: args.location ? String(args.location) : undefined,
+      const newSummary = args.summary ? String(args.summary).trim() : undefined;
+      const description = args.description ? String(args.description) : undefined;
+      const location = args.location ? String(args.location) : undefined;
+      if (!newSummary && !description && !location) {
+        return toolResult({ success: false, error: "At least one of summary, description, or location is required" });
+      }
+      const existing = await calendar.getEvent(userId, eventId);
+      if (!existing) return toolResult({ success: false, error: "Event not found" });
+      const item = await queue.enqueueCalendarUpdate(
+        userId,
+        {
+          update: {
+            eventId,
+            summary: existing.summary ?? "Event",
+            newSummary,
+            description,
+            location,
+            htmlLink: existing.htmlLink,
+          },
+          title: `Update: ${existing.summary ?? "Event"}`,
+        },
+        { origin: "agent" },
+      );
+      return toolResult({
+        success: true,
+        queued: true,
+        queueItemId: item.id,
+        status: item.status,
+        message: "Event update queued — approve via approve_queue_item or /queue",
       });
-      return toolResult({ success: true, eventId, updated });
     }
 
     case "get_calendar_connection_status": {

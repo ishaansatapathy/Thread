@@ -148,7 +148,7 @@
     },
     {
       "name": "update_event_details",
-      "description": "Update metadata (title, description, location) on a Google Calendar event via Corsair Calendar patch API. Does not change time — use reschedule_event for that."
+      "description": "Queue metadata update (title, description, location) for human approval (HITL). Creates a calendar_update queue item — approve to apply via Corsair patch API. Does not change time — use reschedule_event for that."
     },
     {
       "name": "respond_to_event",

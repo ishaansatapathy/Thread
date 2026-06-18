@@ -1,15 +1,16 @@
 /**
- * Vercel serverless entry — lazy bootstrap via bundled dist, clear 503 when env is missing.
+ * Bundled Vercel serverless handler — imported by api/index.js after `pnpm build`.
  */
 import type { Express } from "express";
 import type { IncomingMessage, ServerResponse } from "node:http";
+
+import { runApiBootstrap, validateApiEnv } from "./api-bootstrap";
 
 let app: Express | null = null;
 let bootPromise: Promise<Express> | null = null;
 let bootError: { message: string; missing?: string[] } | null = null;
 
 async function bootExpress(): Promise<Express> {
-  const { validateApiEnv, runApiBootstrap } = await import("../dist/api-bootstrap.js");
   const missing = validateApiEnv();
   if (missing.length > 0) {
     const error = new Error(`Missing required environment variables: ${missing.join(", ")}`) as Error & {
@@ -20,7 +21,7 @@ async function bootExpress(): Promise<Express> {
   }
 
   await runApiBootstrap({ serverless: true });
-  const { default: expressApp } = await import("../dist/server.js");
+  const { default: expressApp } = await import("./server");
   return expressApp;
 }
 
@@ -30,13 +31,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   if (bootError) {
     sendJson(res, 503, {
       ok: false,
       error: bootError.message,
       missing: bootError.missing,
-      hint: "Set DATABASE_URL, JWT_SECRET, CORSAIR_KEK, BASE_URL, CLIENT_URL on Vercel",
+      hint: "Set DATABASE_URL, JWT_SECRET, CORSAIR_KEK, BASE_URL, CLIENT_URL on Vercel (see apps/api/VERCEL_DEPLOY.md)",
     });
     return;
   }
@@ -61,3 +62,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     });
   }
 }
+
+export default handler;

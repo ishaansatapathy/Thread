@@ -68,6 +68,19 @@ export const calendarDeletePayloadSchema = z.object({
   cancelWithNotify: z.boolean().optional(),
 });
 
+export const calendarUpdatePayloadSchema = z
+  .object({
+    eventId: z.string().min(1),
+    summary: z.string().min(1).max(200),
+    newSummary: z.string().min(1).max(200).optional(),
+    description: z.string().max(5000).optional(),
+    location: z.string().max(500).optional(),
+    htmlLink: z.string().optional(),
+  })
+  .refine((d) => Boolean(d.newSummary ?? d.description ?? d.location), {
+    message: "At least one of newSummary, description, or location is required",
+  });
+
 export const draftSendPayloadSchema = z.object({
   draftId: z.string().min(1).max(128),
 });
@@ -91,6 +104,10 @@ export function parseCalendarArchivePayload(payload: Record<string, unknown>) {
 
 export function parseCalendarDeletePayload(payload: Record<string, unknown>) {
   return calendarDeletePayloadSchema.parse(payload);
+}
+
+export function parseCalendarUpdatePayload(payload: Record<string, unknown>) {
+  return calendarUpdatePayloadSchema.parse(payload);
 }
 
 export function parseDraftSendPayload(payload: Record<string, unknown>) {

@@ -23,7 +23,8 @@ Optional but recommended:
 | `CORSAIR_WEBHOOK_SECRET` | Gmail/Calendar webhooks |
 | `CORSAIR_GMAIL_TOPIC_ID` | Gmail Pub/Sub push |
 | `GOOGLE_OAUTH_CLIENT_ID` / `SECRET` | Corsair OAuth |
-| `THREAD_MCP_API_KEY` + `THREAD_MCP_USER_ID` | Headless MCP |
+| `DEMO_LOGIN_ENABLED` | `true` | Lets judges use `/api-auth/demo?next=/brief` |
+| `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` | seeded demo user | Run `pnpm db:seed` against prod DB once |
 
 `PUBLIC_OPENAPI_DOCS` defaults to **true** on `*.vercel.app` — `/docs` is public.
 
@@ -45,6 +46,15 @@ curl https://thread-api.vercel.app/docs
 ```
 
 If you get **503** with `Missing required environment variables`, add the listed vars in Vercel → Settings → Environment Variables → **Redeploy**.
+
+If you get **500 `FUNCTION_INVOCATION_FAILED`** (opaque):
+
+1. Open Vercel → **Deployments** → latest → **Functions** → `api/index.js` logs.
+2. Confirm build output includes `dist/vercel.js`, `dist/server.js`, `dist/api-bootstrap.js`.
+3. Confirm **Root Directory** is `apps/api` (not repo root).
+4. Redeploy after setting env vars — cold start runs DB migrations automatically.
+
+After a successful deploy, `/health` returns JSON (not HTML). Missing env returns **503** with a JSON list of vars.
 
 ## Web app (`thread-web`)
 

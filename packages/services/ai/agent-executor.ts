@@ -586,13 +586,37 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
       case "update_event_details": {
         const eventId = String(args.eventId ?? "").trim();
         if (!eventId) return JSON.stringify({ success: false, error: "eventId is required" });
-        const updated = await calendar.patchEventDetails(tenantId, eventId, {
-          summary: args.summary ? String(args.summary) : undefined,
-          description: args.description ? String(args.description) : undefined,
-          location: args.location ? String(args.location) : undefined,
+        const newSummary = args.summary ? String(args.summary).trim() : undefined;
+        const description = args.description ? String(args.description) : undefined;
+        const location = args.location ? String(args.location) : undefined;
+        if (!newSummary && !description && !location) {
+          return JSON.stringify({ success: false, error: "At least one of summary, description, or location is required" });
+        }
+        const existing = await calendar.getEvent(tenantId, eventId);
+        if (!existing) return JSON.stringify({ success: false, error: "Event not found" });
+        const item = await queue.enqueueCalendarUpdate(
+          tenantId,
+          {
+            update: {
+              eventId,
+              summary: existing.summary ?? "Event",
+              newSummary,
+              description,
+              location,
+              htmlLink: existing.htmlLink,
+            },
+            title: `Update: ${existing.summary ?? "Event"}`,
+          },
+          { origin: "agent" },
+        );
+        const disposition = item.status === "approved" ? "updated" : "queued";
+        actions.push({
+          kind: "calendar",
+          title: disposition === "updated" ? "Event updated" : "Event update queued",
+          detail: newSummary ?? existing.summary ?? eventId,
+          href: disposition === "updated" ? "/calendar" : "/queue",
         });
-        actions.push({ kind: "calendar", title: "Event updated", detail: args.summary ? String(args.summary) : eventId, href: "/calendar" });
-        return JSON.stringify({ success: true, eventId, updated });
+        return JSON.stringify({ success: true, queued: item.status !== "approved", queueItemId: item.id, status: item.status });
       }
 
       case "mark_thread_unread": {

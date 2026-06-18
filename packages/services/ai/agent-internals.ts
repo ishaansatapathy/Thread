@@ -562,7 +562,7 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "update_event_details",
-      description: "Update the title, description, or location of a Google Calendar event via Corsair. Use when user wants to rename a meeting or add/change event details (NOT for rescheduling — use reschedule_event for time changes).",
+      description: "Queue an update to the title, description, or location of a Google Calendar event for human approval (HITL). Creates a calendar_update queue item. Use when user wants to rename a meeting or change details — NOT for rescheduling (use reschedule_event).",
       parameters: {
         type: "object",
         properties: {

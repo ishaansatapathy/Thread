@@ -109,6 +109,7 @@ export function buildThreadApiDescription(clientUrl: string, baseUrl: string): s
     "| `meeting_bundle` | `events.create` + `messages.send` | Queue page |",
     "| `calendar_archive` | `events.patch` (reschedule) | Amber overlay |",
     "| `calendar_delete` | `events.delete` | Delete queued overlay |",
+    "| `calendar_update` | `events.patch` | Title / description / location |",
     "",
     "### State machine",
     "",
