@@ -1,5 +1,6 @@
 import { ServiceError } from "../errors";
 
+import { fetchOpenAi } from "./openai-fetch";
 import { getOpenAiModel, isOpenAiConfigured } from "./openai";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -128,22 +129,26 @@ async function fetchOpenAiChoice(
   if (!apiKey) throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured.");
   const useStream = Boolean(onToken);
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const response = await fetchOpenAi(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: getOpenAiModel(),
+        messages: transcript,
+        tools,
+        tool_choice: "auto",
+        temperature: 0.2,
+        stream: useStream,
+      }),
+      signal,
     },
-    body: JSON.stringify({
-      model: getOpenAiModel(),
-      messages: transcript,
-      tools,
-      tool_choice: "auto",
-      temperature: 0.2,
-      stream: useStream,
-    }),
-    signal,
-  });
+    { label: useStream ? "openai.chat.tools.stream" : "openai.chat.tools" },
+  );
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
