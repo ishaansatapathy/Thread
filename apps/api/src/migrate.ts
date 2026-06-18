@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS brief_cache (
   generated_at timestamp DEFAULT now() NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS brief_cache_user_date_idx ON brief_cache (user_id, date_key);
+
+-- Queue kind: draft_send (send existing Gmail draft via HITL).
+ALTER TABLE "thread_queue_items" DROP CONSTRAINT IF EXISTS "thread_queue_items_kind_check";
+ALTER TABLE "thread_queue_items" ADD CONSTRAINT "thread_queue_items_kind_check" CHECK ("kind" IN ('email_send', 'email_draft', 'draft_send', 'calendar_invite', 'meeting_bundle', 'calendar_archive', 'calendar_delete'));
 `;
 
 export async function runMigrations() {
