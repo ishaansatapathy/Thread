@@ -27,26 +27,15 @@ import {
 import { ensureCorsairTenant } from "./corsair-tenant";
 
 // ── Corsair SDK typed wrappers ────────────────────────────────────────────────
-// The Corsair SDK's TypeScript types do not expose `threads.trash` or
-// `drafts.delete` directly. These thin wrappers centralise the one-line cast
-// so it never leaks into business logic, and document the SDK limitation.
-
-function corsairGmailThreadsTrash(
-  threads: object,
-  id: string,
-): Promise<void> {
-  return (threads as { trash: (opts: { id: string }) => Promise<void> }).trash({ id });
-}
-
-function corsairGmailDraftsDelete(
-  drafts: object,
-  id: string,
-): Promise<void> {
-  return (drafts as { delete: (opts: { id: string }) => Promise<void> }).delete({ id });
-}
 import type { SelectMailCacheRow } from "@repo/database/schema";
 
 import { mailCache, type CachedThreadMetadata } from "./mail-cache";
+import {
+  searchGmailMessagesDb,
+  searchGmailThreadsDb,
+  searchGmailDraftsDb,
+  searchGmailLabelsDb,
+} from "./corsair-db";
 import { fetchInWaves } from "../utils/gmail-batch";
 import { incrementCounter } from "../metrics";
 
@@ -251,6 +240,57 @@ export class CorsairInboxService implements InboxService {
   ): Promise<{ threads: InboxThread[] }> {
     const limit = Math.min(Math.max(opts?.limit ?? INBOX_PAGE_SIZE, 1), 100);
     const query = opts?.query?.trim();
+
+    if (this.isConfigured()) {
+      try {
+        const status = await this.getConnectionStatus(tenantId);
+        if (status.gmail === "connected") {
+          if (query) {
+            const msgRows = await searchGmailMessagesDb(
+              tenantId,
+              {
+                subject: { contains: query },
+              },
+              { limit },
+            );
+            const threadIds = [...new Set(msgRows.map((m) => m.threadId).filter(Boolean))] as string[];
+            if (threadIds.length > 0) {
+              return {
+                threads: threadIds.slice(0, limit).map((id) => {
+                  const msg = msgRows.find((m) => m.threadId === id);
+                  return {
+                    id,
+                    snippet: msg?.snippet ?? "",
+                    subject: msg?.subject,
+                    from: msg?.from,
+                  };
+                }),
+              };
+            }
+            const threadRows = await searchGmailThreadsDb(
+              tenantId,
+              { snippet: { contains: query } },
+              { limit },
+            );
+            if (threadRows.length > 0) {
+              return {
+                threads: threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+              };
+            }
+          } else {
+            const threadRows = await searchGmailThreadsDb(tenantId, {}, { limit });
+            if (threadRows.length > 0) {
+              return {
+                threads: threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+              };
+            }
+          }
+        }
+      } catch {
+        // fall through to Postgres mail_cache
+      }
+    }
+
     const threads = query
       ? await mailCache.search(tenantId, query, limit)
       : await mailCache.recent(tenantId, limit);
@@ -802,13 +842,11 @@ export class CorsairInboxService implements InboxService {
   async listLabels(tenantId: string): Promise<Array<{ id: string; name: string; type?: string }>> {
     try {
       const corsair = getCorsair().withTenant(tenantId);
-      const result = await (corsair.gmail.api.labels as {
-        list: (opts?: Record<string, unknown>) => Promise<{ labels?: Array<{ id?: string; name?: string; type?: string }> } | Array<{ id?: string; name?: string; type?: string }>>;
-      }).list({});
-      const labels = Array.isArray(result) ? result : (result.labels ?? []);
+      const result = await corsair.gmail.api.labels.list({});
+      const labels = result.labels ?? [];
       return labels
-        .filter((l) => l.id && l.name)
-        .map((l) => ({ id: l.id!, name: l.name!, type: l.type }));
+        .filter((l: { id?: string; name?: string; type?: string }) => l.id && l.name)
+        .map((l: { id?: string; name?: string; type?: string }) => ({ id: l.id!, name: l.name!, type: l.type }));
     } catch (error) {
       logger.warn("listLabels failed", {
         tenantId,
@@ -967,14 +1005,263 @@ export class CorsairInboxService implements InboxService {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") throw new Error("Gmail is not connected");
     const corsair = getCorsair().withTenant(tenantId);
-    await corsairGmailThreadsTrash(corsair.gmail.api.threads, threadId);
+    await corsair.gmail.api.threads.trash({ id: threadId });
+  }
+
+  async updateDraft(
+    tenantId: string,
+    draftId: string,
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      cc?: string;
+      bcc?: string;
+    },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const raw = buildRawEmail(input);
+    const result = await corsair.gmail.api.drafts.update({
+      id: draftId,
+      draft: { message: { raw, threadId: input.threadId } },
+    });
+    return { id: result.id };
+  }
+
+  async getLabel(tenantId: string, labelId: string) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const label = await corsair.gmail.api.labels.get({ id: labelId });
+    if (!label.id || !label.name) return null;
+    return { id: label.id, name: label.name, type: label.type };
+  }
+
+  async updateLabel(
+    tenantId: string,
+    labelId: string,
+    label: { name?: string; labelListVisibility?: string; messageListVisibility?: string },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const updated = await corsair.gmail.api.labels.update({
+      id: labelId,
+      label: {
+        name: label.name,
+        labelListVisibility: label.labelListVisibility as "labelShow" | "labelShowIfUnread" | "labelHide" | undefined,
+        messageListVisibility: label.messageListVisibility as "show" | "hide" | undefined,
+      },
+    });
+    return { id: updated.id ?? labelId, name: updated.name ?? label.name ?? labelId };
+  }
+
+  async deleteLabel(tenantId: string, labelId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.labels.delete({ id: labelId });
+  }
+
+  async listMessages(
+    tenantId: string,
+    opts?: { maxResults?: number; pageToken?: string; q?: string; labelIds?: string[] },
+  ) {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const result = await corsair.gmail.api.messages.list({
+      maxResults: opts?.maxResults,
+      pageToken: opts?.pageToken,
+      q: opts?.q,
+      labelIds: opts?.labelIds,
+    });
+    return {
+      messages: (result.messages ?? [])
+        .filter((m: { id?: string }) => m.id)
+        .map((m: { id?: string; threadId?: string; snippet?: string }) => ({ id: m.id!, threadId: m.threadId, snippet: m.snippet })),
+      nextPageToken: result.nextPageToken,
+    };
+  }
+
+  async modifyMessage(
+    tenantId: string,
+    messageId: string,
+    opts: { addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.messages.modify({
+      id: messageId,
+      addLabelIds: opts.addLabelIds,
+      removeLabelIds: opts.removeLabelIds,
+    });
+  }
+
+  async batchModifyMessages(
+    tenantId: string,
+    opts: { ids: string[]; addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<void> {
+    if (opts.ids.length === 0) return;
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.messages.batchModify({
+      ids: opts.ids,
+      addLabelIds: opts.addLabelIds,
+      removeLabelIds: opts.removeLabelIds,
+    });
+  }
+
+  async batchModifyThreads(
+    tenantId: string,
+    opts: { threadIds: string[]; addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<{ modifiedMessages: number }> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const messageIds: string[] = [];
+    for (const threadId of opts.threadIds) {
+      const thread = await corsair.gmail.api.threads.get({ id: threadId, format: "minimal" });
+      for (const msg of thread.messages ?? []) {
+        if (msg.id) messageIds.push(msg.id);
+      }
+    }
+    if (messageIds.length > 0) {
+      await corsair.gmail.api.messages.batchModify({
+        ids: messageIds,
+        addLabelIds: opts.addLabelIds,
+        removeLabelIds: opts.removeLabelIds,
+      });
+    }
+    if (opts.removeLabelIds?.includes("INBOX")) {
+      for (const threadId of opts.threadIds) {
+        await mailCache.remove(tenantId, threadId);
+      }
+    }
+    if (opts.removeLabelIds?.includes("UNREAD")) {
+      await mailCache.upsertMany(
+        tenantId,
+        opts.threadIds.map((threadId) => ({ threadId, unread: false })),
+      );
+    }
+    return { modifiedMessages: messageIds.length };
+  }
+
+  async trashMessage(tenantId: string, messageId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.messages.trash({ id: messageId });
+  }
+
+  async untrashMessage(tenantId: string, messageId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.messages.untrash({ id: messageId });
+  }
+
+  async deleteMessage(tenantId: string, messageId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.messages.delete({ id: messageId });
+  }
+
+  async deleteThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.delete({ id: threadId });
+    await mailCache.remove(tenantId, threadId);
+  }
+
+  async untrashThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.untrash({ id: threadId });
+  }
+
+  async searchThreadsDb(tenantId: string, opts?: { query?: string; limit?: number; offset?: number }) {
+    const data = opts?.query?.trim()
+      ? { snippet: { contains: opts.query.trim() } }
+      : {};
+    const rows = await searchGmailThreadsDb(tenantId, data, {
+      limit: opts?.limit,
+      offset: opts?.offset,
+    });
+    return {
+      threads: rows.map((r) => ({ id: r.id, snippet: r.snippet ?? "", historyId: r.historyId })),
+    };
+  }
+
+  async searchMessagesDb(
+    tenantId: string,
+    opts?: { query?: string; from?: string; limit?: number; offset?: number },
+  ) {
+    const data: Record<string, unknown> = {};
+    if (opts?.query?.trim()) data.subject = { contains: opts.query.trim() };
+    if (opts?.from?.trim()) data.from = { contains: opts.from.trim() };
+    const rows = await searchGmailMessagesDb(tenantId, data, {
+      limit: opts?.limit,
+      offset: opts?.offset,
+    });
+    return { messages: rows };
+  }
+
+  async searchDraftsDb(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    const rows = await searchGmailDraftsDb(tenantId, {}, opts);
+    return { drafts: rows };
+  }
+
+  async searchLabelsDb(tenantId: string, opts?: { name?: string; limit?: number; offset?: number }) {
+    const data = opts?.name?.trim() ? { name: { contains: opts.name.trim() } } : {};
+    const rows = await searchGmailLabelsDb(tenantId, data, opts);
+    return { labels: rows };
+  }
+
+  async muteThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({
+      id: threadId,
+      addLabelIds: ["MUTE"],
+      removeLabelIds: ["INBOX"],
+    });
+    await mailCache.remove(tenantId, threadId);
+  }
+
+  async unmuteThread(tenantId: string, threadId: string): Promise<void> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    await corsair.gmail.api.threads.modify({
+      id: threadId,
+      removeLabelIds: ["MUTE"],
+      addLabelIds: ["INBOX"],
+    });
   }
 
   async deleteDraft(tenantId: string, draftId: string): Promise<void> {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") throw new Error("Gmail is not connected");
     const corsair = getCorsair().withTenant(tenantId);
-    await corsairGmailDraftsDelete(corsair.gmail.api.drafts, draftId);
+    await corsair.gmail.api.drafts.delete({ id: draftId });
+  }
+
+  async sendDraft(tenantId: string, draftId: string): Promise<{ id?: string; threadId?: string }> {
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    const corsair = getCorsair().withTenant(tenantId);
+    const result = await corsair.gmail.api.drafts.send({ id: draftId });
+    return { id: result.id, threadId: result.threadId };
   }
 
   async registerGmailWatch(tenantId: string): Promise<void> {

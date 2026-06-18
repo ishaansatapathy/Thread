@@ -270,6 +270,16 @@ export default function CalendarPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const [quickAddText, setQuickAddText] = useState("");
+  const quickAddEvent = trpc.calendar.quickAddEvent.useMutation({
+    onSuccess: async (event) => {
+      setQuickAddText("");
+      toast.success(`Created: ${event.summary ?? "Event"}`);
+      await utils.calendar.listEvents.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const banner = useMemo(() => {
     if (searchParams.get("calendar") === "connected") {
       return { type: "success" as const, text: "Google Calendar connected successfully." };
@@ -439,10 +449,48 @@ export default function CalendarPage() {
               publish.
             </p>
           </div>
-          <button type="button" className="thread-btn-accent" onClick={() => setShowCreate(true)}>
-            <Plus size={14} />
-            New invite
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <form
+              style={{ display: "flex", alignItems: "center", gap: 6 }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                const text = quickAddText.trim();
+                if (text) quickAddEvent.mutate({ text });
+              }}
+            >
+              <div style={{
+                display: "flex", alignItems: "center", gap: 6, height: 34,
+                padding: "0 10px", borderRadius: 8,
+                border: "1px solid var(--thread-line)", background: "rgba(255,255,255,0.025)",
+              }}>
+                <Sparkles size={12} style={{ color: "var(--thread-dim)", flexShrink: 0 }} />
+                <input
+                  type="text"
+                  value={quickAddText}
+                  onChange={(e) => setQuickAddText(e.target.value)}
+                  placeholder="e.g. Lunch with Sarah tomorrow at noon"
+                  style={{
+                    border: "none", outline: "none", background: "transparent",
+                    color: "var(--thread-text)", fontSize: 12, width: 240,
+                  }}
+                  disabled={quickAddEvent.isPending}
+                />
+              </div>
+              <button
+                type="submit"
+                className="thread-btn-ghost"
+                style={{ fontSize: 12, padding: "6px 10px" }}
+                disabled={!quickAddText.trim() || quickAddEvent.isPending}
+              >
+                {quickAddEvent.isPending ? <Loader2 size={13} className="thread-spin" /> : <Plus size={13} />}
+                {quickAddEvent.isPending ? "Adding…" : "Add"}
+              </button>
+            </form>
+            <button type="button" className="thread-btn-accent" onClick={() => setShowCreate(true)}>
+              <Plus size={14} />
+              New invite
+            </button>
+          </div>
         </div>
       )}
 

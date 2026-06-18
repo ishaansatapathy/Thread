@@ -347,7 +347,10 @@ export default function InboxPage() {
   const bulkArchive = useCallback(async () => {
     const ids = [...bulkSelected];
     clearBulk();
-    await Promise.all(ids.map((id) => utils.client.inbox.archiveThread.mutate({ threadId: id })));
+    await utils.client.inbox.batchModifyThreads.mutate({
+      threadIds: ids,
+      removeLabelIds: ["INBOX"],
+    });
     toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} archived`);
     await utils.inbox.listThreads.invalidate();
   }, [bulkSelected, clearBulk, utils]);
@@ -355,7 +358,10 @@ export default function InboxPage() {
   const bulkMarkRead = useCallback(async () => {
     const ids = [...bulkSelected];
     clearBulk();
-    await Promise.all(ids.map((id) => utils.client.inbox.markThreadRead.mutate({ threadId: id })));
+    await utils.client.inbox.batchModifyThreads.mutate({
+      threadIds: ids,
+      removeLabelIds: ["UNREAD"],
+    });
     toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} marked read`);
     await utils.inbox.listThreads.invalidate();
   }, [bulkSelected, clearBulk, utils]);
@@ -366,6 +372,25 @@ export default function InboxPage() {
     toast.success(`${bulkSelected.size} thread${bulkSelected.size === 1 ? "" : "s"} snoozed until tomorrow`);
     clearBulk();
   }, [bulkSelected, snoozeThread, clearBulk]);
+
+  const bulkStar = useCallback(async () => {
+    const ids = [...bulkSelected];
+    clearBulk();
+    await utils.client.inbox.batchModifyThreads.mutate({
+      threadIds: ids,
+      addLabelIds: ["STARRED"],
+    });
+    toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} starred`);
+    await utils.inbox.listThreads.invalidate();
+  }, [bulkSelected, clearBulk, utils]);
+
+  const bulkTrash = useCallback(async () => {
+    const ids = [...bulkSelected];
+    clearBulk();
+    await Promise.all(ids.map((id) => utils.client.inbox.trashThread.mutate({ threadId: id })));
+    toast.success(`${ids.length} thread${ids.length === 1 ? "" : "s"} moved to trash`);
+    await utils.inbox.listThreads.invalidate();
+  }, [bulkSelected, clearBulk, utils]);
   const meQuery = trpc.auth.me.useQuery({});
   const userEmail = meQuery.data?.email;
   const userPhotoUrl = meQuery.data?.profileImageUrl;
@@ -437,6 +462,29 @@ export default function InboxPage() {
         }
       );
       setSelectedId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const muteThread = trpc.inbox.muteThread.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success("Thread muted");
+      utils.inbox.listThreads.setData(
+        { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
+        (old) => {
+          if (!old) return old;
+          return { ...old, threads: old.threads.filter((t) => t.id !== variables.threadId) };
+        }
+      );
+      setSelectedId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const sendDraft = trpc.inbox.sendDraft.useMutation({
+    onSuccess: () => {
+      toast.success("Draft sent");
+      void utils.inbox.listDrafts.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -1009,8 +1057,14 @@ export default function InboxPage() {
             <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkMarkRead()}>
               <Mail size={11} /> Mark read
             </button>
+            <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkStar()}>
+              <Star size={11} /> Star
+            </button>
             <button type="button" className="thread-inbox-bulk-action" onClick={bulkSnooze}>
               <BellOff size={11} /> Snooze
+            </button>
+            <button type="button" className="thread-inbox-bulk-action" onClick={() => void bulkTrash()}>
+              <Trash2 size={11} /> Trash
             </button>
             <button type="button" className="thread-inbox-bulk-action thread-inbox-bulk-action--cancel" onClick={clearBulk}>
               <X size={11} /> Cancel
@@ -1193,6 +1247,16 @@ export default function InboxPage() {
                       }}
                     >
                       Edit in compose
+                    </button>
+                    <button
+                      type="button"
+                      className="thread-btn-accent"
+                      style={{ fontSize: 11, padding: "4px 10px" }}
+                      disabled={sendDraft.isPending}
+                      onClick={() => sendDraft.mutate({ draftId: draft.id })}
+                      title="Send this draft now"
+                    >
+                      {sendDraft.isPending ? "Sending…" : "Send"}
                     </button>
                     {draft.threadId ? (
                       <button
@@ -1524,6 +1588,15 @@ export default function InboxPage() {
                     title="Move to trash"
                   >
                     <Trash2 size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    className="thread-inbox-action-btn"
+                    disabled={muteThread.isPending}
+                    onClick={() => { if (selectedId) muteThread.mutate({ threadId: selectedId }); }}
+                    title="Mute thread (m) — future messages skip inbox"
+                  >
+                    <BellOff size={15} style={{ opacity: 0.6 }} />
                   </button>
                   <div className="thread-inbox-action-divider" />
                   <div ref={labelPickerRef} style={{ position: "relative" }}>

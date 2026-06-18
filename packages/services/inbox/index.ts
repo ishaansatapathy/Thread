@@ -147,8 +147,22 @@ export interface InboxService {
   markNotImportant(tenantId: string, threadId: string): Promise<void>;
   /** Move a Gmail thread to trash via Corsair. */
   trashThread(tenantId: string, threadId: string): Promise<void>;
+  /**
+   * Mute a Gmail thread (adds MUTE label, removes INBOX label).
+   * Future messages in this thread will skip the inbox.
+   */
+  muteThread(tenantId: string, threadId: string): Promise<void>;
+  /**
+   * Unmute a Gmail thread (removes MUTE label, re-adds INBOX label).
+   */
+  unmuteThread(tenantId: string, threadId: string): Promise<void>;
   /** Delete a Gmail draft by id via Corsair. */
   deleteDraft(tenantId: string, draftId: string): Promise<void>;
+  /**
+   * Send an existing Gmail draft by draftId via Corsair drafts.send.
+   * Throws if the draft does not exist or the API call fails.
+   */
+  sendDraft(tenantId: string, draftId: string): Promise<{ id?: string; threadId?: string }>;
   /**
    * Ensure a Gmail label exists (create it via Corsair if missing).
    * Returns the label ID. Results are cached per-process per tenant+name.
@@ -181,6 +195,89 @@ export interface InboxService {
    * Throws if the disconnect API call fails.
    */
   disconnect(tenantId: string): Promise<void>;
+
+  /** Update an existing Gmail draft via Corsair drafts.update. */
+  updateDraft(
+    tenantId: string,
+    draftId: string,
+    input: {
+      to: string;
+      subject: string;
+      body: string;
+      threadId?: string;
+      cc?: string;
+      bcc?: string;
+    },
+  ): Promise<{ id?: string }>;
+
+  /** Get a single Gmail label via Corsair labels.get. */
+  getLabel(
+    tenantId: string,
+    labelId: string,
+  ): Promise<{ id: string; name: string; type?: string } | null>;
+
+  /** Update a Gmail label via Corsair labels.update. */
+  updateLabel(
+    tenantId: string,
+    labelId: string,
+    label: { name?: string; labelListVisibility?: string; messageListVisibility?: string },
+  ): Promise<{ id: string; name: string }>;
+
+  /** Delete a Gmail label via Corsair labels.delete. */
+  deleteLabel(tenantId: string, labelId: string): Promise<void>;
+
+  /** List Gmail messages via Corsair messages.list. */
+  listMessages(
+    tenantId: string,
+    opts?: { maxResults?: number; pageToken?: string; q?: string; labelIds?: string[] },
+  ): Promise<{ messages: Array<{ id: string; threadId?: string; snippet?: string }>; nextPageToken?: string }>;
+
+  /** Modify labels on a single message via Corsair messages.modify. */
+  modifyMessage(
+    tenantId: string,
+    messageId: string,
+    opts: { addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<void>;
+
+  /** Bulk modify labels on multiple messages via Corsair messages.batchModify. */
+  batchModifyMessages(
+    tenantId: string,
+    opts: { ids: string[]; addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<void>;
+
+  /** Bulk modify thread labels — resolves message IDs then calls batchModify. */
+  batchModifyThreads(
+    tenantId: string,
+    opts: { threadIds: string[]; addLabelIds?: string[]; removeLabelIds?: string[] },
+  ): Promise<{ modifiedMessages: number }>;
+
+  trashMessage(tenantId: string, messageId: string): Promise<void>;
+  untrashMessage(tenantId: string, messageId: string): Promise<void>;
+  deleteMessage(tenantId: string, messageId: string): Promise<void>;
+  deleteThread(tenantId: string, threadId: string): Promise<void>;
+  untrashThread(tenantId: string, threadId: string): Promise<void>;
+
+  /** Search synced Gmail threads via corsair.gmail.db.threads.search. */
+  searchThreadsDb(
+    tenantId: string,
+    opts?: { query?: string; limit?: number; offset?: number },
+  ): Promise<{ threads: InboxThread[] }>;
+
+  /** Search synced Gmail messages via corsair.gmail.db.messages.search. */
+  searchMessagesDb(
+    tenantId: string,
+    opts?: { query?: string; from?: string; limit?: number; offset?: number },
+  ): Promise<{ messages: Array<{ id: string; threadId?: string; subject?: string; snippet?: string; from?: string }> }>;
+
+  searchDraftsDb(
+    tenantId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<{ drafts: Array<{ id: string; messageId?: string }> }>;
+
+  searchLabelsDb(
+    tenantId: string,
+    opts?: { name?: string; limit?: number; offset?: number },
+  ): Promise<{ labels: Array<{ id: string; name?: string }> }>;
 }
 
 let inboxService: InboxService | null = null;

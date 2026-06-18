@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP server — exposes Gmail inbox, approval queue, calendar, AI features (daily brief, smart replies, meeting prep), and agent tools for AI assistants via the Model Context Protocol. Backed by the Corsair SDK for Gmail and Google Calendar.",
-  "version": "1.5.0",
+  "description": "Thread MCP server — 55 tools exposing Gmail inbox (read/write/mute/star/label/draft/send/batch), Corsair DB search (gmail.db.*, googlecalendar.db.*), approval queue, calendar (CRUD/RSVP/getAvailability/quick-add), and AI features via the Model Context Protocol. Backed by the Corsair SDK for Gmail and Google Calendar. Includes 4 MCP resources and 5 MCP prompts.",
+  "version": "2.3.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -18,23 +18,23 @@
   "tools": [
     {
       "name": "list_inbox",
-      "description": "List recent Gmail inbox threads via Corsair Gmail API. Returns thread metadata."
+      "description": "List recent Gmail inbox threads via Corsair Gmail API. Returns thread metadata including sender, subject, snippet, unread status, date, and message count."
     },
     {
       "name": "search_inbox",
-      "description": "Full-text search over Gmail inbox using Corsair Gmail API. Supports Gmail query syntax (from:, subject:, has:attachment, etc.)."
+      "description": "Full-text search over Gmail inbox using Corsair Gmail API. Supports Gmail query syntax (from:, subject:, has:attachment, is:unread, label:, etc.)."
     },
     {
       "name": "get_thread",
-      "description": "Retrieve a full Gmail thread including all messages and sender info via Corsair Gmail API."
+      "description": "Retrieve a full Gmail thread including all messages, sender info, and decoded body via Corsair Gmail API."
     },
     {
       "name": "rank_inbox",
-      "description": "AI-powered urgency ranking of inbox threads. Fetches threads via Corsair Gmail and scores them using OpenAI."
+      "description": "AI-powered urgency ranking of inbox threads. Fetches threads via Corsair Gmail and scores them using OpenAI. Optionally auto-labels threads with Corsair Gmail labels (Corsair/Critical, Corsair/High Priority, etc.)."
     },
     {
       "name": "list_labels",
-      "description": "List all Gmail labels (system and user-defined) via Corsair. Call before apply_label or remove_label to get label IDs."
+      "description": "List all Gmail labels (system and user-defined) via Corsair Gmail API. Call before apply_label or remove_label to get valid label IDs."
     },
     {
       "name": "archive_thread",
@@ -46,23 +46,51 @@
     },
     {
       "name": "unstar_thread",
-      "description": "Remove the star from a Gmail thread via Corsair Gmail API."
+      "description": "Remove the star from a Gmail thread via Corsair Gmail API (removes STARRED label)."
     },
     {
       "name": "mark_important",
       "description": "Mark a Gmail thread as important via Corsair Gmail API (adds IMPORTANT label)."
     },
     {
+      "name": "mark_not_important",
+      "description": "Remove the important flag from a Gmail thread via Corsair Gmail API (removes IMPORTANT label)."
+    },
+    {
+      "name": "mark_thread_read",
+      "description": "Mark a Gmail thread as read via Corsair Gmail API (removes UNREAD label)."
+    },
+    {
+      "name": "mark_thread_unread",
+      "description": "Mark a Gmail thread as unread via Corsair Gmail API (adds UNREAD label). Use to flag threads for later review."
+    },
+    {
       "name": "apply_label",
-      "description": "Apply a Gmail label to a thread by label ID via Corsair. Call list_labels first to get valid IDs."
+      "description": "Apply a Gmail label to a thread by label ID via Corsair Gmail API. Call list_labels first to get valid IDs."
     },
     {
       "name": "remove_label",
-      "description": "Remove a Gmail label from a thread by label ID via Corsair."
+      "description": "Remove a Gmail label from a thread by label ID via Corsair Gmail API."
     },
     {
       "name": "trash_thread",
-      "description": "Move a Gmail thread to trash via Corsair Gmail API. Use only when user explicitly wants to delete an email."
+      "description": "Move a Gmail thread to trash via Corsair Gmail API. Use only when the user explicitly wants to delete an email."
+    },
+    {
+      "name": "list_drafts",
+      "description": "List Gmail draft emails via Corsair Gmail API. Returns draft ID, snippet, subject, and recipient."
+    },
+    {
+      "name": "get_draft",
+      "description": "Fetch a specific Gmail draft including full content via Corsair Gmail API."
+    },
+    {
+      "name": "create_draft_email",
+      "description": "Create a Gmail draft without sending. Supports to, cc, bcc, subject, body, and optional threadId for replies. Uses Corsair Gmail drafts.create."
+    },
+    {
+      "name": "send_draft",
+      "description": "Send an existing Gmail draft by draftId via Corsair Gmail drafts.send. The draft must already exist (use create_draft_email first). Requires explicit user approval."
     },
     {
       "name": "delete_draft",
@@ -70,15 +98,7 @@
     },
     {
       "name": "queue_email",
-      "description": "Queue an email for human approval (send cap: 3/conversation). Uses Corsair Gmail API to send after approval. mode=send queues for approval; mode=draft saves only."
-    },
-    {
-      "name": "list_calendar_events",
-      "description": "List Google Calendar events in a date range via Corsair Calendar API. Use to find free slots or meeting context."
-    },
-    {
-      "name": "queue_calendar_invite",
-      "description": "Queue a Google Calendar invite for human approval. Supports recurrence (RRULE), attendees, location. Uses Corsair Calendar API after approval."
+      "description": "Queue an email for human approval before sending (send cap: 3/conversation). Uses Corsair Gmail API to send after approval. mode=send queues for approval; mode=draft saves as draft only."
     },
     {
       "name": "list_queue",
@@ -86,7 +106,7 @@
     },
     {
       "name": "approve_queue_item",
-      "description": "Approve a pending queue item — sends the email via Corsair Gmail or creates the calendar event via Corsair Calendar."
+      "description": "Approve a pending queue item — sends the email via Corsair Gmail API or creates the calendar event via Corsair Calendar API."
     },
     {
       "name": "dismiss_queue_item",
@@ -94,44 +114,180 @@
     },
     {
       "name": "get_gmail_connection_status",
-      "description": "Check whether Gmail and Google Calendar are connected via Corsair for the current user."
+      "description": "Check whether Gmail is connected via Corsair for the current user. Returns connection status and scopes."
     },
     {
-      "name": "get_daily_brief",
-      "description": "Generate an AI-powered daily brief: today's priorities, pending replies, meeting insights, risks, and recommended actions. Pulls live data from Corsair Gmail + Corsair Calendar and synthesizes via OpenAI."
+      "name": "get_calendar_connection_status",
+      "description": "Check whether Google Calendar is connected via Corsair for the current user. Returns connection status and available scopes."
     },
     {
-      "name": "get_smart_replies",
-      "description": "Generate 3 AI-powered smart reply suggestions for a Gmail thread. Reads full thread context via Corsair Gmail API and generates replies using OpenAI."
+      "name": "list_calendar_events",
+      "description": "List Google Calendar events in a date range via Corsair Calendar API. Use to find free slots, meeting context, or upcoming schedule."
     },
     {
-      "name": "get_meeting_prep",
-      "description": "Generate AI meeting preparation for a calendar event: past email context, agenda items, talking points, and risks. Fetches event via Corsair Calendar and related emails via Corsair Gmail."
+      "name": "get_calendar_event",
+      "description": "Get a single Google Calendar event by ID via Corsair Calendar API. Returns full event details including attendees, conferenceData (Google Meet link), and recurrence."
     },
     {
-      "name": "get_thread_context",
-      "description": "Generate a smart context summary for an email thread: related emails, key people, action items, and sentiment. Fetches thread via Corsair Gmail and related context via OpenAI."
+      "name": "queue_calendar_invite",
+      "description": "Queue a Google Calendar invite for human approval. Supports recurrence (RRULE), attendees, location, Google Meet auto-creation via conferenceData. Uses Corsair Calendar API after approval."
     },
     {
-      "name": "get_missed_followups",
-      "description": "Detect meetings from the past week that had no follow-up email sent. Cross-references Corsair Calendar events with Corsair Gmail sent messages."
+      "name": "quick_add_event",
+      "description": "Create a Google Calendar event from a natural language phrase via Corsair Calendar quickAdd API (e.g. 'Lunch with Sarah tomorrow at noon'). No approval queue — fast creation."
+    },
+    {
+      "name": "reschedule_event",
+      "description": "Reschedule a Google Calendar event to a new time via Corsair Calendar API. Supports recurring event scope: instance, series, or following."
+    },
+    {
+      "name": "update_event_details",
+      "description": "Update metadata (title, description, location) on a Google Calendar event via Corsair Calendar patch API. Does not change time — use reschedule_event for that."
+    },
+    {
+      "name": "respond_to_event",
+      "description": "Accept, decline, or tentatively accept a Google Calendar event invitation via Corsair Calendar API. Sets the current user's RSVP status."
+    },
+    {
+      "name": "cancel_event",
+      "description": "Cancel a Google Calendar event via Corsair Calendar API. Optionally sends cancellation notifications to attendees."
     },
     {
       "name": "check_free_busy",
-      "description": "Check free/busy slots for a time range via Corsair Calendar freebusy API. Returns busy slots and available windows."
+      "description": "Check free/busy slots for a time range via Corsair Calendar freebusy.query API. Returns busy windows and available gaps for scheduling."
     },
-    { "name": "respond_to_event", "description": "Accept, decline, or tentatively accept a Google Calendar event invitation via Corsair." },
-    { "name": "reschedule_event", "description": "Reschedule a Google Calendar event to a new time via Corsair Calendar." },
-    { "name": "cancel_event", "description": "Cancel a Google Calendar event via Corsair." },
-    { "name": "list_drafts", "description": "List Gmail draft emails via Corsair Gmail API." },
-    { "name": "get_draft", "description": "Fetch a specific Gmail draft including full content via Corsair Gmail API." },
-    { "name": "mark_thread_read", "description": "Mark a Gmail thread as read via Corsair Gmail API (removes UNREAD label)." },
-    { "name": "get_contact_intel", "description": "Relationship intelligence for a contact: interaction history, response rate, key topics via Corsair Gmail + OpenAI." },
-    { "name": "summarize_thread", "description": "AI summary of an email thread: key decisions, action items, next steps via Corsair Gmail + OpenAI." }
+    {
+      "name": "find_meeting_slots",
+      "description": "AI-powered meeting slot finder: queries free/busy via Corsair Calendar, then suggests optimal meeting times using OpenAI reasoning."
+    },
+    {
+      "name": "get_daily_brief",
+      "description": "Generate an AI daily brief: today's priorities, pending replies, meeting insights, deadline risks, missed follow-ups, and recommended actions. Pulls live data from Corsair Gmail + Corsair Calendar and synthesizes via OpenAI."
+    },
+    {
+      "name": "get_smart_replies",
+      "description": "Generate 3 AI-powered smart reply suggestions for a Gmail thread. Reads full thread context via Corsair Gmail API and generates contextual replies using OpenAI."
+    },
+    {
+      "name": "get_meeting_prep",
+      "description": "Generate AI meeting preparation: past email context, agenda items, talking points, and risk flags. Fetches event via Corsair Calendar and related emails via Corsair Gmail + OpenAI."
+    },
+    {
+      "name": "get_thread_context",
+      "description": "Generate a smart context summary for an email thread: related emails, key people, action items, and sentiment. Fetches thread via Corsair Gmail and synthesizes via OpenAI."
+    },
+    {
+      "name": "get_missed_followups",
+      "description": "Detect past meetings that had no follow-up email sent. Cross-references Corsair Calendar events with Corsair Gmail sent messages using OpenAI reasoning."
+    },
+    {
+      "name": "get_contact_intel",
+      "description": "Relationship intelligence for a contact: interaction history, response rate, communication style, and key topics. Uses Corsair Gmail + OpenAI."
+    },
+    {
+      "name": "summarize_thread",
+      "description": "AI summary of an email thread: key decisions, action items, timeline, and next steps. Reads full thread via Corsair Gmail + OpenAI. Attachment-aware."
+    },
+    {
+      "name": "mute_thread",
+      "description": "Mute a Gmail thread via Corsair (adds MUTE label, removes from INBOX). Future messages in this thread skip the inbox. Useful for silencing noisy threads without archiving."
+    },
+    {
+      "name": "unmute_thread",
+      "description": "Unmute a Gmail thread via Corsair (removes MUTE label, restores to INBOX). Reverses a previous mute_thread action."
+    },
+    {
+      "name": "update_draft",
+      "description": "Update an existing Gmail draft via Corsair drafts.update."
+    },
+    {
+      "name": "batch_modify_threads",
+      "description": "Bulk add/remove Gmail labels on multiple threads via Corsair messages.batchModify."
+    },
+    {
+      "name": "list_messages",
+      "description": "List Gmail messages via Corsair messages.list."
+    },
+    {
+      "name": "modify_message",
+      "description": "Add or remove labels on a single Gmail message via Corsair messages.modify."
+    },
+    {
+      "name": "delete_thread",
+      "description": "Permanently delete a Gmail thread via Corsair threads.delete."
+    },
+    {
+      "name": "untrash_thread",
+      "description": "Restore a Gmail thread from trash via Corsair threads.untrash."
+    },
+    {
+      "name": "search_threads_db",
+      "description": "Search synced Gmail threads via corsair.gmail.db.threads.search."
+    },
+    {
+      "name": "search_messages_db",
+      "description": "Search synced Gmail messages via corsair.gmail.db.messages.search."
+    },
+    {
+      "name": "search_events_db",
+      "description": "Search synced calendar events via googlecalendar.db.events.search."
+    },
+    {
+      "name": "search_calendars_db",
+      "description": "Search synced calendars via googlecalendar.db.calendars.search."
+    }
+  ],
+  "resources": [
+    {
+      "uri": "thread://inbox",
+      "name": "Gmail Inbox",
+      "description": "Live Gmail inbox threads via Corsair Gmail API. Includes unread count and recent thread metadata.",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "thread://queue",
+      "name": "Approval Queue",
+      "description": "Pending email and calendar items awaiting human approval before execution via Corsair.",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "thread://brief",
+      "name": "Daily Brief",
+      "description": "Today's AI-generated brief: priorities, meetings, deadlines, and follow-ups. Cached per day.",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "thread://calendar",
+      "name": "Google Calendar",
+      "description": "Upcoming Google Calendar events (next 7 days) via Corsair Calendar API.",
+      "mimeType": "application/json"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "daily_brief",
+      "description": "Prepare a comprehensive daily brief with today's email priorities, calendar events, and recommended actions."
+    },
+    {
+      "name": "meeting_prep",
+      "description": "Prepare for an upcoming meeting: past email context, agenda, talking points, and risk flags."
+    },
+    {
+      "name": "smart_reply",
+      "description": "Generate contextual reply suggestions for a Gmail thread."
+    },
+    {
+      "name": "contact_intel",
+      "description": "Relationship intelligence and communication history for a contact."
+    },
+    {
+      "name": "missed_followups",
+      "description": "Identify past meetings that had no follow-up email sent."
+    }
   ],
   "examples": [
     {
-      "description": "Discover all available tools",
+      "description": "Discover all 43 tools",
       "request": {
         "jsonrpc": "2.0",
         "id": 1,
@@ -140,7 +296,7 @@
       }
     },
     {
-      "description": "Get AI daily brief (pulls from Corsair Gmail + Calendar)",
+      "description": "Generate AI daily brief (Corsair Gmail + Calendar + OpenAI)",
       "request": {
         "jsonrpc": "2.0",
         "id": 2,
@@ -170,14 +326,26 @@
       }
     },
     {
-      "description": "Get smart reply suggestions for a thread",
+      "description": "AI-rank inbox and auto-label with Corsair Gmail labels",
       "request": {
         "jsonrpc": "2.0",
         "id": 4,
         "method": "tools/call",
         "params": {
-          "name": "get_smart_replies",
-          "arguments": { "threadId": "<gmail-thread-id>" }
+          "name": "rank_inbox",
+          "arguments": { "autoLabel": true }
+        }
+      }
+    },
+    {
+      "description": "Create a calendar event from natural language (quickAdd)",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "tools/call",
+        "params": {
+          "name": "quick_add_event",
+          "arguments": { "text": "Lunch with Sarah tomorrow at noon" }
         }
       }
     },
@@ -185,7 +353,7 @@
       "description": "Queue an email for human approval",
       "request": {
         "jsonrpc": "2.0",
-        "id": 5,
+        "id": 6,
         "method": "tools/call",
         "params": {
           "name": "queue_email",
@@ -199,29 +367,30 @@
       }
     },
     {
-      "description": "Approve a queued email send",
-      "request": {
-        "jsonrpc": "2.0",
-        "id": 6,
-        "method": "tools/call",
-        "params": {
-          "name": "approve_queue_item",
-          "arguments": { "itemId": "<queue-item-uuid>" }
-        }
-      }
-    },
-    {
-      "description": "Check free/busy for scheduling",
+      "description": "Find optimal meeting slots via AI + Corsair free/busy",
       "request": {
         "jsonrpc": "2.0",
         "id": 7,
         "method": "tools/call",
         "params": {
-          "name": "check_free_busy",
+          "name": "find_meeting_slots",
           "arguments": {
-            "timeMin": "2026-06-17T09:00:00+05:30",
-            "timeMax": "2026-06-17T18:00:00+05:30"
+            "durationMinutes": 60,
+            "timeMin": "2026-06-19T09:00:00+05:30",
+            "timeMax": "2026-06-19T18:00:00+05:30"
           }
+        }
+      }
+    },
+    {
+      "description": "Send an existing draft",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+          "name": "send_draft",
+          "arguments": { "draftId": "<gmail-draft-id>" }
         }
       }
     }

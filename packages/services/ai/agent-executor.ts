@@ -563,6 +563,91 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         return JSON.stringify({ success: true, event });
       }
 
+      case "send_draft": {
+        const draftId = String(args.draftId ?? "").trim();
+        if (!draftId) return JSON.stringify({ success: false, error: "draftId is required" });
+        const result = await inbox.sendDraft(tenantId, draftId);
+        actions.push({ kind: "email", title: "Draft sent", detail: `Draft ${draftId} sent` });
+        return JSON.stringify({ success: true, ...result });
+      }
+
+      case "get_calendar_connection_status": {
+        const calStatus = await calendar.getConnectionStatus(tenantId);
+        return JSON.stringify({ connected: calStatus.googlecalendar === "connected", status: calStatus });
+      }
+
+      case "mute_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.muteThread(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, muted: true });
+      }
+
+      case "unmute_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.unmuteThread(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, muted: false });
+      }
+
+      case "batch_modify_threads": {
+        const threadIds = Array.isArray(args.threadIds) ? args.threadIds.map(String) : [];
+        if (threadIds.length === 0) return JSON.stringify({ success: false, error: "threadIds is required" });
+        const result = await inbox.batchModifyThreads(tenantId, {
+          threadIds,
+          addLabelIds: Array.isArray(args.addLabelIds) ? args.addLabelIds.map(String) : undefined,
+          removeLabelIds: Array.isArray(args.removeLabelIds) ? args.removeLabelIds.map(String) : undefined,
+        });
+        return JSON.stringify({ success: true, ...result });
+      }
+
+      case "search_threads_db": {
+        const result = await inbox.searchThreadsDb(tenantId, {
+          query: typeof args.query === "string" ? args.query : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "search_messages_db": {
+        const result = await inbox.searchMessagesDb(tenantId, {
+          query: typeof args.query === "string" ? args.query : undefined,
+          from: typeof args.from === "string" ? args.from : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "search_events_db": {
+        const result = await calendar.searchEventsDb(tenantId, {
+          query: typeof args.query === "string" ? args.query : undefined,
+          limit: args.limit != null ? Number(args.limit) : undefined,
+        });
+        return JSON.stringify(result);
+      }
+
+      case "update_draft": {
+        const draftId = String(args.draftId ?? "").trim();
+        const to = String(args.to ?? "").trim();
+        const subject = String(args.subject ?? "").trim();
+        const body = String(args.body ?? "");
+        if (!draftId || !to || !subject) {
+          return JSON.stringify({ success: false, error: "draftId, to, and subject are required" });
+        }
+        const result = await inbox.updateDraft(tenantId, draftId, {
+          to, subject, body,
+          threadId: typeof args.threadId === "string" ? args.threadId : undefined,
+        });
+        return JSON.stringify({ success: true, ...result });
+      }
+
+      case "delete_thread": {
+        const threadId = String(args.threadId ?? "").trim();
+        if (!threadId) return JSON.stringify({ success: false, error: "threadId is required" });
+        await inbox.deleteThread(tenantId, threadId);
+        return JSON.stringify({ success: true, threadId, deleted: true });
+      }
+
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }

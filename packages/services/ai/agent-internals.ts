@@ -603,6 +603,150 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "send_draft",
+      description: "Send an existing Gmail draft immediately via Corsair. Use after create_draft_email when the user confirms they want to send it.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string", description: "Gmail draft ID to send." },
+        },
+        required: ["draftId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_calendar_connection_status",
+      description: "Check whether Google Calendar is connected via Corsair for the current user. Returns connection status and available scopes.",
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mute_thread",
+      description: "Mute a Gmail thread via Corsair (adds MUTE label, removes from INBOX). Future messages in this thread skip the inbox.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread ID to mute." },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "unmute_thread",
+      description: "Unmute a Gmail thread via Corsair (removes MUTE label, restores to INBOX).",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string", description: "Gmail thread ID to unmute." },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "batch_modify_threads",
+      description: "Bulk add/remove Gmail labels on multiple threads via Corsair batchModify. Use for archive/star/read on many threads at once.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadIds: { type: "array", items: { type: "string" } },
+          addLabelIds: { type: "array", items: { type: "string" } },
+          removeLabelIds: { type: "array", items: { type: "string" } },
+        },
+        required: ["threadIds"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_threads_db",
+      description: "Search synced Gmail threads via corsair.gmail.db.threads.search (fast local cache).",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_messages_db",
+      description: "Search synced Gmail messages via corsair.gmail.db.messages.search.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          from: { type: "string" },
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_events_db",
+      description: "Search synced Google Calendar events via googlecalendar.db.events.search.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          limit: { type: "number", default: 20 },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_draft",
+      description: "Update an existing Gmail draft via Corsair drafts.update.",
+      parameters: {
+        type: "object",
+        properties: {
+          draftId: { type: "string" },
+          to: { type: "string" },
+          subject: { type: "string" },
+          body: { type: "string" },
+          threadId: { type: "string" },
+        },
+        required: ["draftId", "to", "subject", "body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_thread",
+      description: "Permanently delete a Gmail thread via Corsair threads.delete. Use only when user explicitly asks to delete forever.",
+      parameters: {
+        type: "object",
+        properties: {
+          threadId: { type: "string" },
+        },
+        required: ["threadId"],
+      },
+    },
+  },
 ];
 
 export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefaults): string {
