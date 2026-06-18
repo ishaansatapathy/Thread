@@ -322,7 +322,16 @@ When `REDIS_URL` is set, counters persist across API restarts and `/metrics/json
 
 ## API Documentation
 
-Available at `http://localhost:8000/docs` (requires `OPENAPI_DOCS_SECRET` env var or query param `?key=<secret>` in production; open in dev when `PUBLIC_OPENAPI_DOCS=true`).
+Available at `http://localhost:8000/docs` — **Scalar** UI with full Corsair integration guide (~116 REST endpoints), tag groups, request examples, curl code samples, MCP tool appendix, and webhook/reference paths.
+
+| Doc | URL |
+|-----|-----|
+| Scalar UI | `{BASE_URL}/docs` |
+| OpenAPI JSON | `{BASE_URL}/openapi.json` |
+| Full technical guide | `DOCS.md` |
+| Judge walkthrough | `JUDGE_WALKTHROUGH.md` |
+
+Production: set `PUBLIC_OPENAPI_DOCS=false` and `OPENAPI_DOCS_SECRET`, or pass `?key=<secret>` / `Authorization: Bearer <secret>`.
 
 ---
 

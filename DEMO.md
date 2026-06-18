@@ -10,8 +10,9 @@
 |------|-------|
 | Live App | `https://thread-web.vercel.app` |
 | Demo Login | `https://thread-web.vercel.app/api-auth/demo?next=/brief` |
+| **Scalar API Docs** | `https://thread-api.vercel.app/docs` |
+| OpenAPI JSON | `https://thread-api.vercel.app/openapi.json` |
 | MCP Server | `POST https://thread-api.vercel.app/mcp` |
-| API Docs | `https://thread-api.vercel.app/docs` |
 
 ---
 
@@ -73,7 +74,27 @@ Every AI-composed email and calendar invite goes through approval. Open `/queue`
 
 ---
 
-### Step 4 — MCP Server (live curl)
+### Step 4 — Scalar API Docs (★ judge docs)
+
+Open: **https://thread-api.vercel.app/docs**
+
+ChaiForm-style **Scalar** reference — every REST route documented with:
+
+- **Intro guide** — Corsair map, auth, queue, MCP, webhooks, demo login
+- **Tag groups** — Gmail, Calendar, Queue, Agent, MCP & Webhooks
+- **Request examples** — queue email, calendar invite, quick-add, agent chat, RSVP
+- **Reference paths** — `/mcp`, `/mcp/corsair`, `/webhooks/*`, `/agent/stream`, OAuth connect
+
+Local: `http://localhost:8000/docs` · JSON: `/openapi.json`
+
+Judge walkthrough: **`JUDGE_WALKTHROUGH.md`** (60s Scalar section)
+
+```bash
+# OpenAPI spec (for import into Postman / Insomnia)
+curl -s https://thread-api.vercel.app/openapi.json | head -c 400
+```
+
+### Step 5 — MCP Server (live curl)
 
 ```bash
 # Initialize
@@ -130,7 +151,7 @@ After Gmail/Calendar OAuth connect, **`setupCorsair({ backfill: true })`** seeds
 
 ---
 
-### Step 5 — MCP + AI Workflows (★ Corsair depth for judges)
+### Step 6 — MCP + AI Workflows (★ Corsair depth for judges)
 
 These show **live Corsair + MCP + human-in-the-loop** in one flow:
 
@@ -146,7 +167,7 @@ These show **live Corsair + MCP + human-in-the-loop** in one flow:
 
 ---
 
-### Step 6 — More AI Features
+### Step 7 — More AI Features
 
 | Feature | Route | What it does |
 |---------|-------|-------------|
