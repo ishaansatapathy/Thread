@@ -10,10 +10,7 @@ const src = join(root, "dist");
 const dest = join(root, "api", "dist");
 const fallback = join(root, "api", "_bundle.mjs");
 
-const vercelMjs = join(src, "vercel.mjs");
-const vercelJs = join(src, "vercel.js");
-
-if (!existsSync(vercelMjs) && !existsSync(vercelJs)) {
+if (!existsSync(join(src, "vercel.mjs"))) {
   console.error("[vercel-postbuild] Missing dist/vercel.mjs — run tsup first");
   process.exit(1);
 }
@@ -23,10 +20,16 @@ if (existsSync(dest)) {
 }
 mkdirSync(dest, { recursive: true });
 cpSync(src, dest, { recursive: true });
+copyFileSync(join(src, "vercel.mjs"), fallback);
 
-const bundleSrc = existsSync(vercelMjs) ? vercelMjs : vercelJs;
-copyFileSync(bundleSrc, fallback);
-console.log(`[vercel-postbuild] Copied dist/ → api/dist/ (+ api/_bundle.mjs fallback)`);
+for (const stale of ["vercel.js", "_bundle.js"]) {
+  const inDist = join(dest, stale);
+  if (existsSync(inDist)) rmSync(inDist);
+}
+const staleFallback = join(root, "api", "_bundle.js");
+if (existsSync(staleFallback)) rmSync(staleFallback);
+
+console.log("[vercel-postbuild] Copied dist/ → api/dist/ (+ api/_bundle.mjs fallback)");
 
 if (!existsSync(join(dest, "vercel.mjs"))) {
   console.error("[vercel-postbuild] Missing api/dist/vercel.mjs");
