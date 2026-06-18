@@ -5,7 +5,8 @@
   "functions": {
     "api/index.ts": {
       "memory": 1024,
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "dist/**"
     }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }]

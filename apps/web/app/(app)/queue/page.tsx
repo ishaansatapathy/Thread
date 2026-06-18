@@ -55,6 +55,8 @@ function kindLabel(kind: string, payload: Record<string, unknown>) {
   if (kind === "calendar_delete" && payload.cancelWithNotify === true) return "Cancel event";
   return KIND_LABEL[kind] ?? kind;
 }
+
+function readArchivePayload(payload: Record<string, unknown>) {
   return {
     startDateTime: String(payload.startDateTime ?? ""),
     endDateTime: String(payload.endDateTime ?? ""),

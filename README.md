@@ -445,7 +445,15 @@ Once connected, the agent and inbox are fully live against your real Gmail accou
 
 ## Production deployment runbook
 
-### 1. API (Railway / Render / Fly)
+### 1a. API on Vercel (live: `thread-api.vercel.app`)
+
+See **[apps/api/VERCEL_DEPLOY.md](./apps/api/VERCEL_DEPLOY.md)** for the full checklist.
+
+- Root Directory: **`apps/api`**
+- Required env: `DATABASE_URL`, `JWT_SECRET`, `CORSAIR_KEK`, `BASE_URL`, `CLIENT_URL`
+- Web project must set `API_INTERNAL_URL=https://thread-api.vercel.app`
+
+### 1b. API (Railway / Render / Fly)
 
 Deploy `apps/api` using `railway.toml`. Required env:
 
