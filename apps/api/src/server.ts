@@ -32,6 +32,7 @@ import { corsairPermissionsRouter } from "./routes/corsair-permissions";
 import { agentStreamRouter } from "./routes/agent-stream";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
+import { enrichThreadOpenApi, type OpenApiDocumentWithPaths } from "./openapi-enrichment";
 
 export const app = express();
 
@@ -91,18 +92,14 @@ function buildOpenApiDocument() {
   try {
     const document = generateOpenApiDocument(openApiRouter, {
       title: "Thread API",
-      version: "0.1.0",
+      version: "2.5.0",
       baseUrl: env.BASE_URL.concat("/api"),
     });
 
-    document.info = {
-      ...document.info,
-      description: "Thread REST API generated from tRPC. Domain routes will be added as features ship.",
-    };
-
-    document.servers = [{ url: env.BASE_URL.concat("/api"), description: "Thread API" }];
-
-    return document;
+    return enrichThreadOpenApi(document as OpenApiDocumentWithPaths, {
+      clientUrl: env.CLIENT_URL,
+      baseUrl: env.BASE_URL,
+    });
   } catch (error) {
     logger.error("OpenAPI document generation failed", {
       message: error instanceof Error ? error.message : error,
@@ -285,7 +282,28 @@ logger.debug(`docs: ${env.BASE_URL}/docs`);
 
 import("@scalar/express-api-reference")
   .then(({ apiReference }) => {
-    app.use("/docs", requireOpenApiDocsAuth, apiReference({ url: "/openapi.json" }));
+    app.use(
+      "/docs",
+      requireOpenApiDocsAuth,
+      apiReference({
+        url: "/openapi.json",
+        theme: "purple",
+        layout: "modern",
+        metaData: {
+          title: "Thread API Reference",
+          description:
+            "Corsair-powered Gmail & Calendar — REST, MCP (57 tools), webhooks, approval queue. Built for the Corsair Hackathon.",
+        },
+        authentication: {
+          preferredSecurityScheme: "cookieAuth",
+        },
+        persistAuth: true,
+        defaultHttpClient: {
+          targetKey: "node",
+          clientKey: "fetch",
+        },
+      }),
+    );
   })
   .catch((error) => {
     logger.warn("API docs disabled", {
