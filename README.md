@@ -4,6 +4,21 @@
 
 A full-stack productivity application built **entirely on the [Corsair SDK](https://corsair.dev)** that brings Gmail and Google Calendar into a focused, AI-driven, human-in-the-loop workflow. Built for the Corsair Hackathon.
 
+## Demo clips (X / Twitter)
+
+Short video walkthroughs of Thread — click to watch on X:
+
+| # | Link |
+|---|------|
+| 1 | [Demo clip 1](https://x.com/i/status/2067065490665824474) |
+| 2 | [Demo clip 2](https://x.com/i/status/2066048923446509906) |
+| 3 | [Demo clip 3](https://x.com/i/status/2065872033465208947) |
+| 4 | [Demo clip 4](https://x.com/i/status/2065345490581962875) |
+| 5 | [Demo clip 5](https://x.com/i/status/2065344446368202923) |
+| 6 | [Demo clip 6](https://x.com/i/status/2064950664061677607) |
+
+Live app: [thread-web.vercel.app](https://thread-web.vercel.app) · API docs: [thread-api.vercel.app/docs](https://thread-api.vercel.app/docs)
+
 ## Feature Table
 
 | Feature | Description | Corsair APIs Used |
