@@ -287,4 +287,40 @@ export const calendarRouter = router({
         mapServiceError(error);
       }
     }),
+
+  searchEventsDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/events/search"), tags: TAGS } })
+    .input(
+      z.object({
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(z.object({ events: z.array(calendarEventSchema) }))
+    .query(async ({ ctx, input }) => {
+      const calendar = getCalendarService();
+      return calendar.searchEventsDb(ctx.user.id, input);
+    }),
+
+  searchCalendarsDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/calendars/search"), tags: TAGS } })
+    .input(
+      z.object({
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        calendars: z.array(
+          z.object({ id: z.string(), summary: z.string().optional(), timeZone: z.string().optional() }),
+        ),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const calendar = getCalendarService();
+      return calendar.searchCalendarsDb(ctx.user.id, input);
+    }),
 });

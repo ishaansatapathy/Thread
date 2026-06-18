@@ -399,6 +399,342 @@ export const inboxRouter = router({
       }
     }),
 
+  sendDraft: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/drafts/{draftId}/send"), tags: TAGS } })
+    .input(z.object({ draftId: z.string().min(1) }))
+    .output(z.object({ id: z.string().optional(), threadId: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        return await inbox.sendDraft(ctx.user.id, input.draftId);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  muteThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/mute"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.muteThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  unmuteThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/unmute"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.unmuteThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  updateDraft: protectedProcedure
+    .meta({ openapi: { method: "PUT", path: getPath("/drafts/{draftId}"), tags: TAGS } })
+    .input(
+      composeInputSchema.extend({
+        draftId: z.string().min(1),
+      }),
+    )
+    .output(z.object({ id: z.string().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        const { draftId, ...body } = input;
+        return await inbox.updateDraft(ctx.user.id, draftId, body);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  getLabel: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/labels/{labelId}"), tags: TAGS } })
+    .input(z.object({ labelId: z.string().min(1) }))
+    .output(z.object({ id: z.string(), name: z.string(), type: z.string().optional() }).nullable())
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.getLabel(ctx.user.id, input.labelId);
+    }),
+
+  updateLabel: protectedProcedure
+    .meta({ openapi: { method: "PATCH", path: getPath("/labels/{labelId}"), tags: TAGS } })
+    .input(
+      z.object({
+        labelId: z.string().min(1),
+        name: z.string().optional(),
+        labelListVisibility: z.string().optional(),
+        messageListVisibility: z.string().optional(),
+      }),
+    )
+    .output(z.object({ id: z.string(), name: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        const { labelId, ...label } = input;
+        return await inbox.updateLabel(ctx.user.id, labelId, label);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  deleteLabel: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/labels/{labelId}"), tags: TAGS } })
+    .input(z.object({ labelId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.deleteLabel(ctx.user.id, input.labelId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  listMessages: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/messages"), tags: TAGS } })
+    .input(
+      z.object({
+        maxResults: z.number().int().min(1).max(100).optional(),
+        pageToken: z.string().optional(),
+        q: z.string().optional(),
+        labelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        messages: z.array(
+          z.object({ id: z.string(), threadId: z.string().optional(), snippet: z.string().optional() }),
+        ),
+        nextPageToken: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.listMessages(ctx.user.id, input);
+    }),
+
+  modifyMessage: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/messages/{messageId}/labels"), tags: TAGS } })
+    .input(
+      z.object({
+        messageId: z.string().min(1),
+        addLabelIds: z.array(z.string()).optional(),
+        removeLabelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        const { messageId, ...opts } = input;
+        await inbox.modifyMessage(ctx.user.id, messageId, opts);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  batchModifyMessages: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/messages/batch-modify"), tags: TAGS } })
+    .input(
+      z.object({
+        ids: z.array(z.string().min(1)).min(1).max(1000),
+        addLabelIds: z.array(z.string()).optional(),
+        removeLabelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.batchModifyMessages(ctx.user.id, input);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  batchModifyThreads: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/batch-modify"), tags: TAGS } })
+    .input(
+      z.object({
+        threadIds: z.array(z.string().min(1)).min(1).max(100),
+        addLabelIds: z.array(z.string()).optional(),
+        removeLabelIds: z.array(z.string()).optional(),
+      }),
+    )
+    .output(z.object({ modifiedMessages: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        return await inbox.batchModifyThreads(ctx.user.id, input);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  trashMessage: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/messages/{messageId}/trash"), tags: TAGS } })
+    .input(z.object({ messageId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.trashMessage(ctx.user.id, input.messageId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  untrashMessage: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/messages/{messageId}/untrash"), tags: TAGS } })
+    .input(z.object({ messageId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.untrashMessage(ctx.user.id, input.messageId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  deleteMessage: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/messages/{messageId}"), tags: TAGS } })
+    .input(z.object({ messageId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.deleteMessage(ctx.user.id, input.messageId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  deleteThread: protectedProcedure
+    .meta({ openapi: { method: "DELETE", path: getPath("/threads/{threadId}"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.deleteThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  untrashThread: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/untrash"), tags: TAGS } })
+    .input(z.object({ threadId: z.string().min(1) }))
+    .output(z.object({ ok: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const inbox = getInboxService();
+        await inbox.untrashThread(ctx.user.id, input.threadId);
+        return { ok: true };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  searchThreadsDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/threads/search"), tags: TAGS } })
+    .input(
+      z.object({
+        query: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(z.object({ threads: z.array(inboxThreadSchema) }))
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.searchThreadsDb(ctx.user.id, input);
+    }),
+
+  searchMessagesDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/messages/search"), tags: TAGS } })
+    .input(
+      z.object({
+        query: z.string().optional(),
+        from: z.string().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        messages: z.array(
+          z.object({
+            id: z.string(),
+            threadId: z.string().optional(),
+            subject: z.string().optional(),
+            snippet: z.string().optional(),
+            from: z.string().optional(),
+          }),
+        ),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.searchMessagesDb(ctx.user.id, input);
+    }),
+
+  searchDraftsDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/drafts/search"), tags: TAGS } })
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        drafts: z.array(z.object({ id: z.string(), messageId: z.string().optional() })),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.searchDraftsDb(ctx.user.id, input);
+    }),
+
+  searchLabelsDb: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/db/labels/search"), tags: TAGS } })
+    .input(
+      z.object({
+        name: z.string().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        labels: z.array(z.object({ id: z.string(), name: z.string().optional() })),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const inbox = getInboxService();
+      return inbox.searchLabelsDb(ctx.user.id, input);
+    }),
+
   disconnectGmail: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/disconnect"), tags: TAGS } })
     .input(z.object({}))

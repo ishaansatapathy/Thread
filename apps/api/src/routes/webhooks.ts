@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import { timingSafeEqual } from "node:crypto";
+import { processWebhook } from "corsair";
 
 import { eq } from "@repo/database";
 import db from "@repo/database";
@@ -8,12 +9,13 @@ import { logger } from "@repo/logger";
 import { trace, SpanStatusCode } from "@opentelemetry/api";
 
 import { env } from "../env";
+import { getCorsair, isCorsairConfigured } from "../corsair";
 import { CorsairInboxService } from "../services/inbox";
 import { CorsairCalendarService } from "../services/calendar";
-import { getCorsair } from "../corsair";
 import { mailCache } from "../services/mail-cache";
 import { getLastHistoryId, setLastHistoryId } from "../services/gmail-state";
 import { publishSyncEvent } from "../services/sync-events";
+import { registerCorsairWebhookSync } from "../services/corsair-webhook-sync";
 
 const inboxService = new CorsairInboxService();
 const calendarService = new CorsairCalendarService();
@@ -259,6 +261,68 @@ webhooksRouter.post("/calendar", async (req, res) => {
   } else {
     logger.warn("Calendar webhook received without a resolvable tenant", {
       channelId: req.header("x-goog-channel-id"),
+    });
+  }
+
+  return res.status(200).json({ ok: true });
+});
+
+registerCorsairWebhookSync({
+  onGmailMessageChanged: (tenantId) => {
+    void refreshTenantInboxIncremental(tenantId);
+  },
+  onCalendarEventChanged: (tenantId) => {
+    void refreshTenantCalendar(tenantId);
+  },
+});
+
+/**
+ * Unified Corsair webhook entry — dispatches to plugin webhook handlers via
+ * processWebhook and fires webhookHooks (sync refresh). Legacy /gmail and
+ * /calendar routes remain for backward compatibility.
+ */
+webhooksRouter.post("/corsair", async (req, res) => {
+  if (!isAuthorized(req)) {
+    return res.status(env.CORSAIR_WEBHOOK_SECRET ? 401 : 503).json({
+      ok: false,
+      error: env.CORSAIR_WEBHOOK_SECRET
+        ? "Invalid webhook secret"
+        : "Webhooks are not configured (set CORSAIR_WEBHOOK_SECRET)",
+    });
+  }
+
+  if (!isCorsairConfigured()) {
+    return res.status(503).json({ ok: false, error: "Corsair is not configured" });
+  }
+
+  const pubsub = decodePubSubData(req.body);
+  const tenantId =
+    tenantFromCalendarChannel(req) ??
+    (await resolveTenantId(req.body)) ??
+    (typeof req.query.tenantId === "string" ? req.query.tenantId.trim() : null);
+
+  try {
+    const corsair = getCorsair();
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (typeof value === "string") headers[key] = value;
+      else if (Array.isArray(value) && value[0]) headers[key] = value[0];
+    }
+
+    await processWebhook(
+      corsair,
+      headers,
+      req.body,
+      tenantId ? { tenantId } : undefined,
+    );
+
+    if (tenantId && pubsub?.historyId) {
+      await setLastHistoryId(tenantId, pubsub.historyId);
+    }
+  } catch (error) {
+    logger.warn("Corsair processWebhook failed", {
+      tenantId,
+      message: error instanceof Error ? error.message : String(error),
     });
   }
 

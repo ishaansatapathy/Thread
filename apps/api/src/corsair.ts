@@ -5,6 +5,10 @@ import { googlecalendar } from "@corsair-dev/googlecalendar";
 import { createPgPool } from "@repo/database/pg";
 
 import { env } from "./env";
+import {
+  buildGmailWebhookHooks,
+  buildGoogleCalendarWebhookHooks,
+} from "./services/corsair-webhook-sync";
 
 let pool: Pool | null = null;
 let corsairInstance: ReturnType<typeof createCorsair> | null = null;
@@ -37,7 +41,10 @@ export function getCorsair() {
   if (!corsairInstance) {
     const kek = process.env.CORSAIR_KEK!.trim();
     corsairInstance = createCorsair({
-      plugins: [gmail(), googlecalendar()],
+      plugins: [
+        gmail({ webhookHooks: buildGmailWebhookHooks() }),
+        googlecalendar({ webhookHooks: buildGoogleCalendarWebhookHooks() }),
+      ],
       database: getCorsairPool(),
       kek,
       multiTenancy: true,

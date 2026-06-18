@@ -36,7 +36,7 @@ The brief calls 6 live Corsair APIs per render:
 
 Open: `https://thread-web.vercel.app/agent`
 
-The agent has **34 tools** backed by Corsair — in full parity with the MCP server:
+The agent has **52 tools** backed by Corsair — in full parity with the MCP server:
 
 | Category | Tools |
 |----------|-------|
@@ -80,7 +80,7 @@ curl -X POST https://thread-api.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
-# List all 34 tools
+# List all 55 tools
 curl -X POST https://thread-api.vercel.app/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
@@ -142,12 +142,15 @@ MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `pr
 | Get single event | `corsair.googlecalendar.api.events.get` | Meeting Prep (O(1)) |
 | Create event | `corsair.googlecalendar.api.events.create` | Queue approve, Agent |
 | Update event | `corsair.googlecalendar.api.events.update` | Reschedule, respond, cancel |
-| Free/busy check | `corsair.googlecalendar.api.freebusy.query` | Agent, MCP |
+| Free/busy check | `corsair.googlecalendar.api.calendar.getAvailability` | Agent, MCP, Calendar UI |
+| Gmail DB search | `corsair.gmail.db.{threads,messages,drafts,labels}.search` | Inbox cache, Agent, MCP |
+| Calendar DB search | `googlecalendar.db.{events,calendars}.search` | Agent, MCP |
+| Webhooks | `processWebhook` + `webhookHooks` | `POST /webhooks/corsair` |
 | Webhook channel | `corsair.googlecalendar.api.channels.stop/watch` | Webhook registration |
 | Tenant management | `getCorsair().manage.connectionStatus.get` | Connection checks |
 | Multi-tenancy | `getCorsair().withTenant(tenantId)` | All Corsair calls |
 
-**Total Corsair calls in codebase: 40+** across Gmail and Calendar APIs.
+**Total Corsair calls in codebase: 55+** across Gmail and Calendar APIs + DB search layer.
 
 ---
 
@@ -161,7 +164,7 @@ MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `pr
 - **Rate limiting** — Redis per-user and per-IP rate limits on both API and MCP server
 
 ### Architecture
-- **Shared tool executor** (`agent-executor.ts`) — single source of truth for 34 tools, used by both blocking and streaming agent variants
+- **Shared tool executor** (`agent-executor.ts`) — single source of truth for 52 tools, used by both blocking and streaming agent variants
 - **Zero duplication** — `agent.ts` and `agent-stream.ts` are thin wrappers over `buildToolExecutor()`
 - **Brief server cache** — 5-minute per-user TTL cache prevents 6 Corsair calls per browser focus event
 - **Meeting prep O(1)** — `calendar.getEvent(id)` direct fetch vs. previous list+find scan
@@ -182,6 +185,6 @@ MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `pr
 | Gmail Workflow | 15 | Send/draft (cc/bcc), labels, archive, star, important, trash, read |
 | Calendar Workflow | 15 | Create, update, cancel, respond, free/busy, push notifications |
 | Productivity UX | 15 | Brief, Smart Reply, Meeting Prep, Contact Intel, Summarize, Follow-ups |
-| AI + MCP Usage | 15 | 34-tool agent, 34-tool MCP server, resources, prompts, streaming SSE |
+| AI + MCP Usage | 15 | 52-tool agent, 55-tool MCP server, resources, prompts, streaming SSE |
 | Engineering Quality | 10 | Type-safe, no duplication, rate limiting, injection guard, ORM, cache |
 | Demo + Docs | 10 | This guide + README + curl examples + live app |

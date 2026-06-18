@@ -613,9 +613,153 @@ const MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  {
+    name: "mute_thread",
+    description: "Mute a Gmail thread via Corsair (adds MUTE label, removes from INBOX). Future messages in this thread will skip the inbox. Useful for silencing noisy threads without archiving.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID to mute." },
+      },
+    },
+  },
+  {
+    name: "unmute_thread",
+    description: "Unmute a Gmail thread via Corsair (removes MUTE label, restores to INBOX). Reverses a previous mute_thread action.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: {
+        threadId: { type: "string", description: "Gmail thread ID to unmute." },
+      },
+    },
+  },
+  {
+    name: "update_draft",
+    description: "Update an existing Gmail draft via Corsair drafts.update.",
+    inputSchema: {
+      type: "object",
+      required: ["draftId", "to", "subject", "body"],
+      properties: {
+        draftId: { type: "string" },
+        to: { type: "string" },
+        subject: { type: "string" },
+        body: { type: "string" },
+        threadId: { type: "string" },
+        cc: { type: "string" },
+        bcc: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "batch_modify_threads",
+    description: "Bulk add/remove Gmail labels on multiple threads via Corsair messages.batchModify.",
+    inputSchema: {
+      type: "object",
+      required: ["threadIds"],
+      properties: {
+        threadIds: { type: "array", items: { type: "string" } },
+        addLabelIds: { type: "array", items: { type: "string" } },
+        removeLabelIds: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
+  {
+    name: "list_messages",
+    description: "List Gmail messages via Corsair messages.list with optional query and label filters.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxResults: { type: "number" },
+        q: { type: "string" },
+        labelIds: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
+  {
+    name: "modify_message",
+    description: "Add or remove labels on a single Gmail message via Corsair messages.modify.",
+    inputSchema: {
+      type: "object",
+      required: ["messageId"],
+      properties: {
+        messageId: { type: "string" },
+        addLabelIds: { type: "array", items: { type: "string" } },
+        removeLabelIds: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
+  {
+    name: "delete_thread",
+    description: "Permanently delete a Gmail thread via Corsair threads.delete.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string" } },
+    },
+  },
+  {
+    name: "untrash_thread",
+    description: "Restore a Gmail thread from trash via Corsair threads.untrash.",
+    inputSchema: {
+      type: "object",
+      required: ["threadId"],
+      properties: { threadId: { type: "string" } },
+    },
+  },
+  {
+    name: "search_threads_db",
+    description: "Search synced Gmail threads via corsair.gmail.db.threads.search (local Corsair DB cache).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "search_messages_db",
+    description: "Search synced Gmail messages via corsair.gmail.db.messages.search.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        from: { type: "string" },
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "search_events_db",
+    description: "Search synced Google Calendar events via googlecalendar.db.events.search.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "search_calendars_db",
+    description: "Search synced Google Calendars via googlecalendar.db.calendars.search.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        limit: { type: "number" },
+        offset: { type: "number" },
+      },
+    },
+  },
 ];
 
-const MCP_SERVER_VERSION = "2.1.0";
+const MCP_SERVER_VERSION = "2.3.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -1110,12 +1254,118 @@ async function callTool(
     case "send_draft": {
       const draftId = String(args.draftId ?? "");
       if (!draftId) return toolResult({ error: "draftId is required" });
-      // Use the Corsair drafts.send API to send the draft immediately.
-      const corsairClient = (await import("../corsair")).getCorsair().withTenant(userId);
-      await (corsairClient.gmail.api.drafts as {
-        send: (opts: { draft: { id: string } }) => Promise<void>;
-      }).send({ draft: { id: draftId } });
-      return toolResult({ ok: true, draftId, sent: true });
+      const result = await inbox.sendDraft(userId, draftId);
+      return toolResult({ ok: true, draftId, sent: true, ...result });
+    }
+
+    case "mute_thread": {
+      const threadId = String(args.threadId ?? "");
+      if (!threadId) return toolResult({ error: "threadId is required" });
+      await inbox.muteThread(userId, threadId);
+      return toolResult({ ok: true, threadId, muted: true });
+    }
+
+    case "unmute_thread": {
+      const threadId = String(args.threadId ?? "");
+      if (!threadId) return toolResult({ error: "threadId is required" });
+      await inbox.unmuteThread(userId, threadId);
+      return toolResult({ ok: true, threadId, muted: false });
+    }
+
+    case "update_draft": {
+      const draftId = String(args.draftId ?? "");
+      const to = String(args.to ?? "");
+      const subject = String(args.subject ?? "");
+      const body = String(args.body ?? "");
+      if (!draftId || !to || !subject) return toolResult({ error: "draftId, to, and subject are required" });
+      const result = await inbox.updateDraft(userId, draftId, {
+        to, subject, body,
+        threadId: typeof args.threadId === "string" ? args.threadId : undefined,
+        cc: typeof args.cc === "string" ? args.cc : undefined,
+        bcc: typeof args.bcc === "string" ? args.bcc : undefined,
+      });
+      return toolResult({ ok: true, ...result });
+    }
+
+    case "batch_modify_threads": {
+      const threadIds = Array.isArray(args.threadIds) ? args.threadIds.map(String) : [];
+      if (threadIds.length === 0) return toolResult({ error: "threadIds is required" });
+      const result = await inbox.batchModifyThreads(userId, {
+        threadIds,
+        addLabelIds: Array.isArray(args.addLabelIds) ? args.addLabelIds.map(String) : undefined,
+        removeLabelIds: Array.isArray(args.removeLabelIds) ? args.removeLabelIds.map(String) : undefined,
+      });
+      return toolResult({ ok: true, ...result });
+    }
+
+    case "list_messages": {
+      const result = await inbox.listMessages(userId, {
+        maxResults: args.maxResults != null ? Number(args.maxResults) : undefined,
+        q: typeof args.q === "string" ? args.q : undefined,
+        labelIds: Array.isArray(args.labelIds) ? args.labelIds.map(String) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "modify_message": {
+      const messageId = String(args.messageId ?? "");
+      if (!messageId) return toolResult({ error: "messageId is required" });
+      await inbox.modifyMessage(userId, messageId, {
+        addLabelIds: Array.isArray(args.addLabelIds) ? args.addLabelIds.map(String) : undefined,
+        removeLabelIds: Array.isArray(args.removeLabelIds) ? args.removeLabelIds.map(String) : undefined,
+      });
+      return toolResult({ ok: true, messageId });
+    }
+
+    case "delete_thread": {
+      const threadId = String(args.threadId ?? "");
+      if (!threadId) return toolResult({ error: "threadId is required" });
+      await inbox.deleteThread(userId, threadId);
+      return toolResult({ ok: true, threadId, deleted: true });
+    }
+
+    case "untrash_thread": {
+      const threadId = String(args.threadId ?? "");
+      if (!threadId) return toolResult({ error: "threadId is required" });
+      await inbox.untrashThread(userId, threadId);
+      return toolResult({ ok: true, threadId, untrashed: true });
+    }
+
+    case "search_threads_db": {
+      const result = await inbox.searchThreadsDb(userId, {
+        query: typeof args.query === "string" ? args.query : undefined,
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "search_messages_db": {
+      const result = await inbox.searchMessagesDb(userId, {
+        query: typeof args.query === "string" ? args.query : undefined,
+        from: typeof args.from === "string" ? args.from : undefined,
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "search_events_db": {
+      const result = await calendar.searchEventsDb(userId, {
+        query: typeof args.query === "string" ? args.query : undefined,
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
+    }
+
+    case "search_calendars_db": {
+      const result = await calendar.searchCalendarsDb(userId, {
+        query: typeof args.query === "string" ? args.query : undefined,
+        limit: args.limit != null ? Number(args.limit) : undefined,
+        offset: args.offset != null ? Number(args.offset) : undefined,
+      });
+      return toolResult(result);
     }
 
     default:

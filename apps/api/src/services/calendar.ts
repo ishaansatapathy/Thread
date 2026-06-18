@@ -11,6 +11,7 @@ import { getCorsair, getCorsairCalendarRedirectUri, isCorsairConfigured } from "
 import { getCorsairOAuthModule } from "../corsair-imports";
 import { env } from "../env";
 import { clearCalendarChannel, getCalendarChannel, setCalendarChannel } from "./calendar-state";
+import { searchCalendarEventsDb, searchCalendarsDb } from "./corsair-db";
 import { ensureCorsairTenant } from "./corsair-tenant";
 
 function pad2(value: number) {
@@ -564,41 +565,29 @@ export class CorsairCalendarService implements CalendarService {
       }
 
       const corsair = getCorsair().withTenant(tenantId);
+      const timeZone = input.timeZone?.trim() || "UTC";
 
-      // Attempt to use the real Google FreeBusy API first.
       try {
-        const freeBusyResp = await (corsair.googlecalendar.api as {
-          freebusy?: {
-            query: (body: {
-              timeMin: string;
-              timeMax: string;
-              timeZone?: string;
-              items: Array<{ id: string }>;
-            }) => Promise<{
-              calendars?: Record<string, { busy?: Array<{ start: string; end: string }> }>;
-            }>;
-          };
-        }).freebusy?.query({
+        const availability = await corsair.googlecalendar.api.calendar.getAvailability({
           timeMin: input.startDateTime,
           timeMax: input.endDateTime,
-          timeZone: input.timeZone?.trim() || "UTC",
+          timeZone,
           items: [{ id: "primary" }],
         });
 
-        if (freeBusyResp?.calendars?.primary) {
-          const busySlots = freeBusyResp.calendars.primary.busy ?? [];
-          // Convert busy slots to minimal CalendarEvent-like objects for the UI.
-          const conflicts: CalendarEvent[] = busySlots.map((slot, i) => ({
+        const busySlots = availability.calendars?.primary?.busy ?? [];
+        const conflicts: CalendarEvent[] = busySlots
+          .filter((slot: { start?: string; end?: string }) => slot.start && slot.end)
+          .map((slot: { start?: string; end?: string }, i: number) => ({
             id: `busy-${i}`,
             summary: "Busy",
-            start: slot.start,
-            end: slot.end,
+            start: slot.start!,
+            end: slot.end!,
             allDay: false,
           }));
-          return { conflicts };
-        }
+        return { conflicts };
       } catch {
-        // FreeBusy API not available (older Corsair SDK) — fall back to listEvents.
+        // getAvailability unavailable — fall back to listEvents.
       }
 
       // Fallback: list events and filter overlapping ones.
@@ -713,6 +702,40 @@ export class CorsairCalendarService implements CalendarService {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  async searchEventsDb(
+    tenantId: string,
+    opts?: { query?: string; limit?: number; offset?: number },
+  ) {
+    const data = opts?.query?.trim() ? { summary: { contains: opts.query.trim() } } : {};
+    const rows = await searchCalendarEventsDb(tenantId, data, {
+      limit: opts?.limit,
+      offset: opts?.offset,
+    });
+    return {
+      events: rows.map((row) => ({
+        id: row.id,
+        summary: row.summary?.trim() || "Untitled event",
+        description: row.description,
+        location: row.location,
+        start: row.start,
+        end: row.end,
+        hangoutLink: row.hangoutLink,
+      })),
+    };
+  }
+
+  async searchCalendarsDb(
+    tenantId: string,
+    opts?: { query?: string; limit?: number; offset?: number },
+  ) {
+    const data = opts?.query?.trim() ? { summary: { contains: opts.query.trim() } } : {};
+    const rows = await searchCalendarsDb(tenantId, data, {
+      limit: opts?.limit,
+      offset: opts?.offset,
+    });
+    return { calendars: rows };
   }
 
   private async stopCalendarChannel(tenantId: string) {

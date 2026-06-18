@@ -62,9 +62,29 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       markImportant: vi.fn(async () => undefined),
       markNotImportant: vi.fn(async () => undefined),
       trashThread: vi.fn(async () => undefined),
+      muteThread: vi.fn(async () => undefined),
+      unmuteThread: vi.fn(async () => undefined),
       deleteDraft: vi.fn(async () => undefined),
+      sendDraft: vi.fn(async () => ({})),
       registerGmailWatch: vi.fn(async () => undefined),
       disconnect: vi.fn(async () => undefined),
+      updateDraft: vi.fn(async () => ({ id: "draft-1" })),
+      getLabel: vi.fn(async () => null),
+      updateLabel: vi.fn(async () => ({ id: "label-id", name: "Test" })),
+      deleteLabel: vi.fn(async () => undefined),
+      listMessages: vi.fn(async () => ({ messages: [] })),
+      modifyMessage: vi.fn(async () => undefined),
+      batchModifyMessages: vi.fn(async () => undefined),
+      batchModifyThreads: vi.fn(async () => ({ modifiedMessages: 0 })),
+      trashMessage: vi.fn(async () => undefined),
+      untrashMessage: vi.fn(async () => undefined),
+      deleteMessage: vi.fn(async () => undefined),
+      deleteThread: vi.fn(async () => undefined),
+      untrashThread: vi.fn(async () => undefined),
+      searchThreadsDb: vi.fn(async () => ({ threads: [] })),
+      searchMessagesDb: vi.fn(async () => ({ messages: [] })),
+      searchDraftsDb: vi.fn(async () => ({ drafts: [] })),
+      searchLabelsDb: vi.fn(async () => ({ labels: [] })),
     };
 
     registerInboxService(inboxStub);
@@ -93,6 +113,8 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       patchEventDetails: vi.fn(async () => null),
       quickAddEvent: vi.fn(async () => ({ id: "event-1", summary: "Quick event" })),
       registerWebhook: vi.fn(async () => undefined),
+      searchEventsDb: vi.fn(async () => ({ events: [] })),
+      searchCalendarsDb: vi.fn(async () => ({ calendars: [] })),
     });
   });
 

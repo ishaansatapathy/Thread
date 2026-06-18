@@ -114,6 +114,18 @@ export interface CalendarService {
    * Best-effort — does not throw on failure.
    */
   registerWebhook(tenantId: string, webhookUrl: string): Promise<void>;
+
+  /** Search synced calendar events via googlecalendar.db.events.search. */
+  searchEventsDb(
+    tenantId: string,
+    opts?: { query?: string; limit?: number; offset?: number },
+  ): Promise<{ events: CalendarEvent[] }>;
+
+  /** Search synced calendars via googlecalendar.db.calendars.search. */
+  searchCalendarsDb(
+    tenantId: string,
+    opts?: { query?: string; limit?: number; offset?: number },
+  ): Promise<{ calendars: Array<{ id: string; summary?: string; timeZone?: string }> }>;
 }
 
 let calendarService: CalendarService | null = null;
