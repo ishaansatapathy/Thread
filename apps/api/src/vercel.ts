@@ -5,6 +5,7 @@ import type { Express } from "express";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { runApiBootstrap, validateApiEnv } from "./api-bootstrap";
+import { preloadCorsairImportModules } from "./corsair-imports-esm";
 
 let app: Express | null = null;
 let bootPromise: Promise<Express> | null = null;
@@ -20,9 +21,9 @@ async function bootExpress(): Promise<Express> {
     throw error;
   }
 
+  await preloadCorsairImportModules();
   await runApiBootstrap({ serverless: true });
-  const serverPath = require("node:path").join(__dirname, "server.js");
-  const { default: expressApp } = require(serverPath);
+  const { default: expressApp } = await import("./server");
   return expressApp;
 }
 
