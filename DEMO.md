@@ -109,6 +109,22 @@ curl -X POST https://thread-api.vercel.app/mcp \
 
 MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, `prompts/get`, `initialize` — **full MCP 2024-11-05 compliance**.
 
+**Official Corsair MCP** (`@corsair-dev/mcp` at `/mcp/corsair`):
+
+```bash
+# List Corsair dynamic tools (list_operations, get_schema, run_script, corsair_setup)
+curl -X POST https://thread-api.vercel.app/mcp/corsair \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":10,"method":"tools/list"}'
+
+# Discover all Gmail + Calendar SDK operations
+curl -X POST https://thread-api.vercel.app/mcp/corsair \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"list_operations","arguments":{}}}'
+```
+
+After Gmail/Calendar OAuth connect, **`setupCorsair({ backfill: true })`** seeds `corsair_entities` from list endpoints automatically.
+
 ---
 
 ### Step 5 — More AI Features
@@ -151,6 +167,7 @@ MCP exposes: `tools/list`, `tools/call`, `resources/list`, `resources/read`, `pr
 | Error handling | Root `errorHandlers` (429 + 5xx retry) | `createCorsair({ errorHandlers })` |
 | Management API | `toExpressHandler` | `GET/POST /api/corsair/*` |
 | Official MCP | `@corsair-dev/mcp` | `POST /mcp/corsair` |
+| DB backfill | `setupCorsair({ backfill: true })` | After OAuth connect (Gmail + Calendar callbacks) |
 | Webhook channel | `corsair.googlecalendar.api.channels.stop/watch` | Webhook registration |
 | Tenant management | `getCorsair().manage.connectionStatus.get` | Connection checks |
 | Multi-tenancy | `getCorsair().withTenant(tenantId)` | All Corsair calls |

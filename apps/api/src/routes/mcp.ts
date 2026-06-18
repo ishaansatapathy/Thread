@@ -1384,6 +1384,11 @@ mcpRouter.get("/", (_req: Request, res: Response) => {
     description: "Thread MCP server — Gmail inbox + approval queue tools for AI assistants",
     protocol: "MCP 2024-11 / JSON-RPC 2.0",
     endpoint: "/mcp",
+    corsairOfficialMcp: {
+      endpoint: "/mcp/corsair",
+      tools: ["corsair_setup", "list_operations", "get_schema", "run_script"],
+      package: "@corsair-dev/mcp",
+    },
     tools: MCP_TOOLS.map((t) => t.name),
   });
 });
