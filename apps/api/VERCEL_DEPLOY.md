@@ -45,7 +45,9 @@ curl https://thread-api.vercel.app/ready
 curl https://thread-api.vercel.app/docs
 ```
 
-Build copies `dist/` → `api/dist/` so the serverless function finds bundled assets (`vercel.js` + JSON sidecars). If `/health` returns JSON (even `ready: false`) the crash is fixed.
+Build copies `dist/` → `api/dist/` (and `api/_bundle.js` fallback) so the serverless function finds bundled assets. If `/health` returns JSON the crash is fixed.
+
+Dedicated **`api/health.js`** answers `/health` and `/ping` without loading the heavy bundle — use it to verify the Vercel project Root Directory (`apps/api`) is correct even during cold start.
 
 If you get **503** with `Missing required environment variables`, add the listed vars in Vercel → Settings → Environment Variables → **Redeploy**.
 

@@ -11,6 +11,9 @@
     "test": "vitest run",
     "corsair:setup": "dotenv -e ../../.env -- corsair setup --plugin=gmail --plugin=googlecalendar --backfill"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
