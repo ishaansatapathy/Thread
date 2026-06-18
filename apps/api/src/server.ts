@@ -108,7 +108,14 @@ function buildOpenApiDocument() {
   }
 }
 
-const openApiDocument = buildOpenApiDocument();
+let cachedOpenApiDocument: OpenApiDocumentWithPaths | null = null;
+
+function getOpenApiDocument(): OpenApiDocumentWithPaths {
+  if (!cachedOpenApiDocument) {
+    cachedOpenApiDocument = buildOpenApiDocument();
+  }
+  return cachedOpenApiDocument;
+}
 
 function isProduction() {
   return env.NODE_ENV === "production" || env.NODE_ENV === "prod";
@@ -275,7 +282,17 @@ export { incrementCounter };
 logger.debug(`openapi.json: ${env.BASE_URL}/openapi.json`);
 
 app.get("/openapi.json", requireOpenApiDocsAuth, (_req, res) => {
-  return res.json(openApiDocument);
+  try {
+    return res.json(getOpenApiDocument());
+  } catch (error) {
+    logger.error("OpenAPI document unavailable", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return res.status(503).json({
+      error: "OpenAPI document unavailable",
+      hint: "Check server logs for generation errors",
+    });
+  }
 });
 
 logger.debug(`docs: ${env.BASE_URL}/docs`);

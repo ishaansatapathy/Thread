@@ -6,14 +6,13 @@ import { Router } from "express";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { logger } from "@repo/logger";
-import { authService } from "@repo/trpc/server/services";
+import { authService, invalidateBriefCache } from "@repo/trpc/server/services";
 import { runAgentChatStream } from "@repo/services/ai/agent-stream";
 import {
   appendAgentSessionTurn,
   getAgentSession,
 } from "@repo/services/ai/agent-sessions";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
-import { invalidateBriefCache } from "@repo/trpc/server/routes/ai/route";
 
 const toolMemoryEntrySchema = z.object({
   at: z.string(),
