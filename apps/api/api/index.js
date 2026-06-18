@@ -47,7 +47,11 @@ function resolveBundlePath() {
 // Static read helps Vercel Node File Trace include the bundle directory.
 let tracedBundlePath = resolveBundlePath();
 if (tracedBundlePath) {
-  fs.statSync(tracedBundlePath);
+  try {
+    fs.statSync(tracedBundlePath);
+  } catch {
+    tracedBundlePath = null;
+  }
 }
 
 let handler = null;
@@ -72,21 +76,21 @@ async function loadHandler() {
 }
 
 module.exports = async (req, res) => {
-  const pathname = requestPath(req);
-
-  if (pathname === "/health" || pathname === "/" || pathname === "/ping" || pathname === "/api") {
-    sendJson(res, 200, {
-      healthy: true,
-      ready: Boolean(handler),
-      bundle: Boolean(tracedBundlePath ?? resolveBundlePath()),
-      message: handler
-        ? "Thread API is healthy"
-        : "Thread API is starting — wait a few seconds and retry",
-    });
-    return;
-  }
-
   try {
+    const pathname = requestPath(req);
+
+    if (pathname === "/health" || pathname === "/" || pathname === "/ping" || pathname === "/api") {
+      sendJson(res, 200, {
+        healthy: true,
+        ready: Boolean(handler),
+        bundle: Boolean(tracedBundlePath ?? resolveBundlePath()),
+        message: handler
+          ? "Thread API is healthy"
+          : "Thread API is starting — wait a few seconds and retry",
+      });
+      return;
+    }
+
     const fn = await loadHandler();
     if (req.url?.split("?")[0] === "/api" && pathname !== "/api") {
       withPath(req, pathname);
