@@ -350,6 +350,9 @@ export function ThreadFooter() {
           <a href="#workflows" style={{ color: "inherit", textDecoration: "none" }}>
             Workflows
           </a>
+          <a href="/privacy" style={{ color: "inherit", textDecoration: "none" }}>
+            Privacy Policy
+          </a>
           <span>#chaicode #corsair-dev</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--thread-dim)" }}>
