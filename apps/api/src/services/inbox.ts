@@ -1311,16 +1311,8 @@ export class CorsairInboxService implements InboxService {
   }
 
   async disconnect(tenantId: string): Promise<void> {
-    const corsair = getCorsair();
-    const deleteFn = (corsair.manage as {
-      connections?: { delete: (opts: { tenantId: string; provider: string }) => Promise<void> };
-    }).connections?.delete;
-
-    if (!deleteFn) {
-      throw new Error("Corsair connections API is not available");
-    }
-
-    await deleteFn.call(corsair.manage.connections, { tenantId, provider: "gmail" });
+    const { disconnectCorsairConnection } = await import("./corsair-disconnect");
+    await disconnectCorsairConnection(tenantId, "gmail");
     invalidateConnectionCache(tenantId);
   }
 }
