@@ -162,44 +162,54 @@ export async function gatherDailyBriefContext(input: {
 
   // Recent unread personal mail only — promotions/social/notifications excluded.
   const unreadPromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, {
-        maxResults: 20,
-        query:
-          "in:inbox is:unread newer_than:3d -category:promotions -category:social -category:updates -category:forums",
-      })
+    ? inbox
+        .listThreads(input.tenantId, {
+          maxResults: 20,
+          query:
+            "in:inbox is:unread newer_than:3d -category:promotions -category:social -category:updates -category:forums",
+        })
+        .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const deadlinePromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, {
-        maxResults: 8,
-        query:
-          'in:inbox is:unread newer_than:7d -category:promotions -category:social (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
-      })
+    ? inbox
+        .listThreads(input.tenantId, {
+          maxResults: 8,
+          query:
+            'in:inbox is:unread newer_than:7d -category:promotions -category:social (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
+        })
+        .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const invoicePromise = gmailConnected
-    ? inbox.listThreads(input.tenantId, {
-        maxResults: 5,
-        query:
-          'in:inbox is:unread newer_than:14d -category:promotions (invoice OR unpaid OR "payment due")',
-      })
+    ? inbox
+        .listThreads(input.tenantId, {
+          maxResults: 5,
+          query:
+            'in:inbox is:unread newer_than:14d -category:promotions (invoice OR unpaid OR "payment due")',
+        })
+        .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
   const eventsPromise = calendarConnected
-    ? calendar.listEvents(input.tenantId, {
-        timeMin: day.timeMin,
-        timeMax: day.timeMax,
-        maxResults: 25,
-        timeZone,
-      })
+    ? calendar
+        .listEvents(input.tenantId, {
+          timeMin: day.timeMin,
+          timeMax: day.timeMax,
+          maxResults: 25,
+          timeZone,
+        })
+        .catch(() => ({ events: [] as CalendarEvent[] }))
     : Promise.resolve({ events: [] as CalendarEvent[] });
 
   const freeBusyPromise = calendarConnected
-    ? calendar.checkFreeBusy(input.tenantId, {
-        startDateTime: day.timeMin,
-        endDateTime: day.timeMax,
-        timeZone,
-      })
+    ? calendar
+        .checkFreeBusy(input.tenantId, {
+          startDateTime: day.timeMin,
+          endDateTime: day.timeMax,
+          timeZone,
+        })
+        .catch(() => ({ conflicts: [] as CalendarEvent[] }))
     : Promise.resolve({ conflicts: [] as CalendarEvent[] });
 
   // Waiting on others — sent mail with no reply in last 5 days.
