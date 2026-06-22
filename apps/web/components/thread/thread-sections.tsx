@@ -343,16 +343,10 @@ export function ThreadFooter() {
           <span style={{ color: "var(--thread-line)" }}>|</span>
           <Github size={14} style={{ opacity: 0.4 }} />
         </div>
-        <div style={{ display: "flex", gap: 20 }}>
-          <a href="#faq" style={{ color: "inherit", textDecoration: "none" }}>
-            FAQ
-          </a>
-          <a href="#workflows" style={{ color: "inherit", textDecoration: "none" }}>
-            Workflows
-          </a>
-          <a href="/privacy" style={{ color: "inherit", textDecoration: "none" }}>
-            Privacy Policy
-          </a>
+        <div className="thread-footer-links">
+          <a href="#faq">FAQ</a>
+          <a href="#workflows">Workflows</a>
+          <a href="/privacy">Privacy Policy</a>
           <span>#chaicode #corsair-dev</span>
         </div>
         <div style={{ fontSize: 12, color: "var(--thread-dim)" }}>

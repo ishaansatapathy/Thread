@@ -22,14 +22,13 @@ function ConnectionRow({
 }) {
   if (connected) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div className="thread-set-row-actions">
         <span className="thread-set-status" data-on={true}>
           {connectedLabel}
         </span>
         <button
           type="button"
-          className="thread-btn-ghost"
-          style={{ fontSize: 12, padding: "6px 12px", color: "var(--thread-dim)" }}
+          className="thread-btn-ghost thread-set-disconnect"
           disabled={disconnecting}
           onClick={onDisconnect}
         >
@@ -186,7 +185,7 @@ export default function SettingsPage() {
             <label className="thread-set-label" htmlFor="displayName">
               Display name
             </label>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div className="thread-set-name-row">
               <input
                 id="displayName"
                 className="thread-set-input"
