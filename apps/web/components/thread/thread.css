@@ -240,6 +240,185 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+.thread-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.thread-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.thread-nav-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--thread-line);
+  display: grid;
+  place-items: center;
+  color: var(--thread-muted);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.thread-nav-cta {
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.thread-nav-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.thread-nav-mobile-backdrop {
+  display: none;
+  position: fixed;
+  inset: 56px 0 0;
+  z-index: 45;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.thread-nav-mobile-panel {
+  display: none;
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  z-index: 46;
+  padding: 16px 20px 24px;
+  background: rgba(8, 8, 8, 0.98);
+  border-bottom: 1px solid var(--thread-line-strong);
+  flex-direction: column;
+  gap: 4px;
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+}
+
+.thread-nav-mobile-link {
+  display: block;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: var(--thread-text);
+  text-decoration: none;
+}
+
+.thread-nav-mobile-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.thread-nav-mobile-panel .thread-btn-accent {
+  margin-top: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.thread-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+}
+
+.thread-footer-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.thread-footer-links a:hover {
+  color: var(--thread-text);
+}
+
+/* Privacy policy (Google OAuth verification) */
+.thread-privacy-shell {
+  min-height: 100dvh;
+  background: var(--thread-bg, #020202);
+}
+
+.thread-privacy {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 72px 20px 48px;
+  line-height: 1.7;
+  color: var(--thread-muted, #d1d5db);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.thread-privacy-back {
+  font-size: 13px;
+  color: var(--thread-dim, #6b7280);
+  text-decoration: none;
+  display: inline-block;
+  margin-bottom: 28px;
+}
+
+.thread-privacy-title {
+  font-size: clamp(1.75rem, 5vw, 2rem);
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--thread-text, #f9fafb);
+}
+
+.thread-privacy-updated {
+  font-size: 13px;
+  color: var(--thread-dim, #6b7280);
+  margin: 0 0 36px;
+}
+
+.thread-privacy-section {
+  margin-bottom: 32px;
+}
+
+.thread-privacy-section h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--thread-text, #f3f4f6);
+  margin: 0 0 10px;
+}
+
+.thread-privacy-body {
+  font-size: 14.5px;
+}
+
+.thread-privacy-body p {
+  margin: 0 0 12px;
+}
+
+.thread-privacy-body ul {
+  padding-left: 20px;
+  margin: 8px 0 12px;
+}
+
+.thread-privacy-body a {
+  color: #60a5fa;
+}
+
+@media (max-width: 640px) {
+  .thread-privacy {
+    padding-top: 64px;
+    padding-inline: 16px;
+  }
+}
+
 .thread-hero {
   position: relative;
   padding-top: 56px;
@@ -454,10 +633,38 @@
   .thread-frame,
   .thread-nav-inner {
     width: calc(100% - 24px);
+    padding-inline: 12px;
   }
 
   .thread-nav-links {
     display: none !important;
+  }
+
+  .thread-nav-menu-btn {
+    display: inline-flex;
+  }
+
+  .thread-nav-mobile-backdrop,
+  .thread-nav-mobile-panel {
+    display: flex;
+  }
+
+  .thread-nav-login {
+    display: none;
+  }
+
+  .thread-nav-cta-text {
+    display: none;
+  }
+
+  .thread-nav-cta {
+    padding-inline: 12px;
+  }
+
+  .thread-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-inline: 20px;
   }
 
   .thread-hub {

@@ -8,35 +8,13 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <main
-      style={{
-        maxWidth: 720,
-        margin: "0 auto",
-        padding: "64px 24px",
-        fontFamily: "system-ui, sans-serif",
-        color: "#e5e7eb",
-        lineHeight: 1.7,
-      }}
-    >
-      <Link
-        href="/"
-        style={{
-          fontSize: 13,
-          color: "#6b7280",
-          textDecoration: "none",
-          display: "inline-block",
-          marginBottom: 32,
-        }}
-      >
+    <main className="thread-privacy">
+      <Link href="/" className="thread-privacy-back">
         ← Back to Thread
       </Link>
 
-      <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8, color: "#f9fafb" }}>
-        Privacy Policy
-      </h1>
-      <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 40 }}>
-        Last updated: June 2026
-      </p>
+      <h1 className="thread-privacy-title">Privacy Policy</h1>
+      <p className="thread-privacy-updated">Last updated: June 2026</p>
 
       <Section title="Overview">
         Thread (&quot;the app&quot;) is an AI-powered email and calendar management tool. We are
@@ -46,7 +24,7 @@ export default function PrivacyPage() {
 
       <Section title="Data We Access">
         <p>When you connect your Google account, Thread requests access to:</p>
-        <ul style={{ paddingLeft: 20, marginTop: 8 }}>
+        <ul>
           <li>
             <strong>Gmail</strong> — to read, send, and manage your email threads on your behalf.
           </li>
@@ -55,15 +33,10 @@ export default function PrivacyPage() {
             behalf.
           </li>
         </ul>
-        <p style={{ marginTop: 12 }}>
+        <p>
           These permissions are granted via Google OAuth 2.0 and can be revoked at any time from
           your{" "}
-          <a
-            href="https://myaccount.google.com/permissions"
-            target="_blank"
-            rel="noreferrer"
-            style={{ color: "#60a5fa" }}
-          >
+          <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">
             Google Account settings
           </a>
           .
@@ -71,13 +44,13 @@ export default function PrivacyPage() {
       </Section>
 
       <Section title="How We Use Your Data">
-        <ul style={{ paddingLeft: 20 }}>
+        <ul>
           <li>To generate your AI Daily Brief and smart context summaries.</li>
           <li>To suggest replies, meeting prep notes, and follow-up reminders.</li>
           <li>To display your inbox and calendar within the app.</li>
           <li>To queue and approve email and calendar actions on your behalf.</li>
         </ul>
-        <p style={{ marginTop: 12 }}>
+        <p>
           We do <strong>not</strong> sell, share, or use your email or calendar data for advertising
           purposes.
         </p>
@@ -89,7 +62,7 @@ export default function PrivacyPage() {
           provide fast, offline-capable views. This cache is tied to your account and deleted when
           you disconnect your Google account.
         </p>
-        <p style={{ marginTop: 8 }}>
+        <p>
           AI processing (summaries, suggestions) is performed via the OpenAI API. Email content
           sent to OpenAI is used solely to generate responses for you and is not retained by OpenAI
           beyond the API request per their{" "}
@@ -97,7 +70,6 @@ export default function PrivacyPage() {
             href="https://openai.com/policies/api-data-usage-policies"
             target="_blank"
             rel="noreferrer"
-            style={{ color: "#60a5fa" }}
           >
             API data usage policy
           </a>
@@ -106,7 +78,7 @@ export default function PrivacyPage() {
       </Section>
 
       <Section title="Third-Party Services">
-        <ul style={{ paddingLeft: 20 }}>
+        <ul>
           <li>
             <strong>Google APIs</strong> — Gmail and Calendar access via OAuth 2.0.
           </li>
@@ -121,17 +93,12 @@ export default function PrivacyPage() {
 
       <Section title="Your Rights">
         <p>You may at any time:</p>
-        <ul style={{ paddingLeft: 20, marginTop: 8 }}>
+        <ul>
           <li>Disconnect your Google account from the Settings page.</li>
           <li>Request deletion of your cached data by contacting us.</li>
           <li>
             Revoke Google permissions from{" "}
-            <a
-              href="https://myaccount.google.com/permissions"
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "#60a5fa" }}
-            >
+            <a href="https://myaccount.google.com/permissions" target="_blank" rel="noreferrer">
               myaccount.google.com/permissions
             </a>
             .
@@ -142,10 +109,7 @@ export default function PrivacyPage() {
       <Section title="Contact">
         <p>
           For any privacy-related questions, please contact us at{" "}
-          <a href="mailto:privacy@thread-web.vercel.app" style={{ color: "#60a5fa" }}>
-            privacy@thread-web.vercel.app
-          </a>
-          .
+          <a href="mailto:privacy@thread-web.vercel.app">privacy@thread-web.vercel.app</a>.
         </p>
       </Section>
     </main>
@@ -154,11 +118,9 @@ export default function PrivacyPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginBottom: 36 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: "#f3f4f6", marginBottom: 10 }}>
-        {title}
-      </h2>
-      <div style={{ fontSize: 14.5, color: "#d1d5db" }}>{children}</div>
+    <section className="thread-privacy-section">
+      <h2>{title}</h2>
+      <div className="thread-privacy-body">{children}</div>
     </section>
   );
 }

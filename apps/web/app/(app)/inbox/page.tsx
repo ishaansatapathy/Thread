@@ -1602,10 +1602,7 @@ export default function InboxPage() {
             </p>
           </div>
         ) : selectedQuery.data ? (
-          <div
-            className="thread-inbox-message"
-            style={{ display: "flex", flexDirection: "row", gap: 0, overflow: "hidden" }}
-          >
+          <div className="thread-inbox-message thread-inbox-message--split">
           <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
             <button
               type="button"

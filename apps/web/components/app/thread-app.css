@@ -268,6 +268,10 @@
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .thread-app-title-sub {
@@ -4592,4 +4596,149 @@
   background: rgba(255, 255, 255, 0.05);
   color: var(--thread-muted);
   border: 1px solid var(--thread-line);
+}
+
+/* ── Settings helpers ── */
+.thread-set-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.thread-set-disconnect {
+  font-size: 12px;
+  padding: 6px 12px;
+  color: var(--thread-dim);
+}
+
+.thread-set-name-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.thread-set-name-row .thread-set-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.thread-inbox-message--split {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* ── Mobile / tablet polish (Google OAuth verification) ── */
+@media (max-width: 880px) {
+  .thread-app-content {
+    padding: 16px 14px 48px;
+  }
+
+  .thread-app-topbar {
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .thread-app-title-sub {
+    display: none;
+  }
+
+  .thread-gmail-connect-label {
+    display: none;
+  }
+
+  .thread-gmail-connect-btn {
+    padding: 0 10px;
+    gap: 6px;
+  }
+
+  .thread-brief-page {
+    padding: 12px 0 32px;
+  }
+
+  .thread-brief-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .thread-brief-followup-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .thread-brief-followup-btn {
+    align-self: flex-start;
+  }
+
+  .thread-inbox-reading-toolbar {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .thread-inbox-message-head-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .thread-inbox-message--split {
+    flex-direction: column;
+  }
+
+  .scp-sidebar {
+    width: 100%;
+    flex-shrink: 1;
+    border-left: none;
+    border-top: 1px solid var(--thread-line);
+    max-height: min(42dvh, 360px);
+  }
+
+  .thread-set-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .thread-set-row-meta {
+    min-width: 0;
+  }
+
+  .thread-set-row-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .thread-set-row-actions .thread-btn-accent,
+  .thread-set-row > .thread-btn-accent {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .thread-set-toggle {
+    min-width: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .thread-set-name-row {
+    flex-direction: column;
+  }
+
+  .thread-set-name-row .thread-btn-accent {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .thread-app-topbar {
+    padding: 0 10px;
+  }
+
+  .thread-app-title {
+    font-size: 14px;
+    max-width: 28vw;
+  }
 }
