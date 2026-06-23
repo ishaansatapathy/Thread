@@ -38,6 +38,12 @@ export const ROUTE_CATALOG: RouteDoc[] = [
     "Authenticates user and sets httpOnly `jwt` + `jwt_refresh` cookies. Returns user profile or 2FA challenge. **MCP tool:** N/A — use cookies or `THREAD_MCP_API_KEY` for headless.",
   ),
   r(
+    "/authentication/demo-sign-in",
+    "post",
+    "Demo sign-in (no Turnstile)",
+    "Signs in the seeded demo user when DEMO_LOGIN_ENABLED=true. Used by web `/api-auth/demo`.",
+  ),
+  r(
     "/authentication/verify-2fa",
     "post",
     "Complete two-factor authentication",
