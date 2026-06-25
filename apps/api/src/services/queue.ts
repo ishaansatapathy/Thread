@@ -633,7 +633,10 @@ export class ThreadQueueService implements QueueService {
 
     try {
       try {
-        await this.executeItem(userId, claimed.kind, claimed.payload, opts);
+        await this.executeItem(userId, claimed.kind, claimed.payload, {
+          ...opts,
+          preview: claimed.preview ?? undefined,
+        });
       } catch (error) {
         const bridged = await executeQueuedCorsairApproval(error, userId);
         if (!bridged) throw error;
@@ -711,7 +714,10 @@ export class ThreadQueueService implements QueueService {
     userId: string,
     kind: QueueItemKind,
     payload: Record<string, unknown>,
-    opts?: { archive?: { startDateTime: string; endDateTime: string; timeZone?: string } },
+    opts?: {
+      archive?: { startDateTime: string; endDateTime: string; timeZone?: string };
+      preview?: string | null;
+    },
   ) {
     const inbox = getInboxService();
     const calendar = getCalendarService();
@@ -771,7 +777,19 @@ export class ThreadQueueService implements QueueService {
         return;
       }
       case "calendar_invite": {
-        const event = parseCalendarQueuePayload(payload);
+        let event = parseCalendarQueuePayload(payload);
+        const previewText = opts?.preview?.trim();
+        if (previewText && /\b(?:from|at)\s+\d|\d{1,2}\s*(?:am|pm)/i.test(previewText)) {
+          const reparsed = parseQuickAddText(previewText);
+          event = parseCalendarQueuePayload({
+            ...event,
+            summary: reparsed.summary || event.summary,
+            startDateTime: reparsed.startDateTime,
+            endDateTime: reparsed.endDateTime,
+            timeZone: reparsed.timeZone,
+            allDay: reparsed.allDay,
+          });
+        }
         const calStatus = await calendar.getConnectionStatus(userId);
         if (calStatus.googlecalendar !== "connected") {
           if (demoUser) {
