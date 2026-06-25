@@ -29,6 +29,10 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_API_URL: z.string().optional(),
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
+    /** Used by the client-side demo banner to detect demo sessions. */
+    NEXT_PUBLIC_DEMO_USER_EMAIL: z.string().optional(),
+    /** Demo session length in minutes (default 10). */
+    NEXT_PUBLIC_DEMO_SESSION_MINUTES: z.coerce.number().optional(),
   },
 
   /**
@@ -50,6 +54,8 @@ export const env = createEnv({
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY:
       process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY,
+    NEXT_PUBLIC_DEMO_USER_EMAIL: process.env.NEXT_PUBLIC_DEMO_USER_EMAIL,
+    NEXT_PUBLIC_DEMO_SESSION_MINUTES: process.env.NEXT_PUBLIC_DEMO_SESSION_MINUTES,
   },
   /**
    * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

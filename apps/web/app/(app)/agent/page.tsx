@@ -16,6 +16,7 @@ import {
   Sparkles,
   ListChecks,
   Square,
+  X,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -299,6 +300,19 @@ export default function AgentPage() {
   const approvalSettingsReady = !approvalDefaults.isLoading && approvalDefaults.data !== undefined;
   const ready = status.data?.ready === true;
 
+  // Demo mode: allow only 5 GPT calls, then show upgrade modal
+  const DEMO_LIMIT = 5;
+  const DEMO_EMAIL = process.env.NEXT_PUBLIC_DEMO_USER_EMAIL ?? "demo@thread.dev";
+  const isDemoUser = Boolean(
+    meQuery.data?.email && meQuery.data.email.toLowerCase() === DEMO_EMAIL.toLowerCase()
+  );
+  const [demoMsgCount, setDemoMsgCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(sessionStorage.getItem("thread_demo_agent_count") ?? "0");
+  });
+  const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
+
+
   const applySession = useCallback((session: NonNullable<RouterOutputs["agent"]["getSession"]>) => {
     setMessages(session.messages);
     setToolMemory(session.toolMemory);
@@ -415,6 +429,17 @@ export default function AgentPage() {
     if (!ready) {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
       return;
+    }
+
+    // Demo limit: 5 GPT calls max
+    if (isDemoUser && demoMsgCount >= DEMO_LIMIT) {
+      setShowDemoLimitModal(true);
+      return;
+    }
+    if (isDemoUser) {
+      const next = demoMsgCount + 1;
+      setDemoMsgCount(next);
+      sessionStorage.setItem("thread_demo_agent_count", String(next));
     }
 
     streamAbortRef.current?.abort();
@@ -580,6 +605,32 @@ export default function AgentPage() {
 
   return (
     <div className="thread-app-page">
+      {/* Demo limit modal */}
+      {showDemoLimitModal && (
+        <div className="thread-demo-expired-overlay" role="dialog" aria-modal aria-label="Demo limit reached">
+          <div className="thread-demo-expired-card">
+            <div className="thread-demo-expired-icon">
+              <Bot size={22} />
+            </div>
+            <h2 className="thread-demo-expired-title">Demo limit reached</h2>
+            <p className="thread-demo-expired-body">
+              You've used all {DEMO_LIMIT} demo Agent prompts. Connect Gmail or create a free account to keep chatting with Thread Agent.
+            </p>
+            <div className="thread-demo-expired-ctas">
+              <a href="/settings" className="thread-demo-expired-btn thread-demo-expired-btn--primary">
+                <Mail size={14} />
+                Connect Gmail
+              </a>
+              <a href="/sign-in" className="thread-demo-expired-btn thread-demo-expired-btn--ghost">
+                Create account
+              </a>
+            </div>
+            <button type="button" className="thread-demo-expired-close" aria-label="Close" onClick={() => setShowDemoLimitModal(false)}>
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="thread-agent-layout">
         <AgentSessionSidebar
           activeSessionId={activeSessionId}

@@ -17,11 +17,17 @@ import {
   Sparkles,
   Trash2,
   Users,
+  UserPlus,
   X,
   XCircle,
+  Bot,
+  Mail,
+  Clock,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { parseQuickAddText } from "~/lib/parse-quick-add-client";
+import { useDemoMode } from "~/hooks/use-demo-mode";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { QueryErrorState } from "~/components/app/query-error-state";
@@ -44,6 +50,48 @@ import {
   queryBoundsForView,
   viewPeriodLabel,
 } from "~/lib/calendar-view";
+
+/** Two static client-side demo events — no DB, no API. */
+function makeDemoEvents(): CalendarEventItem[] {
+  const today = new Date();
+  today.setSeconds(0, 0);
+
+  // Event 1: today at 11am (1h)
+  const ev1Start = new Date(today);
+  ev1Start.setHours(11, 0, 0, 0);
+  const ev1End = new Date(ev1Start);
+  ev1End.setHours(12, 0, 0, 0);
+
+  // Event 2: tomorrow at 2pm (30min)
+  const ev2Start = new Date(today);
+  ev2Start.setDate(today.getDate() + 1);
+  ev2Start.setHours(14, 0, 0, 0);
+  const ev2End = new Date(ev2Start);
+  ev2End.setMinutes(30);
+
+  return [
+    {
+      id: "demo-cal-1",
+      summary: "Corsair Hackathon Demo",
+      start: ev1Start.toISOString(),
+      end: ev1End.toISOString(),
+      location: "Virtual · meet.google.com/demo",
+      attendees: [
+        { email: "judge@corsair.dev", displayName: "Judge", responseStatus: "accepted" },
+        { email: "demo@thread.dev", displayName: "Thread Demo", responseStatus: "accepted", organizer: true },
+      ],
+    },
+    {
+      id: "demo-cal-2",
+      summary: "Team sync — product review",
+      start: ev2Start.toISOString(),
+      end: ev2End.toISOString(),
+      attendees: [
+        { email: "team@example.com", displayName: "Team", responseStatus: "needsAction" },
+      ],
+    },
+  ];
+}
 
 function recurrenceToRrule(rule: string, custom?: string): string[] | undefined {
   if (rule === "custom") {
@@ -214,6 +262,30 @@ export default function CalendarPage() {
   const isConnected = statusQuery.data?.googlecalendar === "connected";
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
+  // Demo mode: inject 2 client-side events when calendar is not connected
+  const { isDemo: isDemoUser, isDemoExpired } = useDemoMode(userEmail);
+  const demoEvents = useMemo(() => (isDemoUser && !isConnected ? makeDemoEvents() : []), [isDemoUser, isConnected]);
+
+  const [customDemoEvents, setCustomDemoEvents] = useState<CalendarEventItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = localStorage.getItem("thread_demo_custom_events");
+    return saved ? JSON.parse(saved) : makeDemoEvents();
+  });
+
+  const [demoCalendarCount, setDemoCalendarCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(sessionStorage.getItem("thread_demo_calendar_count") ?? "0");
+  });
+
+  const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
+  const [showExpiredModal, setShowExpiredModal] = useState(false);
+
+  useEffect(() => {
+    if (isDemoUser && typeof window !== "undefined") {
+      localStorage.setItem("thread_demo_custom_events", JSON.stringify(customDemoEvents));
+    }
+  }, [customDemoEvents, isDemoUser]);
+
   const eventsQuery = trpc.calendar.listEvents.useQuery(eventQuery, {
     enabled: isConnected && (!dbSearchMode || !eventSearchInput.trim()),
     refetchOnMount: "always",
@@ -228,9 +300,10 @@ export default function CalendarPage() {
   );
 
   const calendarEvents = useMemo(() => {
+    if (isDemoUser && !isConnected) return customDemoEvents;
     if (dbSearchMode && dbSearchTerm) return dbEventsQuery.data?.events ?? [];
     return eventsQuery.data?.events ?? [];
-  }, [dbSearchMode, dbSearchTerm, dbEventsQuery.data?.events, eventsQuery.data?.events]);
+  }, [isDemoUser, isConnected, customDemoEvents, dbSearchMode, dbSearchTerm, dbEventsQuery.data?.events, eventsQuery.data?.events]);
 
   const eventsLoading =
     dbSearchMode && dbSearchTerm ? dbEventsQuery.isLoading : eventsQuery.isLoading;
@@ -528,7 +601,7 @@ export default function CalendarPage() {
 
   return (
     <div>
-      {!isConnected ? (
+      {!isConnected && !isDemoUser ? (
         <div className="thread-app-banner">
           <div className="thread-app-banner-icon">
             <CalIcon size={18} />
@@ -542,57 +615,122 @@ export default function CalendarPage() {
           </a>
         </div>
       ) : (
-        <div className="thread-cal-toolbar">
-          <div>
-            <h3 className="thread-cal-toolbar-title">Your schedule</h3>
-            <p className="thread-cal-toolbar-copy">
-              Live events from Google Calendar. Dashed blocks are queued — approve in Queue to
-              publish.
-            </p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <form
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
-              onSubmit={(e) => {
-                e.preventDefault();
-                const text = quickAddText.trim();
-                if (text) quickAddEvent.mutate({ text });
-              }}
-            >
-              <div style={{
-                display: "flex", alignItems: "center", gap: 6, height: 34,
-                padding: "0 10px", borderRadius: 8,
-                border: "1px solid var(--thread-line)", background: "rgba(255,255,255,0.025)",
-              }}>
-                <Sparkles size={12} style={{ color: "var(--thread-dim)", flexShrink: 0 }} />
-                <input
-                  type="text"
-                  value={quickAddText}
-                  onChange={(e) => setQuickAddText(e.target.value)}
-                  placeholder="e.g. Meeting 22 June 5-6pm or Lunch tomorrow at noon"
-                  style={{
-                    border: "none", outline: "none", background: "transparent",
-                    color: "var(--thread-text)", fontSize: 12, width: 240,
-                  }}
-                  disabled={quickAddEvent.isPending}
-                />
+        <>
+          {isDemoUser && !isConnected && (
+            <div className="thread-app-banner" style={{ margin: "0 0 16px 0", padding: "10px 14px", border: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="thread-app-banner-icon" style={{ padding: 4, width: 26, height: 26, minWidth: 26, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <CalIcon size={14} />
               </div>
-              <button
-                type="submit"
-                className="thread-btn-ghost"
-                style={{ fontSize: 12, padding: "6px 10px" }}
-                disabled={!quickAddText.trim() || quickAddEvent.isPending}
+              <div className="thread-app-banner-text" style={{ flex: 1 }}>
+                <h4 style={{ fontSize: 13, margin: 0 }}>Demo Calendar Preview</h4>
+                <p style={{ fontSize: 11.5, margin: "2px 0 0", opacity: 0.8 }}>Using sample data. Natural language prompting adds events to the UI.</p>
+              </div>
+              <a href={connectHref} className="thread-btn-accent" style={{ fontSize: 11, padding: "4px 10px", height: "auto", display: "inline-flex", alignItems: "center" }}>
+                Connect Calendar
+              </a>
+            </div>
+          )}
+          <div className="thread-cal-toolbar">
+            <div>
+              <h3 className="thread-cal-toolbar-title">
+                {isDemoUser && !isConnected ? "Demo calendar preview" : "Your schedule"}
+              </h3>
+              <p className="thread-cal-toolbar-copy">
+                {isDemoUser && !isConnected
+                  ? "Interactive preview with sample data. Natural language prompting adds events to the UI."
+                  : "Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish."}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <form
+                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const text = quickAddText.trim();
+                  if (!text) return;
+
+                  if (isDemoUser && !isConnected) {
+                    if (isDemoExpired) {
+                      setShowExpiredModal(true);
+                      return;
+                    }
+                    if (demoCalendarCount >= 2) {
+                      setShowDemoLimitModal(true);
+                      return;
+                    }
+
+                    const nextCount = demoCalendarCount + 1;
+                    setDemoCalendarCount(nextCount);
+                    sessionStorage.setItem("thread_demo_calendar_count", String(nextCount));
+
+                    try {
+                      const parsed = parseQuickAddText(text);
+                      const newEvent: CalendarEventItem = {
+                        id: `demo-cal-custom-${Date.now()}`,
+                        summary: parsed.summary,
+                        start: parsed.startDateTime,
+                        end: parsed.endDateTime,
+                        allDay: parsed.allDay,
+                        location: parsed.allDay ? "All day" : "Virtual",
+                        attendees: [],
+                      };
+                      setCustomDemoEvents((prev) => [...prev, newEvent]);
+                      setQuickAddText("");
+                      toast.success(`Event "${parsed.summary}" added to preview`);
+                    } catch (err) {
+                      toast.error("Failed to parse prompt. Try 'Lunch tomorrow at noon'");
+                    }
+                    return;
+                  }
+
+                  quickAddEvent.mutate({ text });
+                }}
               >
-                {quickAddEvent.isPending ? <Loader2 size={13} className="thread-spin" /> : <Plus size={13} />}
-                {quickAddEvent.isPending ? "Adding…" : "Add"}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6, height: 34,
+                  padding: "0 10px", borderRadius: 8,
+                  border: "1px solid var(--thread-line)", background: "rgba(255,255,255,0.025)",
+                }}>
+                  <Sparkles size={12} style={{ color: "var(--thread-dim)", flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    value={quickAddText}
+                    onChange={(e) => setQuickAddText(e.target.value)}
+                    placeholder="e.g. Meeting 22 June 5-6pm or Lunch tomorrow at noon"
+                    style={{
+                      border: "none", outline: "none", background: "transparent",
+                      color: "var(--thread-text)", fontSize: 12, width: 240,
+                    }}
+                    disabled={quickAddEvent.isPending}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="thread-btn-ghost"
+                  style={{ fontSize: 12, padding: "6px 10px" }}
+                  disabled={!quickAddText.trim() || quickAddEvent.isPending}
+                >
+                  {quickAddEvent.isPending ? <Loader2 size={13} className="thread-spin" /> : <Plus size={13} />}
+                  {quickAddEvent.isPending ? "Adding…" : "Add"}
+                </button>
+              </form>
+              <button
+                type="button"
+                className="thread-btn-accent"
+                onClick={() => {
+                  if (isDemoUser && isDemoExpired) {
+                    setShowExpiredModal(true);
+                    return;
+                  }
+                  setShowCreate(true);
+                }}
+              >
+                <Plus size={14} />
+                New invite
               </button>
-            </form>
-            <button type="button" className="thread-btn-accent" onClick={() => setShowCreate(true)}>
-              <Plus size={14} />
-              New invite
-            </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {banner ? (
@@ -747,7 +885,7 @@ export default function CalendarPage() {
                   </div>
                 </button>
                 <div className="thread-cal-body">
-                  {!isConnected ? (
+                  {!isConnected && !isDemoUser ? (
                     <div className="thread-cal-empty-note">Connect Calendar to sync</div>
                   ) : dayEvents.length === 0 ? (
                     viewMode === "day" ? (
@@ -841,6 +979,27 @@ export default function CalendarPage() {
                     endDateTime = when.endDateTime;
                     timeZone = when.timeZone;
                   }
+
+                  if (isDemoUser && !isConnected) {
+                    const newEvent: CalendarEventItem = {
+                      id: `demo-cal-custom-${Date.now()}`,
+                      summary,
+                      start: startDateTime,
+                      end: endDateTime,
+                      allDay: isAllDay,
+                      location: attendee.trim() ? `Meeting with ${attendee.trim()}` : "Virtual",
+                      attendees: attendee.trim()
+                        ? [{ email: attendee.trim(), displayName: attendee.trim().split("@")[0] || "Guest", responseStatus: "needsAction" }]
+                        : [],
+                    };
+                    setCustomDemoEvents((prev) => [...prev, newEvent]);
+                    setShowCreate(false);
+                    setSummary("");
+                    setAttendee("");
+                    toast.success(`Event "${summary}" added to preview`);
+                    return;
+                  }
+
                   queueInvite.mutate({
                     calendar: {
                       summary,
@@ -1192,7 +1351,28 @@ export default function CalendarPage() {
                             opacity: isCurrent ? 1 : 0.7,
                             border: isCurrent ? "1px solid var(--thread-accent-bright, #60a5fa)" : undefined,
                           }}
-                          onClick={() => respondToEvent.mutate({ eventId: selectedEvent.id, response: resp })}
+                          onClick={() => {
+                            if (isDemoUser && !isConnected) {
+                              setCustomDemoEvents((prev) =>
+                                prev.map((e) => {
+                                  if (e.id !== selectedEvent.id) return e;
+                                  const nextAttendees = (e.attendees || []).map((a) => {
+                                    const isUser = userEmail ? a.email?.toLowerCase() === userEmail : !a.organizer;
+                                    if (isUser) {
+                                      return { ...a, responseStatus: resp };
+                                    }
+                                    return a;
+                                  });
+                                  const updatedEvent = { ...e, attendees: nextAttendees };
+                                  setSelectedEvent(updatedEvent);
+                                  return updatedEvent;
+                                })
+                              );
+                              toast.success("RSVP updated");
+                              return;
+                            }
+                            respondToEvent.mutate({ eventId: selectedEvent.id, response: resp });
+                          }}
                         >
                           <Icon size={12} />
                           {label}
@@ -1267,6 +1447,19 @@ export default function CalendarPage() {
                           rescheduleStart || isoToLocalDateTimeInput(selectedEvent.start),
                           rescheduleEnd || isoToLocalDateTimeInput(selectedEvent.end),
                         );
+                    if (isDemoUser && !isConnected) {
+                      setCustomDemoEvents((prev) =>
+                        prev.map((e) =>
+                          e.id === selectedEvent.id
+                            ? { ...e, start: when.startDateTime, end: when.endDateTime }
+                            : e
+                        )
+                      );
+                      setSelectedEvent(null);
+                      toast.success("Event rescheduled in preview");
+                      return;
+                    }
+
                     queueArchive.mutate({
                       archive: {
                         ...eventToArchivePayload(selectedEvent, { editScope: recurringEditScope }),
@@ -1390,12 +1583,19 @@ export default function CalendarPage() {
                 type="button"
                 className="thread-btn-accent thread-cal-event-delete-confirm"
                 disabled={queueDelete.isPending}
-                onClick={() =>
+                onClick={() => {
+                  if (isDemoUser && !isConnected) {
+                    setCustomDemoEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
+                    setSelectedEvent(null);
+                    setShowDeleteConfirm(false);
+                    toast.success("Event deleted from preview");
+                    return;
+                  }
                   queueDelete.mutate({
                     delete: eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
                     title: `Delete: ${selectedEvent.summary}`,
-                  })
-                }
+                  });
+                }}
               >
                 <Trash2 size={14} />
                 {queueDelete.isPending ? "Queuing…" : "Add to queue"}
@@ -1444,15 +1644,22 @@ export default function CalendarPage() {
                 type="button"
                 className="thread-btn-accent"
                 disabled={queueDelete.isPending}
-                onClick={() =>
+                onClick={() => {
+                  if (isDemoUser && !isConnected) {
+                    setCustomDemoEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
+                    setSelectedEvent(null);
+                    setShowCancelConfirm(false);
+                    toast.success("Event cancelled and removed from preview");
+                    return;
+                  }
                   queueDelete.mutate({
                     delete: {
                       ...eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
                       cancelWithNotify: true,
                     },
                     title: `Cancel: ${selectedEvent.summary}`,
-                  })
-                }
+                  });
+                }}
               >
                 <XCircle size={14} />
                 {queueDelete.isPending ? "Queuing…" : "Add to queue"}
@@ -1542,6 +1749,66 @@ export default function CalendarPage() {
           </div>
         </div>
       ) : null}
+
+      {showDemoLimitModal && (
+        <div className="thread-demo-expired-overlay" role="dialog" aria-modal aria-label="Demo limit reached">
+          <div className="thread-demo-expired-card">
+            <div className="thread-demo-expired-icon">
+              <Sparkles size={22} />
+            </div>
+            <h2 className="thread-demo-expired-title">Demo limit reached</h2>
+            <p className="thread-demo-expired-body">
+              You've used all 2 demo calendar prompts. Connect Calendar or create a free account to keep scheduling with natural language.
+            </p>
+            <div className="thread-demo-expired-ctas">
+              <a href="/settings" className="thread-demo-expired-btn thread-demo-expired-btn--primary">
+                <Mail size={14} />
+                Connect Calendar
+              </a>
+              <a href="/sign-in" className="thread-demo-expired-btn thread-demo-expired-btn--ghost">
+                Create account
+              </a>
+            </div>
+            <button type="button" className="thread-demo-expired-close" aria-label="Close" onClick={() => setShowDemoLimitModal(false)}>
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showExpiredModal && (
+        <DemoExpiredModal onClose={() => setShowExpiredModal(false)} />
+      )}
+    </div>
+  );
+}
+
+function DemoExpiredModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="thread-demo-expired-overlay" role="dialog" aria-modal aria-label="Demo session ended">
+      <div className="thread-demo-expired-card">
+        <div className="thread-demo-expired-icon">
+          <Clock size={22} />
+        </div>
+        <h2 className="thread-demo-expired-title">Your demo has ended</h2>
+        <p className="thread-demo-expired-body">
+          10 minutes are up. Connect Calendar to keep going with your real schedule — or
+          create a free account to save your session.
+        </p>
+        <div className="thread-demo-expired-ctas">
+          <a href="/settings" className="thread-demo-expired-btn thread-demo-expired-btn--primary">
+            <Mail size={14} />
+            Connect Calendar
+          </a>
+          <a href="/sign-in" className="thread-demo-expired-btn thread-demo-expired-btn--ghost">
+            <UserPlus size={14} />
+            Create account
+          </a>
+        </div>
+        <button type="button" className="thread-demo-expired-close" aria-label="Close" onClick={onClose}>
+          <X size={14} />
+        </button>
+      </div>
     </div>
   );
 }

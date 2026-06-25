@@ -4742,3 +4742,427 @@
     max-width: 28vw;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Demo Mode Banner — floating bottom-right glassmorphism card
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes thread-demo-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes thread-demo-timer-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.65; }
+}
+
+.thread-demo-banner {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 100;
+  width: 280px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background:
+    linear-gradient(145deg, rgba(10, 12, 20, 0.96) 0%, rgba(6, 8, 16, 0.98) 100%);
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.08),
+    0 4px 24px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: thread-demo-banner-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Subtle green ambient top glow */
+.thread-demo-banner::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(74, 222, 128, 0.5), transparent);
+  border-radius: 99px;
+}
+
+/* ── Header row ── */
+.thread-demo-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.thread-demo-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--thread-text);
+  letter-spacing: -0.01em;
+  min-width: 0;
+}
+
+.thread-demo-banner-icon {
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+/* ── Countdown chip ── */
+.thread-demo-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--thread-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.08);
+  color: #4ade80;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* < 5 min — amber warning */
+.thread-demo-timer[data-state="warn"] {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+}
+
+/* < 2 min — red urgent */
+.thread-demo-timer[data-state="danger"] {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  animation: thread-demo-timer-pulse 1.2s ease-in-out infinite;
+}
+
+/* Expired state */
+.thread-demo-timer[data-state="expired"] {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--thread-dim);
+  font-family: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+}
+
+/* ── Dismiss button ── */
+.thread-demo-dismiss {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-dim);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.thread-demo-dismiss:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--thread-muted);
+}
+
+/* ── Body copy ── */
+.thread-demo-desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--thread-dim);
+}
+
+.thread-demo-desc--expired {
+  color: var(--thread-muted);
+}
+
+/* ── Feature shortcut pills ── */
+.thread-demo-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.thread-demo-shortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--thread-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--thread-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.thread-demo-shortcut:hover {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.38);
+  color: #93c5fd;
+}
+
+.thread-demo-shortcut:hover svg {
+  color: #93c5fd;
+}
+
+/* ── CTA buttons ── */
+.thread-demo-ctas {
+  display: flex;
+  gap: 6px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 2px;
+}
+
+.thread-demo-cta {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.1s ease;
+}
+
+.thread-demo-cta:active {
+  transform: scale(0.97);
+}
+
+/* Primary CTA — Connect Gmail */
+.thread-demo-cta--primary {
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: rgba(30, 58, 138, 0.48);
+  color: #93c5fd;
+  box-shadow: 0 1px 8px rgba(59, 130, 246, 0.12);
+}
+
+.thread-demo-cta--primary:hover {
+  background: rgba(37, 99, 235, 0.55);
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 2px 14px rgba(59, 130, 246, 0.22);
+}
+
+/* Ghost CTA — Create account */
+.thread-demo-cta--ghost {
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-muted);
+}
+
+.thread-demo-cta--ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--thread-line-strong);
+  color: var(--thread-text);
+}
+
+/* ── Mobile: stretch to full width above dock ── */
+@media (max-width: 640px) {
+  .thread-demo-banner {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* ── Expired chip inside header (replaces timer) ── */
+.thread-demo-expired-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--thread-dim);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  flex-shrink: 0;
+}
+
+/* ── Expired session modal overlay ── */
+@keyframes thread-demo-modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.thread-demo-expired-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.thread-demo-expired-card {
+  position: relative;
+  width: 360px;
+  max-width: calc(100vw - 2rem);
+  border-radius: 16px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  background: linear-gradient(145deg, rgba(10, 12, 22, 0.98), rgba(6, 8, 16, 0.99));
+  box-shadow:
+    0 0 0 1px rgba(96, 165, 250, 0.06),
+    0 8px 40px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: 28px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  animation: thread-demo-modal-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.thread-demo-expired-card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 30px;
+  right: 30px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.5), transparent);
+}
+
+.thread-demo-expired-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  display: grid;
+  place-items: center;
+  color: #f87171;
+}
+
+.thread-demo-expired-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--thread-text);
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.thread-demo-expired-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--thread-dim);
+  margin: 0;
+  padding: 0 4px;
+}
+
+.thread-demo-expired-ctas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.thread-demo-expired-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.thread-demo-expired-btn:active { transform: scale(0.97); }
+
+.thread-demo-expired-btn--primary {
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  background: rgba(30, 58, 138, 0.55);
+  color: #93c5fd;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.15);
+}
+
+.thread-demo-expired-btn--primary:hover {
+  background: rgba(37, 99, 235, 0.6);
+  border-color: rgba(96, 165, 250, 0.65);
+  box-shadow: 0 3px 18px rgba(59, 130, 246, 0.25);
+}
+
+.thread-demo-expired-btn--ghost {
+  border: 1px solid var(--thread-line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--thread-muted);
+}
+
+.thread-demo-expired-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--thread-line-strong);
+  color: var(--thread-text);
+}
+
+.thread-demo-expired-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-dim);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.thread-demo-expired-close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--thread-text);
+}
+
+
