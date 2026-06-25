@@ -295,7 +295,12 @@ export async function generateDailyBrief(input: {
 }): Promise<DailyBrief> {
   const context = await gatherDailyBriefContext(input);
 
-  if (!context.gmailConnected && !context.calendarConnected) {
+  const hasBriefData =
+    context.threads.length > 0 ||
+    context.meetings.length > 0 ||
+    context.pendingQueue.length > 0;
+
+  if (!context.gmailConnected && !context.calendarConnected && !hasBriefData) {
     throw new ServiceError(
       "PRECONDITION_FAILED",
       "Connect Gmail or Google Calendar to generate your daily brief.",

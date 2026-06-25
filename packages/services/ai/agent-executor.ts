@@ -180,17 +180,28 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         } catch { /* best-effort */ }
 
         const sent = item.status === "approved";
+        const pending = item.status === "pending";
         const outcome = sent
           ? mode === "draft" ? "draft_saved" : "email_sent"
-          : mode === "draft" ? "draft_queued" : "email_queued_for_approval";
+          : pending
+            ? mode === "draft" ? "draft_queued" : "email_queued_for_approval"
+            : "email_queue_failed";
 
         actions.push({
           kind: "email_queued",
-          title: sent ? (mode === "draft" ? "Draft saved" : "Email sent") : (mode === "draft" ? "Draft queued" : "Send queued for approval"),
+          title: sent
+            ? mode === "draft"
+              ? "Draft saved"
+              : "Email sent"
+            : pending
+              ? mode === "draft"
+                ? "Draft queued"
+                : "Send queued for approval"
+              : "Send could not be queued",
           detail: `To ${to}`,
           href: sent ? (threadId ? `/inbox?thread=${encodeURIComponent(threadId)}` : undefined) : "/queue",
-          disposition: sent ? "sent" : "queued",
-          queueItemId: sent ? undefined : item.id,
+          disposition: sent ? "sent" : pending ? "queued" : undefined,
+          queueItemId: pending ? item.id : undefined,
           threadId: threadId || undefined,
           lines: [`Subject: ${subject}`, body.slice(0, 400)],
         });
@@ -200,8 +211,10 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
           status: item.status,
           outcome,
           tellUser: sent
-            ? (mode === "draft" ? `Draft saved to Gmail for ${to}.` : `Email sent to ${to} via Gmail.`)
-            : `Email added to Queue for ${to} — user must approve before it sends.`,
+            ? mode === "draft" ? `Draft saved to Gmail for ${to}.` : `Email sent to ${to} via Gmail.`
+            : pending
+              ? `Email added to Queue for ${to} — user must approve before it sends.`
+              : `Could not queue email for ${to} — check Queue or try again.`,
         });
       }
 
