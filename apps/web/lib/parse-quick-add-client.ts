@@ -215,8 +215,49 @@ function buildSummary(rest: string, explicit: string | undefined, defaultTitle: 
   return defaultTitle ?? (fallback.trim() || "Event");
 }
 
-function wallTimeIso(date: Date, hour: number, minute: number) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(hour)}:${pad2(minute)}:00`;
+function formatClock(hour: number, minute: number) {
+  const period = hour >= 12 ? "pm" : "am";
+  const hour12 = hour % 12 || 12;
+  if (minute === 0) return `${hour12}${period}`;
+  return `${hour12}:${pad2(minute)}${period}`;
+}
+
+function formatTimeRangeLabel(range: {
+  start: { hour: number; minute: number };
+  end: { hour: number; minute: number };
+}) {
+  return `${formatClock(range.start.hour, range.start.minute)}-${formatClock(range.end.hour, range.end.minute)}`;
+}
+
+function buildAllDayQuickAddResult(
+  eventDate: Date,
+  summary: string,
+  timeRange?: {
+    start: { hour: number; minute: number };
+    end: { hour: number; minute: number };
+  } | null,
+) {
+  let title = summary;
+  if (timeRange) {
+    const timeLabel = formatTimeRangeLabel(timeRange);
+    const lower = title.toLowerCase();
+    if (!lower.includes("am") && !lower.includes("pm") && !lower.includes("noon")) {
+      title = title ? `${title} (${timeLabel})` : timeLabel;
+    }
+  }
+
+  const startDate = `${eventDate.getFullYear()}-${pad2(eventDate.getMonth() + 1)}-${pad2(eventDate.getDate())}`;
+  const endDateObj = new Date(eventDate);
+  endDateObj.setDate(endDateObj.getDate() + 1);
+  const endDate = `${endDateObj.getFullYear()}-${pad2(endDateObj.getMonth() + 1)}-${pad2(endDateObj.getDate())}`;
+
+  return {
+    summary: title,
+    startDateTime: startDate,
+    endDateTime: endDate,
+    allDay: true as const,
+    timeZone: DEFAULT_TIME_ZONE,
+  };
 }
 
 /** Parse natural-language scheduling text into createEvent fields on the client. */
@@ -244,26 +285,5 @@ export function parseQuickAddText(text: string, refDate = new Date()): ParsedQui
 
   summary = buildSummary(remaining, summary || undefined, defaultTitle, original);
 
-  if (!timeRange) {
-    const startDate = `${eventDate.getFullYear()}-${pad2(eventDate.getMonth() + 1)}-${pad2(eventDate.getDate())}`;
-    const endDateObj = new Date(eventDate);
-    endDateObj.setDate(endDateObj.getDate() + 1);
-    const endDate = `${endDateObj.getFullYear()}-${pad2(endDateObj.getMonth() + 1)}-${pad2(endDateObj.getDate())}`;
-    return { summary, startDateTime: startDate, endDateTime: endDate, allDay: true, timeZone: DEFAULT_TIME_ZONE };
-  }
-
-  let endHour = timeRange.end.hour;
-  let endMinute = timeRange.end.minute;
-  if (endHour < timeRange.start.hour || (endHour === timeRange.start.hour && endMinute <= timeRange.start.minute)) {
-    endHour = timeRange.start.hour + 1;
-    endMinute = timeRange.start.minute;
-  }
-
-  return {
-    summary,
-    startDateTime: wallTimeIso(eventDate, timeRange.start.hour, timeRange.start.minute),
-    endDateTime: wallTimeIso(eventDate, endHour, endMinute),
-    timeZone: DEFAULT_TIME_ZONE,
-    allDay: false,
-  };
+  return buildAllDayQuickAddResult(eventDate, summary, timeRange);
 }
