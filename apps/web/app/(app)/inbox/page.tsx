@@ -782,7 +782,10 @@ export default function InboxPage() {
 
   const smartRepliesQuery = trpc.ai.smartReplies.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && aiReady && isConnected, staleTime: 2 * 60_000 },
+    {
+      enabled: Boolean(selectedId) && aiReady && (isConnected || demoSummarizeEnabled),
+      staleTime: 2 * 60_000,
+    },
   );
 
   const summarizeQuery = trpc.ai.summarizeThread.useQuery(
@@ -2245,7 +2248,7 @@ export default function InboxPage() {
                 </div>
               ) : null}
               {/* Smart Reply suggestions */}
-              {aiReady && selectedId ? (
+              {aiReady && selectedId && (isConnected || demoSummarizeEnabled) ? (
                 <div className="thread-smart-reply-wrap thread-ai-panel">
                   {smartRepliesQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
