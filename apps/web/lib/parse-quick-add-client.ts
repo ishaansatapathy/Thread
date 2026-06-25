@@ -107,12 +107,17 @@ function parseTimeRange(text: string): {
   }
 
   const compact = text.match(
-    /\b([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm))\s*(?:to|-)\s*([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm))\b/i,
+    /\b([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm)?)\s*(?:to|-)\s*([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm))\b/i,
   );
   if (compact) {
-    const start = parseClockToken(compact[1] ?? "");
-    const end = parseClockToken(compact[2] ?? "");
+    let start = parseClockToken(compact[1] ?? "");
+    let end = parseClockToken(compact[2] ?? "");
     if (start && end) {
+      const endToken = (compact[2] ?? "").toLowerCase();
+      const startToken = (compact[1] ?? "").toLowerCase();
+      if (!/(am|pm)/.test(startToken) && /(am|pm)/.test(endToken) && end.hour >= 12 && start.hour <= 12) {
+        start = { hour: start.hour + 12, minute: start.minute };
+      }
       return { start, end, rest: stripOnce(text, compact[0]) };
     }
   }
@@ -222,19 +227,20 @@ export function parseQuickAddText(text: string, refDate = new Date()): ParsedQui
   const { rest: afterAction, defaultTitle } = stripActionPrefix(remaining);
   remaining = afterAction;
 
-  let summary = "";
-  const forMatch = remaining.match(/\bfor\s+(.+)$/i);
-  if (forMatch?.[1]) {
-    summary = forMatch[1].trim();
-    remaining = remaining.slice(0, forMatch.index).trim();
-  }
-
   const timeRange = parseTimeRange(remaining);
   if (timeRange) remaining = timeRange.rest;
 
   const parsedDate = parseDate(remaining, refDate);
   if (parsedDate) remaining = parsedDate.rest;
   const eventDate = parsedDate?.date ?? new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+
+  let summary = "";
+  const forMatch = remaining.match(/\bfor\s+(.+)$/i);
+  if (forMatch?.[1]) {
+    const raw = forMatch[1].trim();
+    summary = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : raw;
+    remaining = remaining.slice(0, forMatch.index).trim();
+  }
 
   summary = buildSummary(remaining, summary || undefined, defaultTitle, original);
 

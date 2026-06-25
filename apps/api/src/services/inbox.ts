@@ -1,5 +1,6 @@
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
+import { serviceError } from "@repo/services/errors";
 import type {
   InboxConnectionStatus,
   InboxDraft,
@@ -770,7 +771,7 @@ export class CorsairInboxService implements InboxService {
   ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
-      throw new Error("Gmail is not connected");
+      throw serviceError("PRECONDITION_FAILED", "Connect Gmail in Settings to send this email.");
     }
 
     const corsair = getCorsair().withTenant(tenantId);
@@ -797,7 +798,7 @@ export class CorsairInboxService implements InboxService {
   ) {
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
-      throw new Error("Gmail is not connected");
+      throw serviceError("PRECONDITION_FAILED", "Connect Gmail in Settings to save this draft.");
     }
 
     const corsair = getCorsair().withTenant(tenantId);
@@ -1278,7 +1279,9 @@ export class CorsairInboxService implements InboxService {
 
   async sendDraft(tenantId: string, draftId: string): Promise<{ id?: string; threadId?: string }> {
     const status = await this.getConnectionStatus(tenantId);
-    if (status.gmail !== "connected") throw new Error("Gmail is not connected");
+    if (status.gmail !== "connected") {
+      throw serviceError("PRECONDITION_FAILED", "Connect Gmail in Settings to send this draft.");
+    }
     const corsair = getCorsair().withTenant(tenantId);
     const result = await corsair.gmail.api.drafts.send({ id: draftId });
     return { id: result.id, threadId: result.threadId };

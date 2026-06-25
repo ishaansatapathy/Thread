@@ -211,7 +211,7 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
     expect(sendDraft).toHaveBeenCalledWith(userId, "draft-abc");
   });
 
-  it("marks failed when execution throws after claim", async () => {
+  it("keeps item pending when execution throws after claim", async () => {
     sendMessage.mockClear();
     sendMessage.mockRejectedValueOnce(new Error("Gmail unavailable"));
 
@@ -232,8 +232,13 @@ describe.skipIf(!hasDatabase)("ThreadQueueService integration", () => {
       .where(eq(threadQueueItemsTable.id, item.id))
       .limit(1);
 
-    expect(row?.status).toBe("failed");
-    expect(row?.errorMessage).toBeTruthy();
+    expect(row?.status).toBe("pending");
+    expect(row?.errorMessage).toBe("Gmail unavailable");
     expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    sendMessage.mockResolvedValueOnce({ id: "msg-retry", threadId: "thread-retry" });
+    const approved = await queue.approve(userId, item.id);
+    expect(approved.status).toBe("approved");
+    expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 });

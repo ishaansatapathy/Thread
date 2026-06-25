@@ -335,25 +335,30 @@ function runBriefAction(
   action: BriefAction,
   router: ReturnType<typeof useRouter>,
   onDismissThread?: (threadId: string) => void,
+  brief?: DailyBrief | null,
 ) {
-  if (action.threadId) onDismissThread?.(action.threadId);
+  const focusThreadId = action.threadId ?? brief?.todaysFocus.threadId;
+  const focusHeadline = brief?.todaysFocus.headline ?? action.label;
+  const defaultReplyPrompt = `Read this email and draft a reply about: "${focusHeadline}". ${brief?.todaysFocus.detail ?? "Queue the email for my approval before sending — do not send without approval."}`;
+
+  if (focusThreadId) onDismissThread?.(focusThreadId);
+  else if (action.threadId) onDismissThread?.(action.threadId);
 
   switch (action.kind) {
     case "reply":
       if (action.agentPrompt) {
-        router.push(briefAgentUrl(action.agentPrompt, action.threadId));
+        router.push(briefAgentUrl(action.agentPrompt, focusThreadId ?? action.threadId));
         return;
       }
-      if (action.threadId) {
-        router.push(
-          briefAgentUrl(
-            "Read this email thread and draft a reply. Queue the email for my approval before sending — do not send without approval.",
-            action.threadId,
-          ),
-        );
+      if (focusThreadId) {
+        router.push(briefAgentUrl(defaultReplyPrompt, focusThreadId));
         return;
       }
-      router.push("/agent");
+      router.push(
+        briefAgentUrl(
+          "Read my priority email and draft a reply. Queue the email for my approval before sending.",
+        ),
+      );
       return;
     case "prepare_meeting":
       if (action.eventId) {
@@ -759,7 +764,7 @@ export default function BriefPage() {
                           ? actionPreview(action, brief, briefThreadContext, briefEventContext)
                           : null
                       }
-                      onRun={() => runBriefAction(action, router, markBriefThreadDismissed)}
+                      onRun={() => runBriefAction(action, router, markBriefThreadDismissed, brief)}
                     />
                   ))}
                 </div>
