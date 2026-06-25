@@ -15,6 +15,7 @@ import {
   parseMeetingBundlePayload,
 } from "@repo/services/queue/schemas";
 import { parseQuickAddText } from "./parse-quick-add";
+import { executeQueuedCorsairApproval } from "./corsair-queue-bridge";
 import type {
   CalendarArchivePayload,
   CalendarDeletePayload,
@@ -65,6 +66,9 @@ function userFacingApproveError(error: unknown): string {
   if (error instanceof Error) {
     const msg = error.message.trim();
     if (!msg) return "Could not complete this action. Check your connections and try again.";
+    if (msg.includes("Action requires approval") && msg.includes("/corsair/approve/")) {
+      return "This delete needs a second Corsair approval step. Open the approval link in the message, approve there, then click Retry in Queue.";
+    }
     if (/not connected|invalid_grant|invalid credentials|token has been expired|unauthorized|401|403/i.test(msg)) {
       return "Gmail or Calendar connection expired. Reconnect in Settings and try again.";
     }
@@ -625,7 +629,12 @@ export class ThreadQueueService implements QueueService {
     }
 
     try {
-      await this.executeItem(userId, claimed.kind, claimed.payload, opts);
+      try {
+        await this.executeItem(userId, claimed.kind, claimed.payload, opts);
+      } catch (error) {
+        const bridged = await executeQueuedCorsairApproval(error, userId);
+        if (!bridged) throw error;
+      }
 
       const [approved] = await db
         .update(threadQueueItemsTable)
