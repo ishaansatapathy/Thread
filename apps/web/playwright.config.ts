@@ -30,7 +30,7 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           ...process.env,
-          DEMO_LOGIN_ENABLED: process.env.DEMO_LOGIN_ENABLED ?? "true",
+          DEMO_LOGIN_ENABLED: process.env.DEMO_LOGIN_ENABLED ?? "false",
           THREAD_E2E_MOCK_GMAIL: process.env.THREAD_E2E_MOCK_GMAIL ?? "true",
           DEMO_USER_EMAIL: process.env.DEMO_USER_EMAIL ?? process.env.SEED_USER_EMAIL ?? "demo@thread.dev",
           DEMO_USER_PASSWORD:

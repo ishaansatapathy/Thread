@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 import { env } from "~/env";
+import { isDemoLoginEnabled } from "~/lib/demo-config";
 import { trpc } from "~/trpc/client";
 import { ThreadLogoMark } from "./thread-logo";
 
@@ -229,7 +230,7 @@ export function ThreadAuthCard({
                 <GoogleIcon size={18} />
                 Continue with Google
               </a>
-              {isLogin ? (
+              {isLogin && isDemoLoginEnabled() ? (
                 <a
                   href={`/api-auth/demo?next=${encodeURIComponent(sanitizeRedirectPath(nextPath))}`}
                   className="thread-auth-demo-wide"

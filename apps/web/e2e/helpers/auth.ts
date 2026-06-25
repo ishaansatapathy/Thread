@@ -6,8 +6,7 @@ export async function demoLogin(page: Page, next = "/inbox") {
 }
 
 export function skipUnlessDemoLogin(test: { skip: (condition: boolean, reason: string) => void }) {
-  const enabled = process.env.DEMO_LOGIN_ENABLED ?? "true";
-  if (enabled !== "true") {
+  if (process.env.DEMO_LOGIN_ENABLED !== "true") {
     test.skip(true, "DEMO_LOGIN_ENABLED is not set");
   }
 }
