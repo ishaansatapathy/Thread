@@ -637,6 +637,30 @@
   color: var(--thread-accent-bright);
 }
 
+.thread-inbox-priority-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--thread-line);
+  background: transparent;
+  color: var(--thread-dim);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.thread-inbox-priority-refresh-btn:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.35);
+  color: var(--thread-accent-bright);
+}
+.thread-inbox-priority-refresh-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 /* ── Bulk mode ── */
 .thread-inbox-bulk-btn {
   display: flex;

@@ -37,6 +37,9 @@ export type InboxAnalysisResult = {
     total: number;
     critical: number;
     high: number;
+    medium: number;
+    low: number;
+    noise: number;
     replyNeeded: number;
     analyzedAt: string;
   };
@@ -95,42 +98,76 @@ function buildAnalysisPrompt(threads: InboxRankInput[]) {
   ].join("\n");
 }
 
-function fallbackItem(thread: InboxRankInput, index: number): InboxRankItem {
+const BATCH_SIZE = 12;
+
+function hashScore(seed: string, min: number, max: number): number {
+  let hash = 0;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const span = max - min + 1;
+  return min + (hash % span);
+}
+
+function fallbackItem(thread: InboxRankInput): InboxRankItem {
   const subject = thread.subject?.toLowerCase() ?? "";
   const snippet = thread.snippet.toLowerCase();
+  const from = thread.from?.toLowerCase() ?? "";
   const text = `${subject} ${snippet}`;
 
   const looksPromo =
-    /unsubscribe|newsletter|promo|sale|off\b|marketing/.test(text) ||
-    /no-reply|noreply/.test(thread.from?.toLowerCase() ?? "");
-  const looksUrgent =
-    /urgent|asap|deadline|due today|action required|please reply|waiting for your/.test(text);
+    /unsubscribe|newsletter|promo|sale|off\b|marketing|digest|no-reply|noreply/.test(text) ||
+    /no-reply|noreply/.test(from);
+  const looksCritical =
+    /urgent|asap|deadline|due today|action required|security alert|overdue|past due/.test(text);
+  const looksHigh =
+    /please reply|waiting for your|follow up|invoice|payment|contract|offer expires|confirm by/.test(text);
+  const looksMeeting = /meeting|calendar|invite|schedule|rsvp|sync/.test(text);
+  const looksBilling = /invoice|receipt|billing|payment due|subscription/.test(text);
 
   if (looksPromo) {
     return {
       id: thread.id,
       urgency: "noise",
-      score: 8,
-      reason: "Automated or promotional — safe to review later.",
+      score: hashScore(thread.id, 4, 12),
+      reason: "Promotional or automated — low action needed.",
       category: "promo",
     };
   }
-  if (looksUrgent) {
+  if (looksCritical) {
+    return {
+      id: thread.id,
+      urgency: "critical",
+      score: hashScore(thread.id, 88, 96),
+      reason: "Subject or snippet flags a deadline, security issue, or urgent ask.",
+      category: looksBilling ? "billing" : "deadline",
+    };
+  }
+  if (looksHigh) {
     return {
       id: thread.id,
       urgency: "high",
-      score: 78,
-      reason: "Language suggests a time-sensitive request or deadline.",
-      category: "reply_needed",
+      score: hashScore(thread.id, 72, 86),
+      reason: "Looks like a reply, billing item, or time-bound request.",
+      category: looksBilling ? "billing" : "reply_needed",
+    };
+  }
+  if (looksMeeting) {
+    return {
+      id: thread.id,
+      urgency: "medium",
+      score: hashScore(thread.id, 48, 62),
+      reason: "Calendar or meeting-related — check timing if relevant.",
+      category: "meeting",
     };
   }
 
-  const score = Math.max(20, 55 - index * 4);
+  const score = hashScore(thread.id, 28, 44);
   return {
     id: thread.id,
-    urgency: index < 3 ? "medium" : "low",
+    urgency: "low",
     score,
-    reason: index === 0 ? "Most recent thread in your inbox." : "Routine inbox item — review when you have time.",
+    reason: subject
+      ? `FYI from “${(thread.subject ?? "").slice(0, 48)}” — no urgent cues detected.`
+      : "General inbox item — skim when you have time.",
     category: "fyi",
   };
 }
@@ -139,10 +176,10 @@ function normalizeItems(threads: InboxRankInput[], raw: z.infer<typeof analysisR
   const byId = new Map(raw.items.map((item) => [item.id, item]));
   const normalized: InboxRankItem[] = [];
 
-  for (const [index, thread] of threads.entries()) {
+  for (const thread of threads) {
     const item = byId.get(thread.id);
     if (!item) {
-      normalized.push(fallbackItem(thread, index));
+      normalized.push(fallbackItem(thread));
       continue;
     }
     normalized.push({
@@ -168,6 +205,9 @@ function buildSummary(items: InboxRankItem[]): InboxAnalysisResult["summary"] {
     total: items.length,
     critical: items.filter((i) => i.urgency === "critical").length,
     high: items.filter((i) => i.urgency === "high").length,
+    medium: items.filter((i) => i.urgency === "medium").length,
+    low: items.filter((i) => i.urgency === "low").length,
+    noise: items.filter((i) => i.urgency === "noise").length,
     replyNeeded: items.filter((i) => i.category === "reply_needed").length,
     analyzedAt: new Date().toISOString(),
   };
@@ -175,6 +215,41 @@ function buildSummary(items: InboxRankItem[]): InboxAnalysisResult["summary"] {
 
 export function isInboxAiConfigured() {
   return isOpenAiConfigured();
+}
+
+async function analyzeBatch(threads: InboxRankInput[]): Promise<InboxRankItem[]> {
+  const content = await createChatCompletion(
+    [
+      {
+        role: "system",
+        content:
+          "You triage email for executives. Be specific in reasons — cite subject cues, sender type, or implied deadline. Respond with valid JSON only.",
+      },
+      { role: "user", content: buildAnalysisPrompt(threads) },
+    ],
+    { jsonObject: true, temperature: 0.15 },
+  );
+
+  try {
+    const parsed = analysisResponseSchema.parse(JSON.parse(content));
+    return normalizeItems(threads, parsed);
+  } catch {
+    const items = threads.map((thread) => fallbackItem(thread));
+    items.sort((a, b) => {
+      const urgencyDiff = URGENCY_WEIGHT[a.urgency] - URGENCY_WEIGHT[b.urgency];
+      if (urgencyDiff !== 0) return urgencyDiff;
+      return b.score - a.score;
+    });
+    return items;
+  }
+}
+
+function sortRankItems(items: InboxRankItem[]): InboxRankItem[] {
+  return [...items].sort((a, b) => {
+    const urgencyDiff = URGENCY_WEIGHT[a.urgency] - URGENCY_WEIGHT[b.urgency];
+    if (urgencyDiff !== 0) return urgencyDiff;
+    return b.score - a.score;
+  });
 }
 
 export async function analyzeInboxThreads(threads: InboxRankInput[]): Promise<InboxAnalysisResult> {
@@ -186,7 +261,16 @@ export async function analyzeInboxThreads(threads: InboxRankInput[]): Promise<In
     return {
       rankedIds: [],
       items: [],
-      summary: { total: 0, critical: 0, high: 0, replyNeeded: 0, analyzedAt: new Date().toISOString() },
+      summary: {
+        total: 0,
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        noise: 0,
+        replyNeeded: 0,
+        analyzedAt: new Date().toISOString(),
+      },
     };
   }
 
@@ -206,32 +290,14 @@ export async function analyzeInboxThreads(threads: InboxRankInput[]): Promise<In
     };
   }
 
-  const content = await createChatCompletion(
-    [
-      {
-        role: "system",
-        content:
-          "You triage email for executives. Be specific in reasons — cite subject cues, sender type, or implied deadline. Respond with valid JSON only.",
-      },
-      { role: "user", content: buildAnalysisPrompt(threads) },
-    ],
-    { jsonObject: true, temperature: 0.15 },
-  );
-
-  let parsed: z.infer<typeof analysisResponseSchema>;
-  try {
-    parsed = analysisResponseSchema.parse(JSON.parse(content));
-  } catch {
-    const items = threads.map((thread, index) => fallbackItem(thread, index));
-    items.sort((a, b) => b.score - a.score);
-    return {
-      rankedIds: items.map((i) => i.id),
-      items,
-      summary: buildSummary(items),
-    };
+  const batches: InboxRankInput[][] = [];
+  for (let i = 0; i < threads.length; i += BATCH_SIZE) {
+    batches.push(threads.slice(i, i + BATCH_SIZE));
   }
 
-  const items = normalizeItems(threads, parsed);
+  const batchResults = await Promise.all(batches.map((batch) => analyzeBatch(batch)));
+  const items = sortRankItems(batchResults.flat());
+
   return {
     rankedIds: items.map((i) => i.id),
     items,
