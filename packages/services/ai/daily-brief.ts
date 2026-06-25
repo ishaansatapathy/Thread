@@ -274,10 +274,54 @@ async function synthesizeBrief(context: BriefGatherResult): Promise<DailyBrief> 
       },
     });
 
-    return applyGreeting(context, sanitizeIds(context, withMeta));
+    return applyGreeting(context, enrichBriefThreadLinks(context, sanitizeIds(context, withMeta)));
   } catch {
     return buildFallbackBrief(context);
   }
+}
+
+function linkTodaysFocusThreadId(brief: DailyBrief, context: BriefGatherResult): DailyBrief {
+  if (brief.todaysFocus.threadId) return brief;
+
+  const focusHeadline = brief.todaysFocus.headline.toLowerCase().trim();
+  for (const item of [...brief.needsAttention, ...brief.risks]) {
+    if (!item.threadId) continue;
+    const headline = item.headline.toLowerCase().trim();
+    if (
+      headline === focusHeadline ||
+      focusHeadline.includes(headline) ||
+      headline.includes(focusHeadline)
+    ) {
+      return { ...brief, todaysFocus: { ...brief.todaysFocus, threadId: item.threadId } };
+    }
+  }
+
+  const topThread = context.threads[0];
+  if (topThread && /follow up|reply|waiting|response/i.test(brief.todaysFocus.headline)) {
+    return { ...brief, todaysFocus: { ...brief.todaysFocus, threadId: topThread.id } };
+  }
+
+  return brief;
+}
+
+function enrichRecommendedActionThreadIds(brief: DailyBrief): DailyBrief {
+  const focusThreadId = brief.todaysFocus.threadId;
+  if (!focusThreadId) return brief;
+
+  return {
+    ...brief,
+    recommendedActions: brief.recommendedActions.map((action) => {
+      if (action.threadId || action.eventId || action.queueItemId) return action;
+      if (action.kind === "reply" || action.kind === "follow_up") {
+        return { ...action, threadId: focusThreadId };
+      }
+      return action;
+    }),
+  };
+}
+
+function enrichBriefThreadLinks(context: BriefGatherResult, brief: DailyBrief): DailyBrief {
+  return enrichRecommendedActionThreadIds(linkTodaysFocusThreadId(brief, context));
 }
 
 function applyGreeting(context: BriefGatherResult, brief: DailyBrief): DailyBrief {
