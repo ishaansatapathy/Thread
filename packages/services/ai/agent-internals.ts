@@ -595,7 +595,8 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "quick_add_event",
-      description: "Create a Google Calendar event from a natural-language text string via Corsair quickAdd. Faster than queue_calendar_invite for simple events. E.g. 'Lunch with Sarah tomorrow at noon'.",
+      description:
+        "Create or delete Google Calendar events from natural language. Use for creates like 'Lunch tomorrow at noon'. For deletes use text like 'delete meeting with manu on 27 june' — queues calendar_delete (not a new invite). Prefer cancel_event when you already have an event id.",
       parameters: {
         type: "object",
         properties: {

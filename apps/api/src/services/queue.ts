@@ -15,6 +15,7 @@ import {
   parseMeetingBundlePayload,
 } from "@repo/services/queue/schemas";
 import { parseQuickAddText } from "./parse-quick-add";
+import { isQuickDeleteIntent, parseQuickDeleteText, type ParsedQuickDelete } from "./parse-quick-delete";
 import { executeQueuedCorsairApproval } from "./corsair-queue-bridge";
 import type {
   CalendarArchivePayload,
@@ -51,6 +52,98 @@ function truncate(value: string, max = 240) {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 1)}…`;
+}
+
+function eventStartLocalDate(start?: string): Date | null {
+  if (!start) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    const [y, m, d] = start.split("-").map(Number);
+    return new Date(y!, m! - 1, d);
+  }
+  const parsed = new Date(start);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function sameCalendarDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+function summaryMatchesQuery(summary: string | undefined, query: string) {
+  return (summary ?? "").toLowerCase().includes(query.toLowerCase());
+}
+
+function inviteMatchesDeleteCriteria(
+  summary: string,
+  parsed: ParsedQuickDelete,
+  eventStart?: string,
+): boolean {
+  if (parsed.deleteAllOnDate && parsed.onDate) {
+    const startDate = eventStartLocalDate(eventStart);
+    return Boolean(startDate && sameCalendarDay(startDate, parsed.onDate));
+  }
+  if (parsed.query && !summaryMatchesQuery(summary, parsed.query)) return false;
+  if (parsed.onDate) {
+    const startDate = eventStartLocalDate(eventStart);
+    if (!startDate || !sameCalendarDay(startDate, parsed.onDate)) return false;
+  }
+  return Boolean(parsed.query || parsed.onDate);
+}
+
+async function findCalendarDeleteTargets(userId: string, parsed: ParsedQuickDelete) {
+  const calendar = getCalendarService();
+  const status = await calendar.getConnectionStatus(userId);
+  if (status.googlecalendar !== "connected") {
+    throw serviceError("PRECONDITION_FAILED", "Connect Google Calendar to delete events.");
+  }
+
+  const now = new Date();
+  const timeMin = parsed.onDate
+    ? new Date(parsed.onDate.getFullYear(), parsed.onDate.getMonth(), parsed.onDate.getDate()).toISOString()
+    : new Date(now.getTime() - 30 * 86400000).toISOString();
+  const timeMax = parsed.onDate
+    ? new Date(parsed.onDate.getFullYear(), parsed.onDate.getMonth(), parsed.onDate.getDate() + 1).toISOString()
+    : new Date(now.getTime() + 90 * 86400000).toISOString();
+
+  const listed = await calendar.listEvents(userId, {
+    timeMin,
+    timeMax,
+    maxResults: 50,
+    ...(parsed.query && !parsed.deleteAllOnDate ? { q: parsed.query } : {}),
+  });
+
+  let events = listed.events;
+  if (parsed.onDate) {
+    events = events.filter((event) => {
+      const day = eventStartLocalDate(event.start);
+      return day && sameCalendarDay(day, parsed.onDate!);
+    });
+  }
+  if (parsed.query && !parsed.deleteAllOnDate) {
+    events = events.filter((event) => summaryMatchesQuery(event.summary, parsed.query!));
+  }
+
+  if (events.length === 0 && parsed.query) {
+    const dbResult = await calendar.searchEventsDb(userId, { query: parsed.query, limit: 20 });
+    events = dbResult.events
+      .filter((event) => {
+        if (parsed.onDate) {
+          const day = eventStartLocalDate(event.start);
+          if (!day || !sameCalendarDay(day, parsed.onDate)) return false;
+        }
+        return summaryMatchesQuery(event.summary, parsed.query!);
+      })
+      .map((event) => ({
+        id: event.id,
+        summary: event.summary,
+        start: event.start,
+        end: event.end,
+        htmlLink: event.hangoutLink,
+        recurringEventId: undefined as string | undefined,
+      }));
+  }
+
+  return events;
 }
 
 function emailQueueFingerprint(kind: QueueItemKind, email: EmailQueuePayload): string {
@@ -564,6 +657,10 @@ export class ThreadQueueService implements QueueService {
     const text = input.text.trim();
     if (!text) throw serviceError("BAD_REQUEST", "text is required");
 
+    if (isQuickDeleteIntent(text)) {
+      return this.enqueueQuickDeleteCalendar(userId, input, opts);
+    }
+
     const parsed = parseQuickAddText(text);
     return this.enqueueCalendarInvite(
       userId,
@@ -580,6 +677,64 @@ export class ThreadQueueService implements QueueService {
       },
       { origin: opts?.origin ?? "calendar" },
     );
+  }
+
+  async enqueueQuickDeleteCalendar(
+    userId: string,
+    input: { text: string; title?: string; preview?: string },
+    opts?: QueueEnqueueOptions,
+  ) {
+    const text = input.text.trim();
+    const parsed = parseQuickDeleteText(text);
+
+    const pendingItems = await this.listItems(userId, { status: "pending", limit: 100 });
+    for (const item of pendingItems) {
+      if (item.kind !== "calendar_invite") continue;
+      try {
+        const payload = parseCalendarQueuePayload(item.payload);
+        if (!inviteMatchesDeleteCriteria(payload.calendar.summary, parsed, payload.calendar.startDateTime)) {
+          continue;
+        }
+        await this.dismiss(userId, item.id);
+      } catch {
+        // ignore malformed payloads
+      }
+    }
+
+    const targets = await findCalendarDeleteTargets(userId, parsed);
+    if (targets.length === 0) {
+      const hint = parsed.query ?? (parsed.onDate ? "on that date" : text);
+      throw serviceError("NOT_FOUND", `No calendar events found matching "${hint}".`);
+    }
+
+    const queued: QueueItem[] = [];
+    for (const event of targets) {
+      const item = await this.enqueueCalendarDelete(
+        userId,
+        {
+          delete: {
+            eventId: event.id,
+            summary: event.summary ?? "Event",
+            htmlLink: event.htmlLink,
+            recurringEventId: event.recurringEventId,
+            cancelWithNotify: false,
+          },
+          title: input.title?.trim() || `Delete: ${event.summary ?? "Event"}`,
+          preview: input.preview?.trim() || truncate(text),
+        },
+        { origin: opts?.origin ?? "calendar" },
+      );
+      queued.push(item);
+    }
+
+    if (queued.length === 1) return queued[0]!;
+
+    const first = queued[0]!;
+    return {
+      ...first,
+      title: `Delete ${queued.length} events`,
+      preview: targets.map((event) => event.summary ?? event.id).join(", "),
+    };
   }
 
   async enqueueDraftSend(

@@ -23,6 +23,11 @@ import {
 
 import { trpc } from "~/trpc/client";
 import { parseQuickAddText } from "~/lib/parse-quick-add-client";
+import {
+  demoEventMatchesDelete,
+  isQuickDeleteIntent,
+  parseQuickDeleteText,
+} from "~/lib/parse-quick-delete-client";
 import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -680,6 +685,20 @@ export default function CalendarPage() {
                   if (isDemoUser && !isConnected) {
                     if (!tryFeature()) return;
 
+                    if (isQuickDeleteIntent(text)) {
+                      try {
+                        const parsed = parseQuickDeleteText(text);
+                        setCustomDemoEvents((prev) =>
+                          prev.filter((event) => !demoEventMatchesDelete(event.summary, event.start, parsed)),
+                        );
+                        setQuickAddText("");
+                        toast.success("Matching events removed from preview");
+                      } catch {
+                        toast.error("Could not parse delete prompt.");
+                      }
+                      return;
+                    }
+
                     try {
                       const parsed = parseQuickAddText(text);
                       const newEvent: CalendarEventItem = {
@@ -713,7 +732,7 @@ export default function CalendarPage() {
                     type="text"
                     value={quickAddText}
                     onChange={(e) => setQuickAddText(e.target.value)}
-                    placeholder="e.g. Meeting 22 June 5-6pm or Lunch tomorrow at noon"
+                    placeholder="Add: Lunch tomorrow · Delete: remove meeting with manu on 27 june"
                     style={{
                       border: "none", outline: "none", background: "transparent",
                       color: "var(--thread-text)", fontSize: 12, width: 240,
