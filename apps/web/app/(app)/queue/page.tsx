@@ -21,6 +21,7 @@ import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { QueryErrorState } from "~/components/app/query-error-state";
 import { dismissBriefThreadFromQueueItem } from "~/lib/brief-dismissals";
+import { useQueueIntegrationGate } from "~/components/app/connect-required-modal";
 import {
   isoToLocalDateTimeInput,
   localDateTimeRangeToPayload,
@@ -73,6 +74,9 @@ export default function QueuePage() {
   const [activeAction, setActiveAction] = useState<"approve" | "dismiss" | null>(null);
   const [search, setSearch] = useState("");
   const utils = trpc.useUtils();
+  const meQuery = trpc.auth.me.useQuery({});
+  const { checkBeforeApprove, showRequirementFromError, modal: connectModal } =
+    useQueueIntegrationGate(meQuery.data?.email);
 
   const itemsQuery = trpc.queue.list.useQuery({ status: tab === "pending" ? "pending" : "all" });
 
@@ -188,6 +192,20 @@ export default function QueuePage() {
       toast.message("That item was already processed — refreshing queue.");
       return;
     }
+
+    if (showRequirementFromError(error.message)) {
+      void utils.queue.list.invalidate();
+      void utils.queue.pendingCount.invalidate();
+      return;
+    }
+
+    if (/PRECONDITION_FAILED|Could not complete|not connected/i.test(error.message)) {
+      void utils.queue.list.invalidate();
+      void utils.queue.pendingCount.invalidate();
+      toast.error(error.message);
+      return;
+    }
+
     toast.error(error.message);
     if (ctx?.prev) {
       utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
@@ -221,6 +239,7 @@ export default function QueuePage() {
   };
 
   const handleApproveClick = (item: (typeof items)[number]) => {
+    if (!checkBeforeApprove(item.kind)) return;
     if (item.kind === "calendar_archive") {
       const archive = readArchivePayload(item.payload);
       setArchiveConfirm({
@@ -485,6 +504,7 @@ export default function QueuePage() {
                     toast.error(archiveDateError);
                     return;
                   }
+                  if (!checkBeforeApprove("calendar_archive")) return;
                   try {
                     const archive = localDateTimeRangeToPayload(
                       archiveConfirm.startAt,
@@ -507,6 +527,8 @@ export default function QueuePage() {
           </div>
         </div>
       ) : null}
+
+      {connectModal}
     </div>
   );
 }

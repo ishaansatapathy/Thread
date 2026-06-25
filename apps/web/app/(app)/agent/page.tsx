@@ -32,6 +32,7 @@ import {
   dismissBriefThreadsFromAgentActions,
 } from "~/lib/brief-dismissals";
 import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
+import { useQueueIntegrationGate } from "~/components/app/connect-required-modal";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -126,12 +127,16 @@ function ActionPanel({
   actions,
   agentAutoApprove,
   onQueueResolved,
+  userEmail,
 }: {
   actions: ActionCard[];
   agentAutoApprove: boolean;
   onQueueResolved?: () => void;
+  userEmail?: string | null;
 }) {
   const utils = trpc.useUtils();
+  const { checkBeforeApprove, showRequirementFromError, modal: connectModal } =
+    useQueueIntegrationGate(userEmail);
   const pendingQueue = trpc.queue.list.useQuery({ status: "pending" });
   const approve = trpc.queue.approve.useMutation({
     onSuccess: async (item) => {
@@ -144,7 +149,9 @@ function ActionPanel({
     },
     onError: (e) => {
       void utils.queue.list.invalidate();
-      toast.error(e.message);
+      if (!showRequirementFromError(e.message)) {
+        toast.error(e.message);
+      }
     },
   });
   const dismiss = trpc.queue.dismiss.useMutation({
@@ -193,12 +200,25 @@ function ActionPanel({
         a.queueItemId,
     );
   const pendingIds = new Set((pendingQueue.data?.items ?? []).map((item: { id: string }) => item.id));
+  const queuedItem = pendingQueue.data?.items.find(
+    (item: { id: string }) => item.id === queuedAction?.queueItemId,
+  );
   const queueItemStillPending = Boolean(
     queuedAction?.queueItemId && pendingIds.has(queuedAction.queueItemId),
   );
   const Icon = actionIcon(latest.kind);
 
+  const handleApproveQueued = () => {
+    if (!queuedAction?.queueItemId) return;
+    const kind =
+      queuedItem?.kind ??
+      (queuedAction.kind === "calendar_queued" ? "calendar_invite" : "email_send");
+    if (!checkBeforeApprove(kind)) return;
+    approve.mutate({ id: queuedAction.queueItemId });
+  };
+
   return (
+    <>
     <div className="thread-agent-pane">
       <div className="thread-agent-pane-head">
         <Icon size={14} style={{ opacity: 0.7 }} />
@@ -236,7 +256,7 @@ function ActionPanel({
                     className="thread-btn-accent"
                     style={{ fontSize: 12, padding: "6px 12px" }}
                     disabled={approve.isPending || dismiss.isPending}
-                    onClick={() => approve.mutate({ id: queuedAction.queueItemId! })}
+                    onClick={handleApproveQueued}
                   >
                     Approve
                   </button>
@@ -274,6 +294,8 @@ function ActionPanel({
         ) : null}
       </div>
     </div>
+    {connectModal}
+    </>
   );
 }
 
@@ -766,6 +788,7 @@ export default function AgentPage() {
             actions={lastActions}
             agentAutoApprove={agentAutoApprove}
             onQueueResolved={() => setLastActions([])}
+            userEmail={meQuery.data?.email}
           />
         </div>
       </div>
