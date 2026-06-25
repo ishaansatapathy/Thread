@@ -927,6 +927,7 @@ export default function InboxPage() {
   const handleViewChange = (nextView: InboxView) => {
     setView(nextView);
     if (nextView !== "priority") return;
+    if (hasDemoFixtures && !isConnected) return;
     if (!aiReady) {
       toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
       return;
@@ -1446,6 +1447,24 @@ export default function InboxPage() {
               ))}
               </>
             )
+          ) : view === "priority" && hasDemoFixtures && !isConnected ? (
+            <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
+              <Sparkles size={20} style={{ opacity: 0.35 }} />
+              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
+                Priority needs Gmail
+              </p>
+              <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
+                AI priority ranking isn&apos;t part of the demo walkthrough. Your {demoCacheQuery.data?.threads.length ?? 0} sample threads are on the Inbox tab.
+              </p>
+              <button
+                type="button"
+                className="thread-btn-accent"
+                style={{ marginTop: 14, fontSize: 12, padding: "8px 14px" }}
+                onClick={() => setView("inbox")}
+              >
+                Go to Inbox
+              </button>
+            </div>
           ) : view === "priority" && !priorityReady && isConnected && aiReady ? (
             <SkeletonList count={8} />
           ) : inbox.isLoading ? (
@@ -1461,11 +1480,25 @@ export default function InboxPage() {
             <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
               <Inbox size={20} style={{ opacity: 0.35 }} />
               <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
-                {appliedQuery ? "No matches" : "Inbox is empty"}
+                {appliedQuery
+                  ? "No matches"
+                  : view === "priority"
+                    ? "Nothing urgent right now"
+                    : hasDemoFixtures
+                      ? "No threads here"
+                      : "Inbox is empty"}
               </p>
               {appliedQuery ? (
                 <p style={{ marginTop: 6, fontSize: 12, color: "var(--thread-dim)" }}>
                   Nothing matched “{appliedQuery}”.
+                </p>
+              ) : view === "priority" ? (
+                <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
+                  Switch to Inbox to browse all mail.
+                </p>
+              ) : hasDemoFixtures ? (
+                <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
+                  {demoCacheQuery.data?.threads.length ?? 0} sample threads are on the Inbox tab.
                 </p>
               ) : null}
             </div>
