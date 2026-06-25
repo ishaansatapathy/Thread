@@ -261,6 +261,68 @@ function buildBriefEventContext(brief: DailyBrief) {
   return map;
 }
 
+function headlinesMatch(a: string, b: string) {
+  const left = a.toLowerCase().trim();
+  const right = b.toLowerCase().trim();
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+/** AI briefs often omit threadId on today's focus while the thread exists in needsAttention. */
+function resolveBriefThreadTarget(
+  action: BriefAction | null,
+  brief: DailyBrief,
+  threadContext: Map<string, { headline: string; detail?: string }>,
+) {
+  const explicitThreadId = action?.threadId ?? brief.todaysFocus.threadId;
+  if (explicitThreadId) {
+    const ctx = threadContext.get(explicitThreadId);
+    return {
+      threadId: explicitThreadId,
+      headline: ctx?.headline ?? brief.todaysFocus.headline,
+      detail: ctx?.detail ?? brief.todaysFocus.detail,
+    };
+  }
+
+  const focusHeadline = brief.todaysFocus.headline;
+  for (const item of [...brief.needsAttention, ...brief.risks]) {
+    if (!item.threadId) continue;
+    if (headlinesMatch(focusHeadline, item.headline)) {
+      return { threadId: item.threadId, headline: item.headline, detail: item.detail };
+    }
+  }
+
+  for (const [threadId, ctx] of threadContext) {
+    if (headlinesMatch(focusHeadline, ctx.headline)) {
+      return { threadId, headline: ctx.headline, detail: ctx.detail };
+    }
+  }
+
+  return {
+    threadId: undefined,
+    headline: focusHeadline,
+    detail: brief.todaysFocus.detail,
+  };
+}
+
+function buildBriefAgentPrompt(
+  kind: BriefAction["kind"],
+  headline: string,
+  detail?: string,
+  action?: BriefAction,
+) {
+  const queueNote =
+    "Queue it for my approval before sending — do not send without approval.";
+  const wantsFollowUp =
+    kind === "follow_up" ||
+    /follow[\s-]?up/i.test(action?.label ?? "") ||
+    /follow[\s-]?up/i.test(headline);
+  if (wantsFollowUp) {
+    return `Follow up on this email thread: "${headline}". ${detail ?? "I sent this earlier and need a response — draft a polite follow-up and queue it for my approval before sending."}`;
+  }
+  return `Read this email and draft a reply about: "${headline}". ${detail ?? queueNote}`;
+}
+
 function actionPreview(
   action: BriefAction,
   brief: DailyBrief,
@@ -275,10 +337,11 @@ function actionPreview(
     const ctx = eventContext.get(action.eventId);
     if (ctx) return { ...ctx, label: "About this meeting" };
   }
-  if (action.kind === "reply") {
+  if (action.kind === "reply" || action.kind === "follow_up") {
+    const target = resolveBriefThreadTarget(action, brief, threadContext);
     return {
-      headline: brief.todaysFocus.headline,
-      detail: brief.todaysFocus.detail ?? brief.summary,
+      headline: target.headline,
+      detail: target.detail ?? brief.summary,
       label: "About this email",
     };
   }
@@ -336,22 +399,29 @@ function runBriefAction(
   router: ReturnType<typeof useRouter>,
   onDismissThread?: (threadId: string) => void,
   brief?: DailyBrief | null,
+  threadContext?: Map<string, { headline: string; detail?: string }>,
 ) {
-  const focusThreadId = action.threadId ?? brief?.todaysFocus.threadId;
-  const focusHeadline = brief?.todaysFocus.headline ?? action.label;
-  const defaultReplyPrompt = `Read this email and draft a reply about: "${focusHeadline}". ${brief?.todaysFocus.detail ?? "Queue the email for my approval before sending — do not send without approval."}`;
+  const threadCtxMap = threadContext ?? (brief ? buildBriefThreadContext(brief) : new Map());
+  const target = brief ? resolveBriefThreadTarget(action, brief, threadCtxMap) : null;
+  const threadId = action.threadId ?? target?.threadId ?? brief?.todaysFocus.threadId;
 
-  if (focusThreadId) onDismissThread?.(focusThreadId);
+  if (threadId) onDismissThread?.(threadId);
   else if (action.threadId) onDismissThread?.(action.threadId);
 
   switch (action.kind) {
     case "reply":
+    case "follow_up": {
       if (action.agentPrompt) {
-        router.push(briefAgentUrl(action.agentPrompt, focusThreadId ?? action.threadId));
+        router.push(briefAgentUrl(action.agentPrompt, threadId));
         return;
       }
-      if (focusThreadId) {
-        router.push(briefAgentUrl(defaultReplyPrompt, focusThreadId));
+      if (brief && target) {
+        router.push(
+          briefAgentUrl(
+            buildBriefAgentPrompt(action.kind, target.headline, target.detail, action),
+            threadId,
+          ),
+        );
         return;
       }
       router.push(
@@ -360,6 +430,7 @@ function runBriefAction(
         ),
       );
       return;
+    }
     case "prepare_meeting":
       if (action.eventId) {
         router.push(`/calendar?event=${encodeURIComponent(action.eventId)}`);
@@ -371,10 +442,9 @@ function runBriefAction(
       }
       router.push("/calendar");
       return;
-    case "follow_up":
     case "agent":
       if (action.agentPrompt) {
-        router.push(briefAgentUrl(action.agentPrompt, action.threadId));
+        router.push(briefAgentUrl(action.agentPrompt, threadId ?? action.threadId));
         return;
       }
       break;
@@ -634,18 +704,27 @@ export default function BriefPage() {
                 <span className="thread-mono-tag">{brief.todaysFocus.byTime}</span>
               ) : null}
               <div className="thread-brief-focus-actions">
-                {brief.todaysFocus.threadId ? (
-                  <Link
-                    href={briefAgentUrl(
-                      `Read this email and draft a reply about: "${brief.todaysFocus.headline}". ${brief.todaysFocus.detail ?? ""} Queue it for my approval before sending.`,
-                      brief.todaysFocus.threadId,
-                    )}
-                    className="thread-btn-accent"
-                    onClick={() => markBriefThreadDismissed(brief.todaysFocus.threadId!)}
-                  >
-                    Reply now
-                  </Link>
-                ) : null}
+                {(() => {
+                  const focusTarget = resolveBriefThreadTarget(null, brief, briefThreadContext);
+                  if (!focusTarget.threadId && !brief.todaysFocus.headline) return null;
+                  const focusPrompt = buildBriefAgentPrompt(
+                    "reply",
+                    focusTarget.headline,
+                    focusTarget.detail,
+                    { id: "focus", label: "Reply now", kind: "reply" },
+                  );
+                  return (
+                    <Link
+                      href={briefAgentUrl(focusPrompt, focusTarget.threadId)}
+                      className="thread-btn-accent"
+                      onClick={() => {
+                        if (focusTarget.threadId) markBriefThreadDismissed(focusTarget.threadId);
+                      }}
+                    >
+                      Reply now
+                    </Link>
+                  );
+                })()}
                 {brief.todaysFocus.eventId ? (
                   <Link href={`/calendar?event=${encodeURIComponent(brief.todaysFocus.eventId)}`} className="thread-btn-ghost">
                     View meeting
@@ -764,7 +843,9 @@ export default function BriefPage() {
                           ? actionPreview(action, brief, briefThreadContext, briefEventContext)
                           : null
                       }
-                      onRun={() => runBriefAction(action, router, markBriefThreadDismissed, brief)}
+                      onRun={() =>
+                        runBriefAction(action, router, markBriefThreadDismissed, brief, briefThreadContext)
+                      }
                     />
                   ))}
                 </div>
