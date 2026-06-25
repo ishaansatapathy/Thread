@@ -65,6 +65,19 @@ function userFacingApproveError(error: unknown): string {
   return "Could not complete this action. Check your connections and try again.";
 }
 
+function getDemoUserEmail(): string {
+  return (process.env.DEMO_USER_EMAIL ?? process.env.SEED_USER_EMAIL ?? "demo@thread.dev").trim().toLowerCase();
+}
+
+async function isDemoUserId(userId: string): Promise<boolean> {
+  const [user] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return user?.email?.trim().toLowerCase() === getDemoUserEmail();
+}
+
 type ApprovalPrefs = {
   autoApproveEmail: boolean;
   autoApproveAgentEmail: boolean;
@@ -143,6 +156,15 @@ export class ThreadQueueService implements QueueService {
     });
   }
 
+  private async getItemById(userId: string, itemId: string): Promise<QueueItem | null> {
+    const [row] = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(and(eq(threadQueueItemsTable.id, itemId), eq(threadQueueItemsTable.userId, userId)))
+      .limit(1);
+    return row ? mapRow(row) : null;
+  }
+
   private async maybeAutoApprove(
     userId: string,
     item: QueueItem,
@@ -162,7 +184,8 @@ export class ThreadQueueService implements QueueService {
         kind: item.kind,
         message: error instanceof Error ? error.message : String(error),
       });
-      return item;
+      const fresh = await this.getItemById(userId, item.id);
+      return fresh ?? item;
     }
   }
 
@@ -668,15 +691,38 @@ export class ThreadQueueService implements QueueService {
   ) {
     const inbox = getInboxService();
     const calendar = getCalendarService();
+    const demoUser = await isDemoUserId(userId);
 
     switch (kind) {
       case "email_send": {
         const email = parseEmailQueuePayload(payload);
+        const status = await inbox.getConnectionStatus(userId);
+        if (status.gmail !== "connected") {
+          if (demoUser) {
+            logger.info("Demo queue approve: simulated email send (Gmail not connected)", {
+              userId,
+              to: email.to,
+              subject: email.subject,
+            });
+            return;
+          }
+        }
         await inbox.sendMessage(userId, email);
         return;
       }
       case "email_draft": {
         const email = parseEmailQueuePayload(payload);
+        const status = await inbox.getConnectionStatus(userId);
+        if (status.gmail !== "connected") {
+          if (demoUser) {
+            logger.info("Demo queue approve: simulated draft save (Gmail not connected)", {
+              userId,
+              to: email.to,
+              subject: email.subject,
+            });
+            return;
+          }
+        }
         await inbox.createDraft(userId, email);
         return;
       }

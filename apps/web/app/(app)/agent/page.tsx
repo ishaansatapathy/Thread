@@ -125,25 +125,33 @@ function agentWelcomeCopy(opts: {
 function ActionPanel({
   actions,
   agentAutoApprove,
+  onQueueResolved,
 }: {
   actions: ActionCard[];
   agentAutoApprove: boolean;
+  onQueueResolved?: () => void;
 }) {
   const utils = trpc.useUtils();
+  const pendingQueue = trpc.queue.list.useQuery({ status: "pending" });
   const approve = trpc.queue.approve.useMutation({
     onSuccess: async (item) => {
       dismissBriefThreadFromQueueItem(item);
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
       await utils.ai.dailyBrief.invalidate();
+      onQueueResolved?.();
       toast.success("Approved from Agent panel");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      void utils.queue.list.invalidate();
+      toast.error(e.message);
+    },
   });
   const dismiss = trpc.queue.dismiss.useMutation({
     onSuccess: async () => {
       await utils.queue.list.invalidate();
       await utils.queue.pendingCount.invalidate();
+      onQueueResolved?.();
       toast.success("Dismissed from Agent panel");
     },
     onError: (e) => toast.error(e.message),
@@ -176,6 +184,18 @@ function ActionPanel({
   }
 
   const latest = actions.find((a) => a.kind === "inbox_ranked" || a.kind === "inbox_search") ?? actions[actions.length - 1]!;
+  const queuedAction = [...actions]
+    .reverse()
+    .find(
+      (a) =>
+        (a.kind === "email_queued" || a.kind === "calendar_queued") &&
+        a.disposition === "queued" &&
+        a.queueItemId,
+    );
+  const pendingIds = new Set((pendingQueue.data?.items ?? []).map((item: { id: string }) => item.id));
+  const queueItemStillPending = Boolean(
+    queuedAction?.queueItemId && pendingIds.has(queuedAction.queueItemId),
+  );
   const Icon = actionIcon(latest.kind);
 
   return (
@@ -200,21 +220,23 @@ function ActionPanel({
             </span>
           </div>
         ))}
-        {(latest.kind === "email_queued" || latest.kind === "calendar_queued") &&
-        latest.disposition === "queued" ? (
+        {queuedAction &&
+        queuedAction.disposition === "queued" ? (
           <div className="thread-inbox-banner" style={{ marginTop: 4 }}>
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
-              Waiting in Queue — approve here or review all items.
+              {queueItemStillPending
+                ? "Waiting in Queue — approve here or review all items."
+                : "This item was already processed — open Queue for details."}
             </p>
             <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              {latest.queueItemId ? (
+              {queueItemStillPending && queuedAction.queueItemId ? (
                 <>
                   <button
                     type="button"
                     className="thread-btn-accent"
                     style={{ fontSize: 12, padding: "6px 12px" }}
                     disabled={approve.isPending || dismiss.isPending}
-                    onClick={() => approve.mutate({ id: latest.queueItemId! })}
+                    onClick={() => approve.mutate({ id: queuedAction.queueItemId! })}
                   >
                     Approve
                   </button>
@@ -223,7 +245,7 @@ function ActionPanel({
                     className="thread-btn-ghost"
                     style={{ fontSize: 12, padding: "6px 12px" }}
                     disabled={approve.isPending || dismiss.isPending}
-                    onClick={() => dismiss.mutate({ id: latest.queueItemId! })}
+                    onClick={() => dismiss.mutate({ id: queuedAction.queueItemId! })}
                   >
                     Dismiss
                   </button>
@@ -740,7 +762,11 @@ export default function AgentPage() {
             </form>
           </div>
 
-          <ActionPanel actions={lastActions} agentAutoApprove={agentAutoApprove} />
+          <ActionPanel
+            actions={lastActions}
+            agentAutoApprove={agentAutoApprove}
+            onQueueResolved={() => setLastActions([])}
+          />
         </div>
       </div>
     </div>
