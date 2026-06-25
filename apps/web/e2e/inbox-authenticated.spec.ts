@@ -26,7 +26,7 @@ test("demo inbox shows seeded threads without Gmail OAuth", async ({ page }) => 
   await page.goto("/api-auth/demo?next=/inbox");
   await page.waitForURL(/\/inbox/, { timeout: 20_000 });
 
-  await expect(page.getByText(/Demo inbox|Hackathon demo inbox|Corsair integration/i).first()).toBeVisible({
+  await expect(page.getByText(/Series A|Demo inbox|term sheet/i).first()).toBeVisible({
     timeout: 15_000,
   });
 });

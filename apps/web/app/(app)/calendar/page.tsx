@@ -17,17 +17,13 @@ import {
   Sparkles,
   Trash2,
   Users,
-  UserPlus,
   X,
   XCircle,
-  Bot,
-  Mail,
-  Clock,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { parseQuickAddText } from "~/lib/parse-quick-add-client";
-import { useDemoMode } from "~/hooks/use-demo-mode";
+import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { QueryErrorState } from "~/components/app/query-error-state";
@@ -51,30 +47,54 @@ import {
   viewPeriodLabel,
 } from "~/lib/calendar-view";
 
-/** Two static client-side demo events — no DB, no API. */
+/** Rich client-side demo events — no DB, no API. */
 function makeDemoEvents(): CalendarEventItem[] {
   const today = new Date();
   today.setSeconds(0, 0);
 
-  // Event 1: today at 11am (1h)
   const ev1Start = new Date(today);
-  ev1Start.setHours(11, 0, 0, 0);
+  ev1Start.setHours(10, 0, 0, 0);
   const ev1End = new Date(ev1Start);
-  ev1End.setHours(12, 0, 0, 0);
+  ev1End.setHours(10, 30, 0, 0);
 
-  // Event 2: tomorrow at 2pm (30min)
   const ev2Start = new Date(today);
-  ev2Start.setDate(today.getDate() + 1);
-  ev2Start.setHours(14, 0, 0, 0);
+  ev2Start.setHours(11, 0, 0, 0);
   const ev2End = new Date(ev2Start);
-  ev2End.setMinutes(30);
+  ev2End.setHours(12, 0, 0, 0);
+
+  const ev3Start = new Date(today);
+  ev3Start.setHours(15, 0, 0, 0);
+  const ev3End = new Date(ev3Start);
+  ev3End.setHours(16, 0, 0, 0);
+
+  const ev4Start = new Date(today);
+  ev4Start.setDate(today.getDate() + 1);
+  ev4Start.setHours(14, 0, 0, 0);
+  const ev4End = new Date(ev4Start);
+  ev4End.setMinutes(30);
+
+  const ev5Start = new Date(today);
+  ev5Start.setDate(today.getDate() + 1);
+  ev5Start.setHours(16, 0, 0, 0);
+  const ev5End = new Date(ev5Start);
+  ev5End.setHours(17, 0, 0, 0);
 
   return [
     {
       id: "demo-cal-1",
-      summary: "Corsair Hackathon Demo",
+      summary: "Daily Brief standup",
       start: ev1Start.toISOString(),
       end: ev1End.toISOString(),
+      location: "Virtual · meet.google.com/thread-demo",
+      attendees: [
+        { email: "demo@thread.dev", displayName: "You", responseStatus: "accepted", organizer: true },
+      ],
+    },
+    {
+      id: "demo-cal-2",
+      summary: "Corsair Hackathon Demo",
+      start: ev2Start.toISOString(),
+      end: ev2End.toISOString(),
       location: "Virtual · meet.google.com/demo",
       attendees: [
         { email: "judge@corsair.dev", displayName: "Judge", responseStatus: "accepted" },
@@ -82,12 +102,29 @@ function makeDemoEvents(): CalendarEventItem[] {
       ],
     },
     {
-      id: "demo-cal-2",
+      id: "demo-cal-3",
+      summary: "Focus block — deep work",
+      start: ev3Start.toISOString(),
+      end: ev3End.toISOString(),
+      attendees: [],
+    },
+    {
+      id: "demo-cal-4",
       summary: "Team sync — product review",
-      start: ev2Start.toISOString(),
-      end: ev2End.toISOString(),
+      start: ev4Start.toISOString(),
+      end: ev4End.toISOString(),
       attendees: [
         { email: "team@example.com", displayName: "Team", responseStatus: "needsAction" },
+      ],
+    },
+    {
+      id: "demo-cal-5",
+      summary: "Investor update prep",
+      start: ev5Start.toISOString(),
+      end: ev5End.toISOString(),
+      location: "Conference room B",
+      attendees: [
+        { email: "founder@startup.io", displayName: "Alex", responseStatus: "accepted" },
       ],
     },
   ];
@@ -262,8 +299,7 @@ export default function CalendarPage() {
   const isConnected = statusQuery.data?.googlecalendar === "connected";
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
-  // Demo mode: inject 2 client-side events when calendar is not connected
-  const { isDemo: isDemoUser, isDemoExpired } = useDemoMode(userEmail);
+  const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(userEmail, "calendar");
   const demoEvents = useMemo(() => (isDemoUser && !isConnected ? makeDemoEvents() : []), [isDemoUser, isConnected]);
 
   const [customDemoEvents, setCustomDemoEvents] = useState<CalendarEventItem[]>(() => {
@@ -271,14 +307,6 @@ export default function CalendarPage() {
     const saved = localStorage.getItem("thread_demo_custom_events");
     return saved ? JSON.parse(saved) : makeDemoEvents();
   });
-
-  const [demoCalendarCount, setDemoCalendarCount] = useState<number>(() => {
-    if (typeof window === "undefined") return 0;
-    return Number(sessionStorage.getItem("thread_demo_calendar_count") ?? "0");
-  });
-
-  const [showDemoLimitModal, setShowDemoLimitModal] = useState(false);
-  const [showExpiredModal, setShowExpiredModal] = useState(false);
 
   useEffect(() => {
     if (isDemoUser && typeof window !== "undefined") {
@@ -622,8 +650,8 @@ export default function CalendarPage() {
                 <CalIcon size={14} />
               </div>
               <div className="thread-app-banner-text" style={{ flex: 1 }}>
-                <h4 style={{ fontSize: 13, margin: 0 }}>Demo Calendar Preview</h4>
-                <p style={{ fontSize: 11.5, margin: "2px 0 0", opacity: 0.8 }}>Using sample data. Natural language prompting adds events to the UI.</p>
+                <h4 style={{ fontSize: 13, margin: 0 }}>Demo calendar — AI quick-add</h4>
+                <p style={{ fontSize: 11.5, margin: "2px 0 0", opacity: 0.8 }}>5 sample events · 3 AI quick-adds in demo · connect for live sync</p>
               </div>
               <a href={connectHref} className="thread-btn-accent" style={{ fontSize: 11, padding: "4px 10px", height: "auto", display: "inline-flex", alignItems: "center" }}>
                 Connect Calendar
@@ -637,7 +665,7 @@ export default function CalendarPage() {
               </h3>
               <p className="thread-cal-toolbar-copy">
                 {isDemoUser && !isConnected
-                  ? "Interactive preview with sample data. Natural language prompting adds events to the UI."
+                  ? "5 sample events · 3 demo calendar AI actions · connect Calendar for live sync"
                   : "Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish."}
               </p>
             </div>
@@ -650,18 +678,7 @@ export default function CalendarPage() {
                   if (!text) return;
 
                   if (isDemoUser && !isConnected) {
-                    if (isDemoExpired) {
-                      setShowExpiredModal(true);
-                      return;
-                    }
-                    if (demoCalendarCount >= 2) {
-                      setShowDemoLimitModal(true);
-                      return;
-                    }
-
-                    const nextCount = demoCalendarCount + 1;
-                    setDemoCalendarCount(nextCount);
-                    sessionStorage.setItem("thread_demo_calendar_count", String(nextCount));
+                    if (!tryFeature()) return;
 
                     try {
                       const parsed = parseQuickAddText(text);
@@ -717,13 +734,7 @@ export default function CalendarPage() {
               <button
                 type="button"
                 className="thread-btn-accent"
-                onClick={() => {
-                  if (isDemoUser && isDemoExpired) {
-                    setShowExpiredModal(true);
-                    return;
-                  }
-                  setShowCreate(true);
-                }}
+                onClick={() => setShowCreate(true)}
               >
                 <Plus size={14} />
                 New invite
@@ -981,6 +992,8 @@ export default function CalendarPage() {
                   }
 
                   if (isDemoUser && !isConnected) {
+                    if (!tryFeature()) return;
+
                     const newEvent: CalendarEventItem = {
                       id: `demo-cal-custom-${Date.now()}`,
                       summary,
@@ -1750,65 +1763,7 @@ export default function CalendarPage() {
         </div>
       ) : null}
 
-      {showDemoLimitModal && (
-        <div className="thread-demo-expired-overlay" role="dialog" aria-modal aria-label="Demo limit reached">
-          <div className="thread-demo-expired-card">
-            <div className="thread-demo-expired-icon">
-              <Sparkles size={22} />
-            </div>
-            <h2 className="thread-demo-expired-title">Demo limit reached</h2>
-            <p className="thread-demo-expired-body">
-              You've used all 2 demo calendar prompts. Connect Calendar or create a free account to keep scheduling with natural language.
-            </p>
-            <div className="thread-demo-expired-ctas">
-              <a href="/settings" className="thread-demo-expired-btn thread-demo-expired-btn--primary">
-                <Mail size={14} />
-                Connect Calendar
-              </a>
-              <a href="/sign-in" className="thread-demo-expired-btn thread-demo-expired-btn--ghost">
-                Create account
-              </a>
-            </div>
-            <button type="button" className="thread-demo-expired-close" aria-label="Close" onClick={() => setShowDemoLimitModal(false)}>
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showExpiredModal && (
-        <DemoExpiredModal onClose={() => setShowExpiredModal(false)} />
-      )}
-    </div>
-  );
-}
-
-function DemoExpiredModal({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="thread-demo-expired-overlay" role="dialog" aria-modal aria-label="Demo session ended">
-      <div className="thread-demo-expired-card">
-        <div className="thread-demo-expired-icon">
-          <Clock size={22} />
-        </div>
-        <h2 className="thread-demo-expired-title">Your demo has ended</h2>
-        <p className="thread-demo-expired-body">
-          10 minutes are up. Connect Calendar to keep going with your real schedule — or
-          create a free account to save your session.
-        </p>
-        <div className="thread-demo-expired-ctas">
-          <a href="/settings" className="thread-demo-expired-btn thread-demo-expired-btn--primary">
-            <Mail size={14} />
-            Connect Calendar
-          </a>
-          <a href="/sign-in" className="thread-demo-expired-btn thread-demo-expired-btn--ghost">
-            <UserPlus size={14} />
-            Create account
-          </a>
-        </div>
-        <button type="button" className="thread-demo-expired-close" aria-label="Close" onClick={onClose}>
-          <X size={14} />
-        </button>
-      </div>
+      {demoModal}
     </div>
   );
 }

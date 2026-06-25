@@ -171,6 +171,43 @@ export const mailCache = {
       .map(rowToThread);
   },
 
+  /** Returns a single cached thread as a full InboxThread (demo / offline mode). */
+  async getThread(userId: string, threadId: string): Promise<InboxThread | null> {
+    const map = await this.getHistoryMap(userId, [threadId]);
+    const row = map.get(threadId);
+    if (!row) return null;
+
+    const body = row.snippet?.trim() ?? "";
+    const fromDisplay =
+      row.fromName && row.fromAddress
+        ? `${row.fromName} <${row.fromAddress}>`
+        : row.fromName ?? row.fromAddress ?? "Unknown";
+
+    return {
+      id: row.threadId,
+      snippet: body.slice(0, 240) || row.subject?.slice(0, 240) || "",
+      historyId: row.historyId ?? undefined,
+      subject: row.subject ?? undefined,
+      from: row.fromAddress ?? undefined,
+      fromName: row.fromName ?? undefined,
+      date: row.lastMessageAt?.toISOString(),
+      body,
+      messageCount: row.messageCount,
+      unread: row.unread,
+      labelIds: row.labelIds ?? [],
+      suggestedReplyTo: row.fromAddress ?? undefined,
+      messages: [
+        {
+          id: `${row.threadId}-msg-1`,
+          from: fromDisplay,
+          body,
+          snippet: body.slice(0, 180),
+          date: row.lastMessageAt?.toISOString(),
+        },
+      ],
+    };
+  },
+
   /** Remove a single thread from cache (e.g. after archive). */
   async remove(userId: string, threadId: string): Promise<void> {
     try {

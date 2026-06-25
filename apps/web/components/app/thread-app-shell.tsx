@@ -28,7 +28,7 @@ import { ThreadGmailConnect, ThreadGmailConnectMenuItem } from "./thread-gmail-c
 import { ThreadCalendarConnect } from "./thread-calendar-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 import { useSyncEvents } from "~/hooks/use-sync-events";
-import { DemoBanner } from "./demo-banner";
+import { DemoBar } from "./demo-bar";
 
 const NAV = [
   { label: "Brief", href: "/brief", icon: Sun },
@@ -273,6 +273,7 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
+        <DemoBar email={user.email} />
         <main className="thread-app-content">{children}</main>
       </div>
 
@@ -282,7 +283,6 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
         onShowShortcuts={() => setShortcutsOpen(true)}
       />
       <ShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      <DemoBanner email={user.email} />
     </div>
   );
 }
