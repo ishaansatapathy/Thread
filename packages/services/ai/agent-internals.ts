@@ -125,15 +125,16 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "list_calendar_events",
-      description: "List calendar events in a date range to find free slots or context.",
+      description:
+        "List or search Google Calendar events in a date range. Pass query to filter by title (e.g. 'manu'). Use before cancel_event when user asks to delete/cancel a meeting.",
       parameters: {
         type: "object",
         properties: {
-          timeMin: { type: "string", description: "ISO 8601 range start" },
-          timeMax: { type: "string", description: "ISO 8601 range end" },
+          timeMin: { type: "string", description: "ISO 8601 range start. Defaults to 30 days ago if omitted." },
+          timeMax: { type: "string", description: "ISO 8601 range end. Defaults to 90 days ahead if omitted." },
           maxResults: { type: "number", default: 20 },
+          query: { type: "string", description: "Free-text search on event title/summary (Google Calendar q param)." },
         },
-        required: ["timeMin", "timeMax"],
       },
     },
   },
@@ -358,7 +359,8 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "cancel_event",
-      description: "Queue cancellation of a calendar event for human approval (HITL). Notifies attendees on approve — use only when user explicitly asks to cancel.",
+      description:
+        "Queue deletion/cancellation of a Google Calendar event for human approval (HITL). Use when user asks to delete, remove, or cancel a meeting — first find the event via search_events_db or list_calendar_events with query. If the meeting is only pending in Queue (not on calendar yet), use dismiss_queue_item instead.",
       parameters: {
         type: "object",
         properties: {
@@ -705,7 +707,8 @@ export const AGENT_TOOLS: OpenAiToolDefinition[] = [
     type: "function",
     function: {
       name: "search_events_db",
-      description: "Search synced Google Calendar events via googlecalendar.db.events.search.",
+      description:
+        "Search synced Google Calendar events by title keywords via local cache. Use with list_calendar_events (query param) when user asks to find/delete a meeting by name.",
       parameters: {
         type: "object",
         properties: {
@@ -865,6 +868,8 @@ export function buildSystemPromptFor(userEmail?: string, approval?: ApprovalDefa
     "Call queue_email at most once per user message unless they explicitly ask for multiple different emails.",
     "Use search_inbox / get_thread before drafting replies to existing threads.",
     "Use list_inbox to show recent emails; use search_inbox for filtered searches.",
+    "When the user asks to delete, remove, or cancel a calendar meeting: call search_events_db AND list_calendar_events with a query keyword from the title (try partial words like 'manu'). If multiple matches, ask which one. Then call cancel_event with the event id — it queues for Queue approval. If the event is only pending approval (list_queue calendar_invite), use dismiss_queue_item instead.",
+    "Never claim a meeting does not exist until you have searched with list_calendar_events (query) and search_events_db.",
     "Be concise and friendly. Match your wording to what actually happened (sent vs queued).",
     'When CURRENT USER FOCUS is set in the system prompt, pronouns like "this", "this one", and "summarize this" refer to that focused email thread or calendar event — not unrelated topics from earlier messages.',
     "Do not answer about calendar events from old conversation history when the user is clearly continuing a focused email thread.",
