@@ -6,6 +6,7 @@ import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut, ListChecks, Un
 
 import { trpc } from "~/trpc/client";
 import { useThreadUser, initials } from "~/components/app/use-thread-user";
+import { useDemoMode } from "~/hooks/use-demo-mode";
 
 function ConnectionRow({
   connected,
@@ -13,12 +14,16 @@ function ConnectionRow({
   connectedLabel,
   onDisconnect,
   disconnecting,
+  demoBlocked,
+  demoBlockedHint,
 }: {
   connected: boolean;
   connectHref: string;
   connectedLabel: string;
   onDisconnect: () => void;
   disconnecting?: boolean;
+  demoBlocked?: boolean;
+  demoBlockedHint?: string;
 }) {
   if (connected) {
     return (
@@ -35,6 +40,21 @@ function ConnectionRow({
           <Unlink size={12} />
           {disconnecting ? "Disconnecting…" : "Disconnect"}
         </button>
+      </div>
+    );
+  }
+
+  if (demoBlocked) {
+    return (
+      <div className="thread-set-row-actions" style={{ flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <a href="/sign-in" className="thread-btn-accent" style={{ fontSize: 12, padding: "7px 12px" }}>
+          Sign in to connect
+        </a>
+        {demoBlockedHint ? (
+          <p style={{ margin: 0, fontSize: 11, lineHeight: 1.45, color: "var(--thread-dim)", maxWidth: 220, textAlign: "right" }}>
+            {demoBlockedHint}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -84,6 +104,7 @@ function ApprovalToggle({
 
 export default function SettingsPage() {
   const { user } = useThreadUser();
+  const { isDemo: isDemoUser } = useDemoMode(user?.email);
   const utils = trpc.useUtils();
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
@@ -212,6 +233,15 @@ export default function SettingsPage() {
         <h2>Connections</h2>
         <p>Thread reads Gmail and Calendar through Corsair. Connect once — disconnect anytime.</p>
 
+        {isDemoUser ? (
+          <div className="thread-demo-inbox-strip" style={{ marginBottom: 14 }}>
+            <ShieldCheck size={13} />
+            <span>
+              Demo account uses sample inbox data only. Sign in with your own account to connect Gmail or Calendar.
+            </span>
+          </div>
+        ) : null}
+
         <div className="thread-set-row">
           <span className="thread-set-row-icon">
             <Mail size={17} />
@@ -226,6 +256,8 @@ export default function SettingsPage() {
             connectedLabel="Connected"
             onDisconnect={() => disconnectGmail.mutate({})}
             disconnecting={disconnectGmail.isPending}
+            demoBlocked={isDemoUser && inboxStatus.data?.gmail !== "connected"}
+            demoBlockedHint="Connecting Gmail on demo@thread.dev replaces seeded mail with a real inbox."
           />
         </div>
 
@@ -243,6 +275,8 @@ export default function SettingsPage() {
             connectedLabel="Connected"
             onDisconnect={() => disconnectCalendar.mutate({})}
             disconnecting={disconnectCalendar.isPending}
+            demoBlocked={isDemoUser && calendarStatus.data?.googlecalendar !== "connected"}
+            demoBlockedHint="Use your own account for a personal calendar connection."
           />
         </div>
       </section>

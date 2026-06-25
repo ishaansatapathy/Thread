@@ -706,6 +706,10 @@ export class ThreadQueueService implements QueueService {
             });
             return;
           }
+          throw serviceError(
+            "PRECONDITION_FAILED",
+            "Connect Gmail in Settings to send this email.",
+          );
         }
         await inbox.sendMessage(userId, email);
         return;
@@ -722,12 +726,23 @@ export class ThreadQueueService implements QueueService {
             });
             return;
           }
+          throw serviceError(
+            "PRECONDITION_FAILED",
+            "Connect Gmail in Settings to save this draft.",
+          );
         }
         await inbox.createDraft(userId, email);
         return;
       }
       case "draft_send": {
         const draft = parseDraftSendPayload(payload);
+        const status = await inbox.getConnectionStatus(userId);
+        if (status.gmail !== "connected") {
+          throw serviceError(
+            "PRECONDITION_FAILED",
+            "Connect Gmail in Settings to send this draft.",
+          );
+        }
         await inbox.sendDraft(userId, draft.draftId);
         return;
       }
