@@ -73,12 +73,30 @@ export function formatPrioritySummary(summary: {
   total: number;
   critical: number;
   high: number;
+  medium?: number;
+  low?: number;
+  noise?: number;
   replyNeeded: number;
 }): string {
   const parts: string[] = [];
   if (summary.critical > 0) parts.push(`${summary.critical} critical`);
   if (summary.high > 0) parts.push(`${summary.high} high priority`);
   if (summary.replyNeeded > 0) parts.push(`${summary.replyNeeded} need a reply`);
-  if (parts.length === 0) return `${summary.total} threads analyzed — nothing urgent right now.`;
+
+  const visible =
+    (summary.critical ?? 0) +
+    (summary.high ?? 0) +
+    (summary.medium ?? 0) +
+    (summary.low ?? 0);
+  const hidden = summary.noise ?? 0;
+
+  if (parts.length === 0) {
+    if (visible > 0) {
+      return `Nothing urgent · ${visible} worth a look${hidden > 0 ? ` · ${hidden} low-relevance hidden` : ""}`;
+    }
+    return `${summary.total} threads analyzed — inbox is clear.`;
+  }
+
+  if (hidden > 0) parts.push(`${hidden} low-relevance hidden`);
   return parts.join(" · ");
 }

@@ -25,6 +25,7 @@ import {
   CheckSquare,
   Paperclip,
   Clock,
+  RefreshCw,
   ExternalLink,
 } from "lucide-react";
 
@@ -807,10 +808,10 @@ export default function InboxPage() {
     return sortThreadsByRank(filtered, rankedIds);
   }, [threads, displayThreads, hasDemoFixtures, view, priorityAnalysis, priorityByThreadId]);
 
-  const hiddenNoiseCount = useMemo(() => {
-    if (view !== "priority" || !priorityAnalysis) return 0;
-    return priorityAnalysis.items.filter((item) => item.urgency === "noise").length;
-  }, [view, priorityAnalysis]);
+  const priorityVisibleCount = useMemo(() => {
+    if (!priorityAnalysis) return 0;
+    return priorityAnalysis.items.filter((item) => item.urgency !== "noise").length;
+  }, [priorityAnalysis]);
 
   const priorityRanking = rankThreads.isPending;
   const priorityReady = Boolean(priorityAnalysis?.rankedIds?.length);
@@ -923,14 +924,24 @@ export default function InboxPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []); // registered once — reads latest state from kbdRef
 
-  const handleViewChange = async (nextView: InboxView) => {
+  const handleViewChange = (nextView: InboxView) => {
     setView(nextView);
     if (nextView !== "priority") return;
     if (!aiReady) {
       toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
       return;
     }
-    await refreshPriorityRank({ force: true });
+    if (!priorityAnalysis?.rankedIds?.length && !rankThreads.isPending) {
+      void refreshPriorityRank({ force: true });
+    }
+  };
+
+  const handlePriorityRefresh = () => {
+    if (!aiReady) {
+      toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
+      return;
+    }
+    void refreshPriorityRank({ force: true });
   };
 
   const banner = useMemo(() => {
@@ -1115,8 +1126,8 @@ export default function InboxPage() {
             >
               <Sparkles size={11} />
               Priority
-              {priorityAnalysis ? (
-                <span className="thread-inbox-tab-badge">{priorityAnalysis.items.length}</span>
+              {priorityVisibleCount > 0 ? (
+                <span className="thread-inbox-tab-badge">{priorityVisibleCount}</span>
               ) : null}
             </button>
             <button
@@ -1131,6 +1142,17 @@ export default function InboxPage() {
           <div className="thread-inbox-list-head-actions">
             {isConnected ? (
               <>
+                {view === "priority" && aiReady ? (
+                  <button
+                    type="button"
+                    className="thread-inbox-priority-refresh-btn"
+                    onClick={handlePriorityRefresh}
+                    disabled={rankThreads.isPending}
+                    title="Re-analyze inbox priority"
+                  >
+                    <RefreshCw size={13} className={rankThreads.isPending ? "thread-spin" : undefined} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={`thread-inbox-bulk-btn${bulkMode ? " thread-inbox-bulk-btn--active" : ""}`}
@@ -1271,10 +1293,7 @@ export default function InboxPage() {
             ) : priorityAnalysis ? (
               <span className="thread-priority-summary-head">
                 <Sparkles size={12} style={{ color: "var(--thread-accent-bright)", flexShrink: 0 }} />
-                <span>
-                  {formatPrioritySummary(priorityAnalysis.summary)}
-                  {hiddenNoiseCount > 0 ? ` · ${hiddenNoiseCount} low-relevance hidden` : ""}
-                </span>
+                <span>{formatPrioritySummary(priorityAnalysis.summary)}</span>
               </span>
             ) : aiReady ? null : (
               <span className="thread-priority-summary-meta">Priority needs OPENAI_API_KEY in server env.</span>
@@ -1427,7 +1446,7 @@ export default function InboxPage() {
               ))}
               </>
             )
-          ) : view === "priority" && (priorityRanking || (!priorityReady && isConnected && aiReady)) ? (
+          ) : view === "priority" && !priorityReady && isConnected && aiReady ? (
             <SkeletonList count={8} />
           ) : inbox.isLoading ? (
             <SkeletonList count={10} />
