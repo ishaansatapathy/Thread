@@ -689,7 +689,14 @@ export default function CalendarPage() {
                       try {
                         const parsed = parseQuickDeleteText(text);
                         setCustomDemoEvents((prev) =>
-                          prev.filter((event) => !demoEventMatchesDelete(event.summary, event.start, parsed)),
+                          prev.filter(
+                            (event) =>
+                              !demoEventMatchesDelete(
+                                event.summary ?? "",
+                                event.start ?? "",
+                                parsed,
+                              ),
+                          ),
                         );
                         setQuickAddText("");
                         toast.success("Matching events removed from preview");

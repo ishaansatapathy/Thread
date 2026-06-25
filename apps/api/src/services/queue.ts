@@ -692,7 +692,7 @@ export class ThreadQueueService implements QueueService {
       if (item.kind !== "calendar_invite") continue;
       try {
         const payload = parseCalendarQueuePayload(item.payload);
-        if (!inviteMatchesDeleteCriteria(payload.calendar.summary, parsed, payload.calendar.startDateTime)) {
+        if (!inviteMatchesDeleteCriteria(payload.summary, parsed, payload.startDateTime)) {
           continue;
         }
         await this.dismiss(userId, item.id);
