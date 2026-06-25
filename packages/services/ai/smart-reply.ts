@@ -2,9 +2,8 @@
  * Smart Reply Suggestions
  *
  * When a thread is opened, fetches full thread context via Corsair Gmail
- * and generates 3 ready-to-send reply options using OpenAI.
- *
- * Flow: Corsair Gmail (full thread) → OpenAI → 3 reply options
+ * (or mail cache when Gmail is disconnected) and generates 3 ready-to-send
+ * reply options using OpenAI.
  */
 import { getInboxService } from "../inbox";
 import { normalizeEmail } from "./daily-brief-time";
@@ -62,11 +61,6 @@ export async function getSmartReplies(input: {
   }
 
   const inbox = getInboxService();
-  const status = await inbox.getConnectionStatus(input.tenantId);
-  if (status.gmail !== "connected") {
-    return { suggestions: [], replyTo: "", replyToName: "" };
-  }
-
   const thread = await inbox.getThread(input.tenantId, input.threadId, {
     userEmail: input.userEmail,
   });
