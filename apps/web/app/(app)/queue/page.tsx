@@ -202,7 +202,11 @@ export default function QueuePage() {
     if (/PRECONDITION_FAILED|Could not complete|not connected/i.test(error.message)) {
       void utils.queue.list.invalidate();
       void utils.queue.pendingCount.invalidate();
-      toast.error(error.message);
+      toast.error(
+        error.message.includes("Check your connections")
+          ? `${error.message} The item is still in your queue — fix the issue and try again.`
+          : error.message,
+      );
       return;
     }
 
@@ -358,6 +362,7 @@ export default function QueuePage() {
             const Icon = kindIcon(item.kind);
             const isPending = item.status === "pending" || item.status === "processing";
             const isProcessing = item.status === "processing";
+            const canRetry = item.status === "failed";
             return (
               <article key={item.id} className="thread-queue-card" data-status={item.status}>
                 <div className="thread-queue-card-head">
@@ -396,7 +401,7 @@ export default function QueuePage() {
                   <p className="thread-queue-card-error">{item.errorMessage}</p>
                 ) : null}
 
-                {isPending ? (
+                {isPending || canRetry ? (
                   <div className="thread-queue-card-actions">
                     <button
                       type="button"
@@ -412,7 +417,11 @@ export default function QueuePage() {
                       disabled={anyBusy || isProcessing}
                       onClick={() => handleApproveClick(item)}
                     >
-                      {isProcessing ? "Processing…" : approveLabel(item)}
+                      {isProcessing
+                        ? "Processing…"
+                        : canRetry
+                          ? "Retry"
+                          : approveLabel(item)}
                     </button>
                   </div>
                 ) : null}

@@ -247,10 +247,13 @@ export class CorsairCalendarService implements CalendarService {
 
     const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
-    const start = input.allDay
+    const allDay =
+      input.allDay ??
+      (!input.startDateTime.includes("T") && !/\d:\d/.test(input.startDateTime));
+    const start = allDay
       ? { date: input.startDateTime.slice(0, 10) }
       : { dateTime: input.startDateTime, timeZone };
-    const end = input.allDay
+    const end = allDay
       ? { date: input.endDateTime.slice(0, 10) }
       : { dateTime: input.endDateTime, timeZone };
 

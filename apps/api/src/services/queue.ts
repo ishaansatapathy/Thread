@@ -62,6 +62,18 @@ const ACTIVE_QUEUE_STATUSES = ["pending", "processing", "approved"] as const;
 
 function userFacingApproveError(error: unknown): string {
   if (error instanceof ServiceError) return error.message;
+  if (error instanceof Error) {
+    const msg = error.message.trim();
+    if (!msg) return "Could not complete this action. Check your connections and try again.";
+    if (/not connected|invalid_grant|invalid credentials|token has been expired|unauthorized|401|403/i.test(msg)) {
+      return "Gmail or Calendar connection expired. Reconnect in Settings and try again.";
+    }
+    if (/Gmail is not connected/i.test(msg)) {
+      return "Connect Gmail in Settings to send this email.";
+    }
+    if (msg.length <= 240) return msg;
+    return `${msg.slice(0, 237)}…`;
+  }
   return "Could not complete this action. Check your connections and try again.";
 }
 
@@ -603,7 +615,7 @@ export class ThreadQueueService implements QueueService {
         and(
           eq(threadQueueItemsTable.id, itemId),
           eq(threadQueueItemsTable.userId, userId),
-          eq(threadQueueItemsTable.status, "pending"),
+          inArray(threadQueueItemsTable.status, ["pending", "failed"]),
         ),
       )
       .returning();
@@ -646,8 +658,8 @@ export class ThreadQueueService implements QueueService {
       await db
         .update(threadQueueItemsTable)
         .set({
-          status: "failed",
-          resolvedAt: new Date(),
+          status: "pending",
+          resolvedAt: null,
           processingAt: null,
           errorMessage: userMessage,
         })
@@ -671,7 +683,7 @@ export class ThreadQueueService implements QueueService {
         and(
           eq(threadQueueItemsTable.id, itemId),
           eq(threadQueueItemsTable.userId, userId),
-          inArray(threadQueueItemsTable.status, ["pending", "processing"]),
+          inArray(threadQueueItemsTable.status, ["pending", "processing", "failed"]),
         ),
       )
       .returning();

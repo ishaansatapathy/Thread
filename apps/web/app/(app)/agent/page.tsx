@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -93,6 +93,30 @@ function actionIcon(kind: ActionCard["kind"]) {
     default:
       return Search;
   }
+}
+
+type AgentDeepLink = {
+  prompt: string;
+  threadId: string;
+  eventId: string;
+};
+
+function readAgentDeepLink(searchParams: ReturnType<typeof useSearchParams>): AgentDeepLink {
+  const fromRouter: AgentDeepLink = {
+    prompt: searchParams.get("prompt")?.trim() ?? "",
+    threadId: searchParams.get("thread")?.trim() ?? "",
+    eventId: searchParams.get("event")?.trim() ?? "",
+  };
+  if (fromRouter.prompt) return fromRouter;
+  if (typeof window === "undefined") return fromRouter;
+  const params = new URLSearchParams(window.location.search);
+  const prompt = params.get("prompt")?.trim() ?? "";
+  if (!prompt) return fromRouter;
+  return {
+    prompt,
+    threadId: params.get("thread")?.trim() ?? "",
+    eventId: params.get("event")?.trim() ?? "",
+  };
 }
 
 function agentWelcomeCopy(opts: {
@@ -299,11 +323,23 @@ function ActionPanel({
   );
 }
 
-export default function AgentPage() {
+function AgentPageContent() {
   const searchParams = useSearchParams();
-  const urlPrompt = searchParams.get("prompt")?.trim() ?? "";
-  const urlThreadId = searchParams.get("thread")?.trim() ?? "";
-  const urlEventId = searchParams.get("event")?.trim() ?? "";
+  const [linkParamsReady, setLinkParamsReady] = useState(false);
+  const [deepLink, setDeepLink] = useState<AgentDeepLink>({
+    prompt: "",
+    threadId: "",
+    eventId: "",
+  });
+
+  useLayoutEffect(() => {
+    setDeepLink(readAgentDeepLink(searchParams));
+    setLinkParamsReady(true);
+  }, [searchParams]);
+
+  const urlPrompt = deepLink.prompt;
+  const urlThreadId = deepLink.threadId;
+  const urlEventId = deepLink.eventId;
   const isDeepLink = Boolean(urlPrompt);
 
   const [input, setInput] = useState("");
@@ -383,7 +419,7 @@ export default function AgentPage() {
   }, [createSession, utils.agent.listSessions]);
 
   useEffect(() => {
-    if (sessionReady || sessionsQuery.isLoading || sessionBootstrapping.current) return;
+    if (!linkParamsReady || sessionReady || sessionsQuery.isLoading || sessionBootstrapping.current) return;
 
     sessionBootstrapping.current = true;
     void (async () => {
@@ -413,7 +449,7 @@ export default function AgentPage() {
         sessionBootstrapping.current = false;
       }
     })();
-  }, [isDeepLink, sessionReady, sessionsQuery.data, sessionsQuery.isLoading, startNewChat, urlEventId, urlThreadId, urlPrompt, utils.agent.listSessions]);
+  }, [isDeepLink, linkParamsReady, sessionReady, sessionsQuery.data, sessionsQuery.isLoading, startNewChat, urlEventId, urlThreadId, urlPrompt, utils.agent.listSessions]);
 
   useEffect(() => {
     if (!sessionReady || !activeSessionId || sessionsQuery.isLoading || createSession.isPending) return;
@@ -435,9 +471,9 @@ export default function AgentPage() {
   useEffect(() => {
     if (!activeSessionId || sessionQuery.isLoading || isPending) return;
     if (!sessionQuery.data) return;
-    if (isDeepLink && !promptHandled.current) return;
+    if (deepLinkLockRef.current) return;
     applySession(sessionQuery.data);
-  }, [activeSessionId, applySession, isDeepLink, isPending, sessionQuery.data, sessionQuery.isLoading]);
+  }, [activeSessionId, applySession, isPending, sessionQuery.data, sessionQuery.isLoading]);
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
@@ -472,15 +508,15 @@ export default function AgentPage() {
     toast.message("Stopped.");
   };
 
-  const send = (text: string) => {
+  const send = (text: string): boolean => {
     const message = text.trim();
-    if (!message || isPending || !activeSessionId) return;
+    if (!message || isPending || !activeSessionId) return false;
     if (!ready) {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
-      return;
+      return false;
     }
 
-    if (isDemoUser && !tryFeature()) return;
+    if (isDemoUser && !tryFeature()) return false;
 
     streamAbortRef.current?.abort();
     const abortController = new AbortController();
@@ -610,16 +646,27 @@ export default function AgentPage() {
         setIsPending(false);
         setStreamStatus(null);
       });
+
+    return true;
   };
 
   useEffect(() => {
     if (promptHandled.current) return;
-    if (!urlPrompt || !ready || isPending || !sessionReady || !activeSessionId) return;
-    promptHandled.current = true;
-    deepLinkLockRef.current = false;
-    send(urlPrompt);
+    if (!linkParamsReady || !urlPrompt || !sessionReady || !activeSessionId || isPending) return;
+    if (!ready) return;
+    if (send(urlPrompt)) {
+      promptHandled.current = true;
+      deepLinkLockRef.current = false;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlPrompt, ready, isPending, sessionReady, activeSessionId]);
+  }, [linkParamsReady, urlPrompt, ready, isPending, sessionReady, activeSessionId]);
+
+  const preparingDeepLink =
+    isDeepLink &&
+    linkParamsReady &&
+    !promptHandled.current &&
+    !isPending &&
+    messages.length === 0;
 
   const handleSelectSession = (id: string) => {
     if (id === activeSessionId || isPending) return;
@@ -698,10 +745,18 @@ export default function AgentPage() {
                   onRetry={() => void sessionsQuery.refetch()}
                 />
               ) : null}
-              {status.isLoading && messages.length === 0 ? (
+              {(status.isLoading || !linkParamsReady) && messages.length === 0 && !preparingDeepLink ? (
                 <SkeletonList count={3} />
               ) : null}
-              {messages.length === 0 && !status.isLoading ? (
+              {preparingDeepLink ? (
+                <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
+                  <Loader2 size={13} className="thread-spin" />
+                  <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>
+                    Preparing reply from Brief…
+                  </span>
+                </div>
+              ) : null}
+              {messages.length === 0 && !status.isLoading && linkParamsReady && !preparingDeepLink ? (
                 <div
                   className="thread-rotator-bubble"
                   data-approval={approvalSettingsReady ? (agentAutoApprove ? "on" : "off") : undefined}
@@ -809,5 +864,23 @@ export default function AgentPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AgentPageFallback() {
+  return (
+    <div className="thread-app-page">
+      <div className="thread-agent-layout" style={{ padding: 24 }}>
+        <SkeletonList count={4} />
+      </div>
+    </div>
+  );
+}
+
+export default function AgentPage() {
+  return (
+    <Suspense fallback={<AgentPageFallback />}>
+      <AgentPageContent />
+    </Suspense>
   );
 }
