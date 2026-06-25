@@ -4075,6 +4075,62 @@
   margin-top: 12px;
 }
 
+.thread-brief-action-wrap {
+  position: relative;
+}
+
+.thread-brief-action-preview {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 20;
+  width: min(300px, 80vw);
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(12, 14, 20, 0.98);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.thread-brief-action-wrap:hover .thread-brief-action-preview,
+.thread-brief-action-wrap:focus-within .thread-brief-action-preview {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.thread-brief-action-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 10px;
+  font-family: var(--thread-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--thread-accent-bright);
+}
+
+.thread-brief-action-preview strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--thread-text);
+}
+
+.thread-brief-action-preview p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--thread-dim);
+}
+
 .thread-brief-action-btn {
   display: inline-flex;
   align-items: center;

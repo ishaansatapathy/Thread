@@ -237,6 +237,100 @@ function FollowUpRow({
   );
 }
 
+function buildBriefThreadContext(brief: DailyBrief) {
+  const map = new Map<string, { headline: string; detail?: string }>();
+  const add = (threadId: string | undefined, headline: string, detail?: string) => {
+    if (!threadId || map.has(threadId)) return;
+    map.set(threadId, { headline, detail });
+  };
+
+  add(brief.todaysFocus.threadId, brief.todaysFocus.headline, brief.todaysFocus.detail);
+  for (const item of [...brief.needsAttention, ...brief.risks]) {
+    add(item.threadId, item.headline, item.detail);
+  }
+  return map;
+}
+
+function buildBriefEventContext(brief: DailyBrief) {
+  const map = new Map<string, { headline: string; detail?: string }>();
+  for (const item of brief.meetingInsights) {
+    if (item.eventId && !map.has(item.eventId)) {
+      map.set(item.eventId, { headline: item.headline, detail: item.detail });
+    }
+  }
+  return map;
+}
+
+function actionPreview(
+  action: BriefAction,
+  brief: DailyBrief,
+  threadContext: Map<string, { headline: string; detail?: string }>,
+  eventContext: Map<string, { headline: string; detail?: string }>,
+): { headline: string; detail?: string; label: string } | null {
+  if (action.threadId) {
+    const ctx = threadContext.get(action.threadId);
+    if (ctx) return { ...ctx, label: "About this email" };
+  }
+  if (action.eventId) {
+    const ctx = eventContext.get(action.eventId);
+    if (ctx) return { ...ctx, label: "About this meeting" };
+  }
+  if (action.kind === "reply") {
+    return {
+      headline: brief.todaysFocus.headline,
+      detail: brief.todaysFocus.detail ?? brief.summary,
+      label: "About this email",
+    };
+  }
+  if (action.agentPrompt) {
+    return {
+      headline: action.label,
+      detail: action.agentPrompt.length > 160 ? `${action.agentPrompt.slice(0, 157)}…` : action.agentPrompt,
+      label: "Agent will help with",
+    };
+  }
+  return null;
+}
+
+function BriefActionButton({
+  action,
+  preview,
+  onRun,
+}: {
+  action: BriefAction;
+  preview: { headline: string; detail?: string; label: string } | null;
+  onRun: () => void;
+}) {
+  return (
+    <div className="thread-brief-action-wrap">
+      <button
+        type="button"
+        className="thread-brief-action-btn"
+        onClick={onRun}
+        aria-describedby={preview ? `brief-action-preview-${action.id}` : undefined}
+      >
+        {action.kind === "reply" ? <PenLine size={13} /> : null}
+        {action.kind === "prepare_meeting" ? <Calendar size={13} /> : null}
+        {action.label}
+      </button>
+      {preview ? (
+        <div
+          id={`brief-action-preview-${action.id}`}
+          className="thread-brief-action-preview"
+          role="tooltip"
+        >
+          <div className="thread-brief-action-preview-head">
+            <Sparkles size={11} />
+            {preview.label}
+          </div>
+          <strong>{preview.headline}</strong>
+          {preview.detail ? <p>{preview.detail}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function runBriefAction(
   action: BriefAction,
   router: ReturnType<typeof useRouter>,
@@ -246,12 +340,20 @@ function runBriefAction(
 
   switch (action.kind) {
     case "reply":
-      if (action.threadId) {
-        router.push(`/inbox?thread=${encodeURIComponent(action.threadId)}`);
+      if (action.agentPrompt) {
+        router.push(briefAgentUrl(action.agentPrompt, action.threadId));
         return;
       }
-      // No threadId → at least open inbox, not agent
-      router.push("/inbox");
+      if (action.threadId) {
+        router.push(
+          briefAgentUrl(
+            "Draft a reply to this email. Review the thread context and suggest or queue a response for my approval.",
+            action.threadId,
+          ),
+        );
+        return;
+      }
+      router.push("/agent");
       return;
     case "prepare_meeting":
       if (action.eventId) {
@@ -426,6 +528,15 @@ export default function BriefPage() {
         (action) => !action.threadId || !dismissedThreadIds.has(action.threadId),
       ),
     [brief?.recommendedActions, dismissedThreadIds],
+  );
+
+  const briefThreadContext = useMemo(
+    () => (brief ? buildBriefThreadContext(brief) : new Map()),
+    [brief],
+  );
+  const briefEventContext = useMemo(
+    () => (brief ? buildBriefEventContext(brief) : new Map()),
+    [brief],
   );
 
   const handleDraftFollowUp = (agentPrompt: string) => {
@@ -636,16 +747,16 @@ export default function BriefPage() {
                 </div>
                 <div className="thread-brief-action-row">
                   {visibleRecommendedActions.map((action) => (
-                    <button
+                    <BriefActionButton
                       key={action.id}
-                      type="button"
-                      className="thread-brief-action-btn"
-                      onClick={() => runBriefAction(action, router, markBriefThreadDismissed)}
-                    >
-                      {action.kind === "reply" ? <PenLine size={13} /> : null}
-                      {action.kind === "prepare_meeting" ? <Calendar size={13} /> : null}
-                      {action.label}
-                    </button>
+                      action={action}
+                      preview={
+                        brief
+                          ? actionPreview(action, brief, briefThreadContext, briefEventContext)
+                          : null
+                      }
+                      onRun={() => runBriefAction(action, router, markBriefThreadDismissed)}
+                    />
                   ))}
                 </div>
               </section>
