@@ -321,6 +321,7 @@ export default function AgentPage() {
   const streamAbortRef = useRef<AbortController | null>(null);
   const promptHandled = useRef(false);
   const deepLinkHandled = useRef(false);
+  const deepLinkLockRef = useRef(false);
   const sessionBootstrapping = useRef(false);
 
   const utils = trpc.useUtils();
@@ -346,6 +347,15 @@ export default function AgentPage() {
 
   const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(meQuery.data?.email, "agent");
 
+  // Brief / inbox deep-links: reset session bootstrap when URL params change.
+  useEffect(() => {
+    if (!urlPrompt) return;
+    promptHandled.current = false;
+    deepLinkHandled.current = false;
+    deepLinkLockRef.current = true;
+    setSessionReady(false);
+    sessionBootstrapping.current = false;
+  }, [urlPrompt, urlThreadId, urlEventId]);
 
   const applySession = useCallback((session: NonNullable<RouterOutputs["agent"]["getSession"]>) => {
     setMessages(session.messages);
@@ -380,12 +390,15 @@ export default function AgentPage() {
       try {
         if (isDeepLink && !deepLinkHandled.current) {
           deepLinkHandled.current = true;
+          deepLinkLockRef.current = true;
           await startNewChat({
             focus: {
               threadId: urlThreadId || undefined,
               eventId: urlEventId || undefined,
             },
+            title: urlPrompt.slice(0, 72) || null,
           });
+          await utils.agent.listSessions.invalidate();
           return;
         }
 
@@ -400,11 +413,13 @@ export default function AgentPage() {
         sessionBootstrapping.current = false;
       }
     })();
-  }, [isDeepLink, sessionReady, sessionsQuery.data, sessionsQuery.isLoading, startNewChat, urlEventId, urlThreadId]);
+  }, [isDeepLink, sessionReady, sessionsQuery.data, sessionsQuery.isLoading, startNewChat, urlEventId, urlThreadId, urlPrompt, utils.agent.listSessions]);
 
   useEffect(() => {
     if (!sessionReady || !activeSessionId || sessionsQuery.isLoading || createSession.isPending) return;
     if (sessionBootstrapping.current) return;
+    // Don't hijack the fresh deep-link session before auto-prompt runs.
+    if (deepLinkLockRef.current && !promptHandled.current) return;
     const sessions = sessionsQuery.data ?? [];
     if (sessions.some((s: { id: string }) => s.id === activeSessionId)) return;
     if (sessions.length > 0) {
@@ -601,6 +616,7 @@ export default function AgentPage() {
     if (promptHandled.current) return;
     if (!urlPrompt || !ready || isPending || !sessionReady || !activeSessionId) return;
     promptHandled.current = true;
+    deepLinkLockRef.current = false;
     send(urlPrompt);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlPrompt, ready, isPending, sessionReady, activeSessionId]);

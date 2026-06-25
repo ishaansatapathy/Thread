@@ -347,7 +347,7 @@ function runBriefAction(
       if (action.threadId) {
         router.push(
           briefAgentUrl(
-            "Draft a reply to this email. Review the thread context and suggest or queue a response for my approval.",
+            "Read this email thread and draft a reply. Queue the email for my approval before sending — do not send without approval.",
             action.threadId,
           ),
         );
@@ -631,8 +631,12 @@ export default function BriefPage() {
               <div className="thread-brief-focus-actions">
                 {brief.todaysFocus.threadId ? (
                   <Link
-                    href={`/inbox?thread=${encodeURIComponent(brief.todaysFocus.threadId)}`}
+                    href={briefAgentUrl(
+                      `Read this email and draft a reply about: "${brief.todaysFocus.headline}". ${brief.todaysFocus.detail ?? ""} Queue it for my approval before sending.`,
+                      brief.todaysFocus.threadId,
+                    )}
                     className="thread-btn-accent"
+                    onClick={() => markBriefThreadDismissed(brief.todaysFocus.threadId!)}
                   >
                     Reply now
                   </Link>
