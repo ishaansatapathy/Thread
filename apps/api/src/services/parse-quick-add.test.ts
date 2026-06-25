@@ -53,10 +53,11 @@ describe("parseQuickAddText", () => {
     expect(parsed.startDateTime).toBe("2026-06-27T20:00:00");
   });
 
-  it("parses compact 5-6pm range", () => {
-    const parsed = parseQuickAddText("Meeting 22 June 5-6pm", ref);
+  it("parses meeting with spaced times on june day", () => {
+    const parsed = parseQuickAddText("add a meeting from 8 pm -10pm on 28 june", ref);
     expect(parsed.allDay).toBe(false);
-    expect(parsed.startDateTime).toBe("2026-06-22T17:00:00");
-    expect(parsed.endDateTime).toBe("2026-06-22T18:00:00");
+    expect(parsed.startDateTime).toBe("2026-06-28T20:00:00");
+    expect(parsed.endDateTime).toBe("2026-06-28T22:00:00");
+    expect(parsed.summary).toMatch(/Meeting/i);
   });
 });

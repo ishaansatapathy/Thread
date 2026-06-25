@@ -75,6 +75,9 @@ function userFacingApproveError(error: unknown): string {
     if (/Gmail is not connected/i.test(msg)) {
       return "Connect Gmail in Settings to send this email.";
     }
+    if (/bad request/i.test(msg)) {
+      return "Google Calendar rejected this event. Dismiss and queue it again, or check date/time and connection in Settings.";
+    }
     if (msg.length <= 240) return msg;
     return `${msg.slice(0, 237)}…`;
   }
@@ -769,6 +772,20 @@ export class ThreadQueueService implements QueueService {
       }
       case "calendar_invite": {
         const event = parseCalendarQueuePayload(payload);
+        const calStatus = await calendar.getConnectionStatus(userId);
+        if (calStatus.googlecalendar !== "connected") {
+          if (demoUser) {
+            logger.info("Demo queue approve: simulated calendar create (Calendar not connected)", {
+              userId,
+              summary: event.summary,
+            });
+            return;
+          }
+          throw serviceError(
+            "PRECONDITION_FAILED",
+            "Connect Google Calendar in Settings to create this event.",
+          );
+        }
         await calendar.createEvent(userId, event);
         return;
       }
