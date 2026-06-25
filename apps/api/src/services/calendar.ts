@@ -14,7 +14,7 @@ import { clearCalendarChannel, getCalendarChannel, setCalendarChannel } from "./
 import { searchCalendarEventsDb, searchCalendarsDb } from "./corsair-db";
 import { ensureCorsairTenant } from "./corsair-tenant";
 import { parseQuickAddText } from "./parse-quick-add";
-import { resolveGoogleCalendarTiming } from "../utils/calendar-event-timing";
+import { resolveGoogleCalendarTiming, buildGoogleCalendarStartEnd, extractCalendarApiError } from "../utils/calendar-event-timing";
 
 function pad2(value: number) {
   return String(value).padStart(2, "0");
@@ -248,42 +248,49 @@ export class CorsairCalendarService implements CalendarService {
 
     const corsair = getCorsair().withTenant(tenantId);
     const timing = resolveGoogleCalendarTiming(input);
-    const allDay = timing.allDay;
-    const start = allDay
-      ? { date: timing.startDateTime }
-      : { dateTime: timing.startDateTime, timeZone: timing.timeZone };
-    const end = allDay
-      ? { date: timing.endDateTime }
-      : { dateTime: timing.endDateTime, timeZone: timing.timeZone };
+    const { start, end } = buildGoogleCalendarStartEnd(timing);
 
     const hasAttendees = Boolean(input.attendeeEmails?.length);
-    // Auto-add Google Meet when there are attendees or explicitly requested.
     const addMeet = input.addGoogleMeet ?? hasAttendees;
     const conferenceData = addMeet
       ? { createRequest: { requestId: `corsair-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } }
       : undefined;
 
-    const created = await corsair.googlecalendar.api.events.create({
-      calendarId: "primary",
-      sendUpdates: hasAttendees ? "all" : "none",
-      ...(addMeet ? { conferenceDataVersion: 1 } : {}),
-      event: {
+    try {
+      const created = await corsair.googlecalendar.api.events.create({
+        calendarId: "primary",
+        sendUpdates: hasAttendees ? "all" : "none",
+        ...(addMeet ? { conferenceDataVersion: 1 } : {}),
+        event: {
+          summary: input.summary,
+          description: input.description,
+          location: input.location,
+          start,
+          end,
+          ...(input.attendeeEmails?.length
+            ? { attendees: input.attendeeEmails.map((email) => ({ email })) }
+            : {}),
+          ...(input.recurrence?.length ? { recurrence: input.recurrence } : {}),
+          ...(conferenceData ? { conferenceData } : {}),
+        },
+      });
+
+      const mapped = mapEvent(created);
+      if (!mapped) {
+        throw new Error("Calendar event was created but returned no id");
+      }
+      return mapped;
+    } catch (error) {
+      const message = extractCalendarApiError(error);
+      logger.error("calendar.createEvent failed", {
+        tenantId,
         summary: input.summary,
-        description: input.description,
-        location: input.location,
         start,
         end,
-        attendees: input.attendeeEmails?.map((email) => ({ email })),
-        recurrence: input.recurrence?.length ? input.recurrence : undefined,
-        ...(conferenceData ? { conferenceData } : {}),
-      },
-    });
-
-    const mapped = mapEvent(created);
-    if (!mapped) {
-      throw new Error("Calendar event was created but returned no id");
+        message,
+      });
+      throw new Error(message);
     }
-    return mapped;
   }
 
   async cancelEvent(tenantId: string, eventId: string) {
