@@ -29,7 +29,10 @@ import {
 } from "lucide-react";
 
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
+import { PriorityBadge } from "~/components/app/priority-badge";
 import { formatPrioritySummary } from "~/lib/priority-display";
+import { DEMO_AI_HIGHLIGHTS } from "~/lib/demo-fixtures";
+import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -251,6 +254,7 @@ export default function InboxPage() {
   const [dbSearchMode, setDbSearchMode] = useState(false);
   const [mutedThreadIds, setMutedThreadIds] = useState<Set<string>>(() => new Set());
   const priorityBootstrapped = useRef(false);
+  const lastRankedKeyRef = useRef("");
   const [replyTo, setReplyTo] = useState("");
   const [replySubjectValue, setReplySubjectValue] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -419,8 +423,12 @@ export default function InboxPage() {
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
   const pendingCount = trpc.queue.pendingCount.useQuery({});
   const aiStatus = trpc.ai.status.useQuery({});
+  const aiReady = aiStatus.data?.openai === true;
 
   const isConnected = statusQuery.data?.gmail === "connected";
+  const { isDemo: isDemoUser, tryFeature: tryMailDemo, modal: mailDemoModal, featureState: mailDemoState } =
+    useDemoAiGuard(userEmail, "mail");
+  const [demoSummarizeEnabled, setDemoSummarizeEnabled] = useState(false);
   const demoCacheQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 50 }, { staleTime: 120_000 });
   const hasDemoFixtures = !isConnected && (demoCacheQuery.data?.threads.length ?? 0) > 0;
   const canBrowseInbox = isConnected || hasDemoFixtures;
@@ -618,7 +626,7 @@ export default function InboxPage() {
 
   const selectedQuery = trpc.inbox.getThread.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && isConnected },
+    { enabled: Boolean(selectedId) && (isConnected || hasDemoFixtures) },
   );
 
   // Detect meeting invites in the selected thread and search for the matching
@@ -693,6 +701,46 @@ export default function InboxPage() {
     onError: (error) => toast.error(error.message),
   });
 
+  const refreshPriorityRank = useCallback(
+    async (opts?: { force?: boolean; query?: string }) => {
+      if (!isConnected || !aiReady) return;
+      try {
+        const defaultRankQuery = [
+          effectiveQuery,
+          "-category:promotions -category:social -category:forums",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const rankQuery = opts?.query ?? (defaultRankQuery || undefined);
+        const batch = await utils.client.inbox.listThreads.query({
+          maxResults: 50,
+          query: rankQuery,
+          refresh: opts?.force ?? true,
+        });
+        if (batch.threads.length === 0) {
+          setPriorityAnalysis(null);
+          lastRankedKeyRef.current = "";
+          return;
+        }
+        const slice = batch.threads.slice(0, 40);
+        const key = slice.map((thread) => thread.id).join(",");
+        if (!opts?.force && key === lastRankedKeyRef.current && priorityAnalysis) return;
+        lastRankedKeyRef.current = key;
+        rankThreads.mutate({
+          threads: slice.map((thread) => ({
+            id: thread.id,
+            snippet: thread.snippet,
+            subject: thread.subject,
+            from: thread.fromName ?? thread.from,
+          })),
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not load threads for ranking");
+      }
+    },
+    [aiReady, effectiveQuery, isConnected, priorityAnalysis, rankThreads, utils.client.inbox.listThreads],
+  );
+
   const priorityByThreadId = useMemo(() => {
     const map = new Map<string, InboxAnalysis["items"][number]>();
     for (const item of priorityAnalysis?.items ?? []) {
@@ -724,47 +772,32 @@ export default function InboxPage() {
   });
 
   const calendarConnected = calendarStatus.data?.googlecalendar === "connected";
-  const aiReady = aiStatus.data?.openai === true;
 
   useEffect(() => {
     if (!isConnected || !aiReady || priorityBootstrapped.current) return;
     priorityBootstrapped.current = true;
-    void (async () => {
-      try {
-        const batch = await utils.client.inbox.listThreads.query({
-          maxResults: 50,
-          query: "-category:promotions -category:social -category:forums",
-          refresh: true,
-        });
-        if (batch.threads.length === 0) return;
-        rankThreads.mutate({
-          threads: batch.threads.slice(0, 40).map((thread) => ({
-            id: thread.id,
-            snippet: thread.snippet,
-            subject: thread.subject,
-            from: thread.fromName ?? thread.from,
-          })),
-        });
-      } catch {
-        // Non-fatal — user can open Priority tab manually
-      }
-    })();
-  }, [isConnected, aiReady, utils.client.inbox.listThreads, rankThreads]);
+    void refreshPriorityRank({ force: true });
+  }, [isConnected, aiReady, refreshPriorityRank]);
 
   const smartRepliesQuery = trpc.ai.smartReplies.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && aiReady, staleTime: 2 * 60_000 },
+    { enabled: Boolean(selectedId) && aiReady && isConnected, staleTime: 2 * 60_000 },
   );
 
   const summarizeQuery = trpc.ai.summarizeThread.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && aiReady, staleTime: 5 * 60_000 },
+    {
+      enabled: Boolean(selectedId) && aiReady && (isConnected || demoSummarizeEnabled),
+      staleTime: 5 * 60_000,
+    },
   );
 
   const visibleThreads = useMemo(() => {
     const source = hasDemoFixtures ? displayThreads : threads;
+    if (view !== "priority") return source;
+
     const rankedIds = priorityAnalysis?.rankedIds;
-    if (view !== "priority" || !rankedIds?.length) return source;
+    if (!rankedIds?.length) return [];
     const rankedSet = new Set(rankedIds);
     const filtered = source.filter((t) => {
       if (!rankedSet.has(t.id)) return false;
@@ -779,9 +812,14 @@ export default function InboxPage() {
     return priorityAnalysis.items.filter((item) => item.urgency === "noise").length;
   }, [view, priorityAnalysis]);
 
+  const priorityRanking = rankThreads.isPending;
+  const priorityReady = Boolean(priorityAnalysis?.rankedIds?.length);
+
+  // If user is on Priority but analysis is missing, re-fetch (e.g. after navigation).
   useEffect(() => {
-    setPriorityAnalysis(null);
-  }, [inbox.dataUpdatedAt]);
+    if (view !== "priority" || priorityReady || priorityRanking || !isConnected || !aiReady) return;
+    void refreshPriorityRank({ force: true });
+  }, [view, priorityReady, priorityRanking, isConnected, aiReady, refreshPriorityRank]);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   // Keep latest action fns in a ref so the keydown listener never needs to be
@@ -892,24 +930,7 @@ export default function InboxPage() {
       toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
       return;
     }
-    try {
-      const batch = await utils.client.inbox.listThreads.query({
-        maxResults: 50,
-        query: [effectiveQuery, "-category:promotions -category:social -category:forums"].filter(Boolean).join(" ") || undefined,
-        refresh: true,
-      });
-      if (batch.threads.length === 0) return;
-      rankThreads.mutate({
-        threads: batch.threads.slice(0, 40).map((thread) => ({
-          id: thread.id,
-          snippet: thread.snippet,
-          subject: thread.subject,
-          from: thread.fromName ?? thread.from,
-        })),
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not load threads for ranking");
-    }
+    await refreshPriorityRank({ force: true });
   };
 
   const banner = useMemo(() => {
@@ -1024,11 +1045,6 @@ export default function InboxPage() {
 
   const threadMessages = selectedQuery.data?.messages ?? [];
 
-  const demoSelectedThread = useMemo(() => {
-    if (!hasDemoFixtures || !selectedId) return null;
-    return demoCacheQuery.data?.threads.find((thread) => thread.id === selectedId) ?? null;
-  }, [hasDemoFixtures, selectedId, demoCacheQuery.data?.threads]);
-
   const handleMessageClick = (message: (typeof threadMessages)[number]) => {
     setActiveMessageId(message.id);
     setReplyTo(replyTargetForMessage(message, userEmail));
@@ -1042,6 +1058,10 @@ export default function InboxPage() {
       return next;
     });
   };
+
+  useEffect(() => {
+    setDemoSummarizeEnabled(false);
+  }, [selectedId]);
 
   const connectHref = `/api-connect/gmail?state=${encodeURIComponent("/inbox")}`;
   const queueCount = pendingCount.data?.count ?? 0;
@@ -1242,23 +1262,34 @@ export default function InboxPage() {
         ) : null}
 
         {view === "priority" && isConnected ? (
-          <div className="thread-inbox-banner" style={{ margin: "10px 12px 0" }}>
+          <div className="thread-priority-summary">
             {rankThreads.isPending ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <span className="thread-priority-summary-loading">
                 <Loader2 size={13} className="thread-spin" />
                 Analyzing inbox…
               </span>
             ) : priorityAnalysis ? (
-              <span>{formatPrioritySummary(priorityAnalysis.summary)}{hiddenNoiseCount > 0 ? ` · ${hiddenNoiseCount} low-relevance hidden` : ""}</span>
+              <span className="thread-priority-summary-head">
+                <Sparkles size={12} style={{ color: "var(--thread-accent-bright)", flexShrink: 0 }} />
+                <span>
+                  {formatPrioritySummary(priorityAnalysis.summary)}
+                  {hiddenNoiseCount > 0 ? ` · ${hiddenNoiseCount} low-relevance hidden` : ""}
+                </span>
+              </span>
             ) : aiReady ? null : (
-              <span>Priority needs OPENAI_API_KEY in server env.</span>
+              <span className="thread-priority-summary-meta">Priority needs OPENAI_API_KEY in server env.</span>
             )}
           </div>
         ) : null}
 
         {hasDemoFixtures ? (
-          <div className="thread-inbox-banner" data-variant="info" style={{ margin: "10px 12px 0" }}>
-            Demo inbox — sample threads from seed data. Connect Gmail for live mail.
+          <div className="thread-demo-inbox-strip" style={{ margin: "10px 12px 0" }}>
+            <Sparkles size={13} />
+            <span>Demo inbox — {demoCacheQuery.data?.threads.length ?? 0} sample threads</span>
+            <span className="thread-demo-inbox-strip-sep">·</span>
+            <Link href="/brief" className="thread-demo-inbox-strip-link">Brief</Link>
+            <Link href="/agent" className="thread-demo-inbox-strip-link">Agent</Link>
+            <Link href="/queue" className="thread-demo-inbox-strip-link">Queue</Link>
           </div>
         ) : null}
 
@@ -1396,6 +1427,8 @@ export default function InboxPage() {
               ))}
               </>
             )
+          ) : view === "priority" && (priorityRanking || (!priorityReady && isConnected && aiReady)) ? (
+            <SkeletonList count={8} />
           ) : inbox.isLoading ? (
             <SkeletonList count={10} />
           ) : inbox.isError ? (
@@ -1421,7 +1454,7 @@ export default function InboxPage() {
             <>
               {visibleThreads.map((thread) => {
                 const priority =
-                  view === "priority" || priorityAnalysis
+                  view === "priority" && priorityAnalysis
                     ? priorityByThreadId.get(thread.id)
                     : undefined;
                 const isSnoozed = snoozedIds.has(thread.id);
@@ -1457,8 +1490,24 @@ export default function InboxPage() {
                   >
                     <span className="thread-inbox-row-line">
                       <span className="thread-inbox-row-sender">
-                        {thread.unread ? <span className="thread-inbox-row-dot" aria-hidden /> : null}
+                        {priority ? (
+                          <span
+                            className="thread-inbox-priority-dot"
+                            data-urgency={priority.urgency}
+                            aria-hidden
+                          />
+                        ) : thread.unread ? (
+                          <span className="thread-inbox-row-dot" aria-hidden />
+                        ) : null}
                         {thread.fromName?.trim() || thread.from?.trim() || "Unknown sender"}
+                        {priority ? (
+                          <PriorityBadge
+                            urgency={priority.urgency}
+                            score={priority.score}
+                            reason={priority.reason}
+                            compact
+                          />
+                        ) : null}
                         {thread.messageCount && thread.messageCount > 1 ? (
                           <span className="thread-inbox-row-count">{thread.messageCount}</span>
                         ) : null}
@@ -1575,24 +1624,6 @@ export default function InboxPage() {
             >
               Connect Gmail
             </a>
-          </div>
-        ) : demoSelectedThread && !isConnected ? (
-          <div className="thread-inbox-message">
-            <button type="button" className="thread-inbox-back-btn" onClick={() => setSelectedId(null)}>
-              ← Back
-            </button>
-            <div className="thread-inbox-message-head">
-              <h2>{demoSelectedThread.subject?.trim() || "No subject"}</h2>
-              <p style={{ fontSize: 12, color: "var(--thread-dim)", marginTop: 4 }}>
-                From {demoSelectedThread.fromName ?? demoSelectedThread.from ?? "Unknown"}
-              </p>
-            </div>
-            <div className="thread-inbox-message-body" style={{ padding: "16px 0", lineHeight: 1.6 }}>
-              {decodeHtmlEntities(demoSelectedThread.snippet)}
-            </div>
-            <p style={{ fontSize: 12, color: "var(--thread-dim)" }}>
-              Demo preview — connect Gmail to read full threads and reply.
-            </p>
           </div>
         ) : selectedQuery.isLoading ? (
           <div className="thread-app-empty">
@@ -2108,7 +2139,23 @@ export default function InboxPage() {
               {/* AI Thread Summary */}
               {aiReady && selectedId ? (
                 <div className="thread-smart-reply-wrap thread-ai-panel">
-                  {summarizeQuery.isLoading ? (
+                  {!isConnected && hasDemoFixtures && !demoSummarizeEnabled ? (
+                    <button
+                      type="button"
+                      className="thread-btn-ghost"
+                      style={{ fontSize: 12 }}
+                      disabled={isDemoUser && mailDemoState.isExhausted}
+                      onClick={() => {
+                        if (isDemoUser && !tryMailDemo()) return;
+                        setDemoSummarizeEnabled(true);
+                      }}
+                    >
+                      <Sparkles size={12} />
+                      {isDemoUser && mailDemoState.isExhausted
+                        ? "Inbox AI limit reached"
+                        : `Summarize with AI (${mailDemoState.remaining}/${mailDemoState.limit} left)`}
+                    </button>
+                  ) : summarizeQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
                       <Sparkles size={11} style={{ color: "var(--thread-accent)" }} className="thread-spin" />
                       <span>Summarizing thread…</span>
@@ -2536,6 +2583,7 @@ export default function InboxPage() {
           </div>
         </div>
       ) : null}
+      {mailDemoModal}
     </div>
   );
 }

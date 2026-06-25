@@ -160,6 +160,10 @@ export async function gatherDailyBriefContext(input: {
 
   const day = zonedDayRange(timeZone);
 
+  const cachedThreadsPromise = gmailConnected
+    ? Promise.resolve({ threads: [] as InboxThread[] })
+    : inbox.listCachedThreads(input.tenantId, { limit: 30 }).catch(() => ({ threads: [] as InboxThread[] }));
+
   // Recent unread personal mail only — promotions/social/notifications excluded.
   const unreadPromise = gmailConnected
     ? inbox
@@ -169,7 +173,9 @@ export async function gatherDailyBriefContext(input: {
             "in:inbox is:unread newer_than:3d -category:promotions -category:social -category:updates -category:forums",
         })
         .catch(() => ({ threads: [] as InboxThread[] }))
-    : Promise.resolve({ threads: [] as InboxThread[] });
+    : cachedThreadsPromise.then(({ threads }) => ({
+        threads: threads.filter((t) => t.unread !== false),
+      }));
 
   const deadlinePromise = gmailConnected
     ? inbox
@@ -179,7 +185,13 @@ export async function gatherDailyBriefContext(input: {
             'in:inbox is:unread newer_than:7d -category:promotions -category:social (deadline OR "due date" OR "by EOD" OR urgent OR "action required")',
         })
         .catch(() => ({ threads: [] as InboxThread[] }))
-    : Promise.resolve({ threads: [] as InboxThread[] });
+    : cachedThreadsPromise.then(({ threads }) => ({
+        threads: threads.filter((t) =>
+          /deadline|due date|by eod|urgent|action required|corsair|hackathon/i.test(
+            `${t.subject ?? ""} ${t.snippet ?? ""}`,
+          ),
+        ),
+      }));
 
   const invoicePromise = gmailConnected
     ? inbox
@@ -191,6 +203,36 @@ export async function gatherDailyBriefContext(input: {
         .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
+  const demoCalendarEvents = (): CalendarEvent[] => {
+    const base = new Date();
+    base.setSeconds(0, 0);
+    const start = new Date(base);
+    start.setHours(11, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(12, 0, 0, 0);
+    const focusStart = new Date(base);
+    focusStart.setHours(15, 0, 0, 0);
+    const focusEnd = new Date(focusStart);
+    focusEnd.setHours(16, 0, 0, 0);
+    return [
+      {
+        id: "demo-cal-brief-1",
+        summary: "Corsair Hackathon Demo",
+        start: start.toISOString(),
+        end: end.toISOString(),
+        status: "confirmed",
+        attendees: [{ email: "judge@corsair.dev", displayName: "Judge" }],
+      },
+      {
+        id: "demo-cal-brief-2",
+        summary: "Focus block — deep work",
+        start: focusStart.toISOString(),
+        end: focusEnd.toISOString(),
+        status: "confirmed",
+      },
+    ];
+  };
+
   const eventsPromise = calendarConnected
     ? calendar
         .listEvents(input.tenantId, {
@@ -200,7 +242,7 @@ export async function gatherDailyBriefContext(input: {
           timeZone,
         })
         .catch(() => ({ events: [] as CalendarEvent[] }))
-    : Promise.resolve({ events: [] as CalendarEvent[] });
+    : Promise.resolve({ events: demoCalendarEvents() });
 
   const freeBusyPromise = calendarConnected
     ? calendar
@@ -245,7 +287,9 @@ export async function gatherDailyBriefContext(input: {
     : merged;
 
   let rankedThreadIds = filteredMerged.map((t) => t.id);
-  if (gmailConnected && filteredMerged.length > 1 && isOpenAiConfigured()) {
+  const canRank =
+    filteredMerged.length > 1 && isOpenAiConfigured() && (gmailConnected || filteredMerged.length > 0);
+  if (canRank) {
     try {
       rankedThreadIds = await rankInboxThreads(
         filteredMerged.slice(0, 20).map((t) => ({
@@ -261,15 +305,18 @@ export async function gatherDailyBriefContext(input: {
   }
 
   const detailIds = rankedThreadIds.slice(0, DETAIL_THREAD_LIMIT);
-  const detailThreads = await Promise.all(
-    detailIds.map(async (id) => {
-      try {
-        return await inbox.getThread(input.tenantId, id, { userEmail: input.userEmail });
-      } catch {
-        return null;
-      }
-    }),
-  );
+  const cachedById = new Map(filteredMerged.map((t) => [t.id, t]));
+  const detailThreads = gmailConnected
+    ? await Promise.all(
+        detailIds.map(async (id) => {
+          try {
+            return await inbox.getThread(input.tenantId, id, { userEmail: input.userEmail });
+          } catch {
+            return null;
+          }
+        }),
+      )
+    : detailIds.map((id) => cachedById.get(id) ?? null);
 
   // Build a set of thread IDs where user already sent a reply (from sent folder).
   // If a thread is in waitingOn, the user already replied — don't mark as awaitingReply.
@@ -277,7 +324,8 @@ export async function gatherDailyBriefContext(input: {
 
   const threadSnapshots: BriefThreadSnapshot[] = [];
   for (const thread of detailThreads) {
-    if (!thread || !thread.unread) continue;
+    if (!thread) continue;
+    if (gmailConnected && !thread.unread) continue;
     const reply = isAwaitingUserReply(thread, input.userEmail);
     // If the sent-folder cross-check shows user already replied, override awaitingReply.
     const alreadyReplied = userRepliedThreadIds.has(thread.id);
@@ -452,7 +500,11 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
   }
 
   if (!context.gmailConnected && !context.calendarConnected) {
-    lines.push("", "No integrations connected — suggest connecting Gmail and Calendar.");
+    lines.push("", "Demo workspace — sample mail and calendar data. Suggest connecting Gmail and Calendar for live sync.");
+  } else if (!context.gmailConnected && context.threads.length > 0) {
+    lines.push("", "Gmail not connected — using demo inbox cache.");
+  } else if (!context.calendarConnected && context.meetings.length > 0) {
+    lines.push("", "Calendar not connected — using demo calendar preview.");
   }
 
   return lines.join("\n");

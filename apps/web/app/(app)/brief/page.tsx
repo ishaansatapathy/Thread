@@ -32,6 +32,7 @@ import {
   getDismissedBriefThreadIds,
   pruneBriefDismissals,
 } from "~/lib/brief-dismissals";
+import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
@@ -347,12 +348,15 @@ export default function BriefPage() {
 
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   const utils = trpc.useUtils();
+  const meQuery = trpc.auth.me.useQuery({});
+  const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(meQuery.data?.email, "mail");
   const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
     { staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 },
   );
 
   const handleForceRefresh = async () => {
+    if (isDemoUser && !tryFeature()) return;
     setIsForceRefreshing(true);
     try {
       // Pass refresh:true to bypass the 5-min server-side cache and re-fetch
@@ -373,9 +377,12 @@ export default function BriefPage() {
 
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
   const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
+  const cachedThreadsQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 1 }, { staleTime: 120_000 });
   const connected =
     inboxStatus.data?.gmail === "connected" ||
     calendarStatus.data?.googlecalendar === "connected";
+  const hasDemoData = (cachedThreadsQuery.data?.threads.length ?? 0) > 0;
+  const canShowBrief = connected || hasDemoData || Boolean(briefQuery.data);
 
   const brief = briefQuery.data;
   const followUps = followUpsQuery.data ?? [];
@@ -427,6 +434,7 @@ export default function BriefPage() {
 
   return (
     <div className="thread-app-page">
+      {demoModal}
       <div className="thread-brief-page">
         <header className="thread-brief-header">
           <div className="thread-brief-header-main">
@@ -454,16 +462,25 @@ export default function BriefPage() {
           </button>
         </header>
 
+        {!connected && hasDemoData ? (
+          <div className="thread-demo-inbox-strip" style={{ marginBottom: 16 }}>
+            <Sparkles size={13} />
+            <span>Demo Daily Brief — AI synthesis from sample inbox + calendar data</span>
+            <span className="thread-demo-inbox-strip-sep">·</span>
+            <Link href="/agent" className="thread-demo-inbox-strip-link">Open Agent</Link>
+          </div>
+        ) : null}
+
         {loading ? (
           <SkeletonList count={5} />
-        ) : !connected ? (
+        ) : !canShowBrief ? (
           <div className="thread-app-empty thread-brief-empty">
             <Mail size={22} style={{ opacity: 0.35 }} />
             <h2>Connect your workspace</h2>
             <p>Link Gmail or Google Calendar to generate your personal daily brief.</p>
             <Link href="/settings" className="thread-btn-accent">Open Settings</Link>
           </div>
-        ) : briefQuery.isError ? (
+        ) : briefQuery.isError && !briefQuery.data ? (
           <div className="thread-app-empty thread-brief-empty">
             <AlertTriangle size={22} style={{ opacity: 0.45, color: "#f87171" }} />
             <h2>Couldn&apos;t load your brief</h2>

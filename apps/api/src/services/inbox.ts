@@ -298,17 +298,24 @@ export class CorsairInboxService implements InboxService {
   }
 
   async listThreads(tenantId: string, opts?: ListThreadsOptions): Promise<ListThreadsResult> {
+    const maxResults = Math.min(Math.max(opts?.maxResults ?? INBOX_PAGE_SIZE, 1), 100);
+    const query = opts?.query?.trim();
+
     if (!this.isConfigured()) {
-      return { threads: [] };
+      const threads = query
+        ? await mailCache.search(tenantId, query, maxResults)
+        : await mailCache.recent(tenantId, maxResults);
+      return { threads, stale: true };
     }
 
     const status = await this.getConnectionStatus(tenantId);
     if (status.gmail !== "connected") {
-      return { threads: [] };
+      const threads = query
+        ? await mailCache.search(tenantId, query, maxResults)
+        : await mailCache.recent(tenantId, maxResults);
+      return { threads, stale: true };
     }
 
-    const maxResults = Math.min(Math.max(opts?.maxResults ?? INBOX_PAGE_SIZE, 1), 100);
-    const query = opts?.query?.trim();
     const forceRefresh = opts?.refresh === true;
 
     const corsair = getCorsair().withTenant(tenantId);
@@ -698,10 +705,14 @@ export class CorsairInboxService implements InboxService {
     threadId: string,
     opts?: { userEmail?: string },
   ): Promise<InboxThread | null> {
-    if (!this.isConfigured()) return null;
+    if (!this.isConfigured()) {
+      return mailCache.getThread(tenantId, threadId);
+    }
 
     const status = await this.getConnectionStatus(tenantId);
-    if (status.gmail !== "connected") return null;
+    if (status.gmail !== "connected") {
+      return mailCache.getThread(tenantId, threadId);
+    }
 
     const corsair = getCorsair().withTenant(tenantId);
     const thread = await corsair.gmail.api.threads.get({
