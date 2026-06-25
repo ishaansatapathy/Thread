@@ -179,6 +179,7 @@ function buildFallbackBrief(context: BriefGatherResult): DailyBrief {
       label: "Reply now",
       kind: "reply",
       threadId: topThread.id,
+      agentPrompt: `Reply to "${topThread.subject}" from ${topThread.from}. Draft a thoughtful response and queue it for my approval.`,
     });
   }
   if (prepMeetings[0]) {
