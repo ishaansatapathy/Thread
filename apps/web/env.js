@@ -29,7 +29,8 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_API_URL: z.string().optional(),
     NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.string().optional(),
-    /** Used by the client-side demo bar to detect demo sessions. */
+    /** Mirrors DEMO_LOGIN_ENABLED for client-side demo gating. */
+    NEXT_PUBLIC_DEMO_LOGIN_ENABLED: z.enum(["true", "false"]).optional(),
     NEXT_PUBLIC_DEMO_USER_EMAIL: z.string().optional(),
     /** Max demo Agent prompts (default 3). */
     NEXT_PUBLIC_DEMO_AGENT_LIMIT: z.coerce.number().optional(),
@@ -56,6 +57,8 @@ export const env = createEnv({
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_TURNSTILE_SITE_KEY:
       process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? process.env.NEXT_PUBLIC_TURNSTILE_SITEKEY,
+    NEXT_PUBLIC_DEMO_LOGIN_ENABLED:
+      process.env.NEXT_PUBLIC_DEMO_LOGIN_ENABLED ?? process.env.DEMO_LOGIN_ENABLED,
     NEXT_PUBLIC_DEMO_USER_EMAIL: process.env.NEXT_PUBLIC_DEMO_USER_EMAIL,
     NEXT_PUBLIC_DEMO_AGENT_LIMIT: process.env.NEXT_PUBLIC_DEMO_AGENT_LIMIT,
     NEXT_PUBLIC_DEMO_CALENDAR_LIMIT: process.env.NEXT_PUBLIC_DEMO_CALENDAR_LIMIT,

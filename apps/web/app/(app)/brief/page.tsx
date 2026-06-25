@@ -33,6 +33,7 @@ import {
   pruneBriefDismissals,
 } from "~/lib/brief-dismissals";
 import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
+import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
@@ -558,7 +559,7 @@ export default function BriefPage() {
   const connected =
     inboxStatus.data?.gmail === "connected" ||
     calendarStatus.data?.googlecalendar === "connected";
-  const hasDemoData = (cachedThreadsQuery.data?.threads.length ?? 0) > 0;
+  const hasDemoData = isDemoLoginEnabled() && (cachedThreadsQuery.data?.threads.length ?? 0) > 0;
   const canShowBrief = connected || hasDemoData || Boolean(briefQuery.data);
 
   const brief = briefQuery.data;

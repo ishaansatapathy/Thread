@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { env } from "~/env";
+import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 const DEFAULT_EMAIL = "demo@thread.dev";
 
@@ -83,7 +84,9 @@ function buildFeatureState(feature: DemoFeature, attempts: number): DemoFeatureS
  * Agent: 3 · Calendar: 3 · Mail (Brief refresh, summarize, etc.): 3
  */
 export function useDemoMode(email: string | null | undefined): DemoModeState {
-  const isDemo = Boolean(email && email.trim().toLowerCase() === getDemoEmail().toLowerCase());
+  const isDemo =
+    isDemoLoginEnabled() &&
+    Boolean(email && email.trim().toLowerCase() === getDemoEmail().toLowerCase());
 
   const [tick, setTick] = useState(0);
   const bump = () => setTick((n) => n + 1);

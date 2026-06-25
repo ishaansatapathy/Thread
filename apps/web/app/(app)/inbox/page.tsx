@@ -34,6 +34,7 @@ import { PriorityBadge } from "~/components/app/priority-badge";
 import { formatPrioritySummary } from "~/lib/priority-display";
 import { DEMO_AI_HIGHLIGHTS } from "~/lib/demo-fixtures";
 import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
+import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -431,7 +432,8 @@ export default function InboxPage() {
     useDemoAiGuard(userEmail, "mail");
   const [demoSummarizeEnabled, setDemoSummarizeEnabled] = useState(false);
   const demoCacheQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 50 }, { staleTime: 120_000 });
-  const hasDemoFixtures = !isConnected && (demoCacheQuery.data?.threads.length ?? 0) > 0;
+  const hasDemoFixtures =
+    isDemoLoginEnabled() && !isConnected && (demoCacheQuery.data?.threads.length ?? 0) > 0;
   const canBrowseInbox = isConnected || hasDemoFixtures;
 
   const approveQueueItem = trpc.queue.approve.useMutation({
