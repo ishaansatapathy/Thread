@@ -207,21 +207,25 @@ const MCP_TOOLS: McpTool[] = [
   {
     name: "list_calendar_events",
     description:
-      "List upcoming Google Calendar events for the authenticated user.",
+      "List or search Google Calendar events. Pass query to filter by title when finding a meeting to delete or reschedule.",
     inputSchema: {
       type: "object",
       properties: {
         timeMin: {
           type: "string",
-          description: "ISO 8601 start of range (default: now).",
+          description: "ISO 8601 start of range (default: 30 days ago).",
         },
         timeMax: {
           type: "string",
-          description: "ISO 8601 end of range (default: 7 days from now).",
+          description: "ISO 8601 end of range (default: 90 days ahead).",
         },
         maxResults: {
           type: "number",
           description: "Max events to return (1–50, default 20).",
+        },
+        query: {
+          type: "string",
+          description: "Free-text search on event title/summary.",
         },
       },
     },
@@ -922,11 +926,18 @@ async function callTool(
 
     case "list_calendar_events": {
       const now = new Date();
-      const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      const timeMin = typeof args.timeMin === "string" ? args.timeMin : now.toISOString();
-      const timeMax = typeof args.timeMax === "string" ? args.timeMax : weekAhead.toISOString();
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const threeMonthsAhead = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      const timeMin = typeof args.timeMin === "string" ? args.timeMin : monthAgo.toISOString();
+      const timeMax = typeof args.timeMax === "string" ? args.timeMax : threeMonthsAhead.toISOString();
       const maxResults = Math.min(Number(args.maxResults ?? 20), 50);
-      const result = await calendar.listEvents(userId, { timeMin, timeMax, maxResults });
+      const query = typeof args.query === "string" ? args.query.trim() : undefined;
+      const result = await calendar.listEvents(userId, {
+        timeMin,
+        timeMax,
+        maxResults,
+        ...(query ? { q: query } : {}),
+      });
       return toolResult(
         result.events.map((e) => ({
           id: e.id,

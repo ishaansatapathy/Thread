@@ -390,12 +390,22 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
       }
 
       case "list_calendar_events": {
-        const timeMin = String(args.timeMin ?? "");
-        const timeMax = String(args.timeMax ?? "");
+        const query = typeof args.query === "string" ? args.query.trim() : undefined;
+        const now = new Date();
+        const timeMin =
+          String(args.timeMin ?? "").trim() ||
+          new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const timeMax =
+          String(args.timeMax ?? "").trim() ||
+          new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString();
         const maxResults = Math.min(Math.max(Number(args.maxResults) || 20, 1), 50);
-        if (!timeMin || !timeMax) return JSON.stringify({ success: false, error: "timeMin and timeMax are required" });
-        const result = await calendar.listEvents(tenantId, { timeMin, timeMax, maxResults });
-        return JSON.stringify({ events: result.events, count: result.events.length });
+        const result = await calendar.listEvents(tenantId, {
+          timeMin,
+          timeMax,
+          maxResults,
+          ...(query ? { q: query } : {}),
+        });
+        return JSON.stringify({ events: result.events, count: result.events.length, query: query ?? null });
       }
 
       case "check_free_busy": {
