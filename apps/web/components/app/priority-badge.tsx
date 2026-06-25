@@ -12,7 +12,7 @@ type Props = {
   compact?: boolean;
 };
 
-export function PriorityBadge({ urgency, score, reason, category, rank, compact }: Props) {
+export function PriorityBadge({ urgency, reason, category, rank, compact }: Props) {
   const display = urgencyDisplay(urgency);
 
   return (
@@ -28,9 +28,6 @@ export function PriorityBadge({ urgency, score, reason, category, rank, compact 
         }}
       >
         {display.shortLabel}
-        {(urgency === "critical" || urgency === "high") ? (
-          <span className="thread-priority-score">{score}</span>
-        ) : null}
       </span>
       {!compact && category ? (
         <span className="thread-priority-category">{categoryLabel(category)}</span>
