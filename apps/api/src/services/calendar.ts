@@ -14,6 +14,7 @@ import { clearCalendarChannel, getCalendarChannel, setCalendarChannel } from "./
 import { searchCalendarEventsDb, searchCalendarsDb } from "./corsair-db";
 import { ensureCorsairTenant } from "./corsair-tenant";
 import { parseQuickAddText } from "./parse-quick-add";
+import { resolveGoogleCalendarTiming } from "../utils/calendar-event-timing";
 
 function pad2(value: number) {
   return String(value).padStart(2, "0");
@@ -245,27 +246,26 @@ export class CorsairCalendarService implements CalendarService {
       throw new Error("Google Calendar is not connected");
     }
 
-    const timeZone = input.timeZone?.trim() || "UTC";
     const corsair = getCorsair().withTenant(tenantId);
-    const allDay =
-      input.allDay ??
-      (!input.startDateTime.includes("T") && !/\d:\d/.test(input.startDateTime));
+    const timing = resolveGoogleCalendarTiming(input);
+    const allDay = timing.allDay;
     const start = allDay
-      ? { date: input.startDateTime.slice(0, 10) }
-      : { dateTime: input.startDateTime, timeZone };
+      ? { date: timing.startDateTime }
+      : { dateTime: timing.startDateTime, timeZone: timing.timeZone };
     const end = allDay
-      ? { date: input.endDateTime.slice(0, 10) }
-      : { dateTime: input.endDateTime, timeZone };
+      ? { date: timing.endDateTime }
+      : { dateTime: timing.endDateTime, timeZone: timing.timeZone };
 
+    const hasAttendees = Boolean(input.attendeeEmails?.length);
     // Auto-add Google Meet when there are attendees or explicitly requested.
-    const addMeet = input.addGoogleMeet ?? (Boolean(input.attendeeEmails?.length));
+    const addMeet = input.addGoogleMeet ?? hasAttendees;
     const conferenceData = addMeet
       ? { createRequest: { requestId: `corsair-${Date.now()}`, conferenceSolutionKey: { type: "hangoutsMeet" } } }
       : undefined;
 
     const created = await corsair.googlecalendar.api.events.create({
       calendarId: "primary",
-      sendUpdates: "all",
+      sendUpdates: hasAttendees ? "all" : "none",
       ...(addMeet ? { conferenceDataVersion: 1 } : {}),
       event: {
         summary: input.summary,
