@@ -123,10 +123,7 @@ export default function QueuePage() {
       }
     },
     onError: (error, _vars, ctx) => {
-      toast.error(error.message);
-      if (ctx?.prev) {
-        utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
-      }
+      handleQueueMutationError(error, ctx);
     },
     onSettled: () => {
       setActiveItemId(null);
@@ -168,10 +165,7 @@ export default function QueuePage() {
       }
     },
     onError: (error, _vars, ctx) => {
-      toast.error(error.message);
-      if (ctx?.prev) {
-        utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
-      }
+      handleQueueMutationError(error, ctx);
     },
     onSettled: () => {
       setActiveItemId(null);
@@ -181,7 +175,24 @@ export default function QueuePage() {
 
   const items = itemsQuery.data?.items ?? [];
   const pending = items.filter((item) => item.status === "pending" || item.status === "processing");
-  const anyBusy = activeItemId !== null;
+  const anyBusy = activeItemId !== null || approve.isPending || dismiss.isPending;
+
+  const handleQueueMutationError = (
+    error: { message: string },
+    ctx?: { prev?: typeof itemsQuery.data },
+  ) => {
+    const alreadyResolved = /already resolved|not found/i.test(error.message);
+    if (alreadyResolved) {
+      void utils.queue.list.invalidate();
+      void utils.queue.pendingCount.invalidate();
+      toast.message("That item was already processed — refreshing queue.");
+      return;
+    }
+    toast.error(error.message);
+    if (ctx?.prev) {
+      utils.queue.list.setData({ status: tab === "pending" ? "pending" : "all" }, ctx.prev);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
