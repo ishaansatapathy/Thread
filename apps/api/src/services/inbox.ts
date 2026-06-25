@@ -31,6 +31,7 @@ import { ensureCorsairTenant } from "./corsair-tenant";
 import type { SelectMailCacheRow } from "@repo/database/schema";
 
 import { mailCache, type CachedThreadMetadata } from "./mail-cache";
+import { filterDemoFixtureThreads, isDemoUserId } from "./demo-user";
 import {
   searchGmailMessagesDb,
   searchGmailThreadsDb,
@@ -257,15 +258,18 @@ export class CorsairInboxService implements InboxService {
             const threadIds = [...new Set(msgRows.map((m) => m.threadId).filter(Boolean))] as string[];
             if (threadIds.length > 0) {
               return {
-                threads: threadIds.slice(0, limit).map((id) => {
-                  const msg = msgRows.find((m) => m.threadId === id);
-                  return {
-                    id,
-                    snippet: msg?.snippet ?? "",
-                    subject: msg?.subject,
-                    from: msg?.from,
-                  };
-                }),
+                threads: await this.filterDemoCacheThreads(
+                  tenantId,
+                  threadIds.slice(0, limit).map((id) => {
+                    const msg = msgRows.find((m) => m.threadId === id);
+                    return {
+                      id,
+                      snippet: msg?.snippet ?? "",
+                      subject: msg?.subject,
+                      from: msg?.from,
+                    };
+                  }),
+                ),
               };
             }
             const threadRows = await searchGmailThreadsDb(
@@ -275,14 +279,20 @@ export class CorsairInboxService implements InboxService {
             );
             if (threadRows.length > 0) {
               return {
-                threads: threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+                threads: await this.filterDemoCacheThreads(
+                  tenantId,
+                  threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+                ),
               };
             }
           } else {
             const threadRows = await searchGmailThreadsDb(tenantId, {}, { limit });
             if (threadRows.length > 0) {
               return {
-                threads: threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+                threads: await this.filterDemoCacheThreads(
+                  tenantId,
+                  threadRows.map((r) => ({ id: r.id, snippet: r.snippet ?? "" })),
+                ),
               };
             }
           }
@@ -295,7 +305,7 @@ export class CorsairInboxService implements InboxService {
     const threads = query
       ? await mailCache.search(tenantId, query, limit)
       : await mailCache.recent(tenantId, limit);
-    return { threads };
+    return { threads: await this.filterDemoCacheThreads(tenantId, threads) };
   }
 
   async listThreads(tenantId: string, opts?: ListThreadsOptions): Promise<ListThreadsResult> {
@@ -306,7 +316,7 @@ export class CorsairInboxService implements InboxService {
       const threads = query
         ? await mailCache.search(tenantId, query, maxResults)
         : await mailCache.recent(tenantId, maxResults);
-      return { threads, stale: true };
+      return { threads: await this.filterDemoCacheThreads(tenantId, threads), stale: true };
     }
 
     const status = await this.getConnectionStatus(tenantId);
@@ -314,7 +324,7 @@ export class CorsairInboxService implements InboxService {
       const threads = query
         ? await mailCache.search(tenantId, query, maxResults)
         : await mailCache.recent(tenantId, maxResults);
-      return { threads, stale: true };
+      return { threads: await this.filterDemoCacheThreads(tenantId, threads), stale: true };
     }
 
     const forceRefresh = opts?.refresh === true;
@@ -1328,5 +1338,13 @@ export class CorsairInboxService implements InboxService {
     const { disconnectCorsairConnection } = await import("./corsair-disconnect");
     await disconnectCorsairConnection(tenantId, "gmail");
     invalidateConnectionCache(tenantId);
+  }
+
+  /** Shared demo account: hide real Gmail synced into cache when OAuth is disconnected. */
+  private async filterDemoCacheThreads(tenantId: string, threads: InboxThread[]): Promise<InboxThread[]> {
+    if (!(await isDemoUserId(tenantId))) return threads;
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail === "connected") return threads;
+    return filterDemoFixtureThreads(threads, true);
   }
 }

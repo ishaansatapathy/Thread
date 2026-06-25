@@ -1,7 +1,7 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
+import { and, eq, notLike } from "drizzle-orm";
 import { Client } from "pg";
 
 import { usersTable } from "../models/user";
@@ -10,6 +10,44 @@ import { threadMailCacheTable } from "../models/mail-cache";
 import { DEMO_MAIL_FIXTURES, buildDemoQueueFixtures } from "./demo-seed-data";
 
 const SALT_ROUNDS = 12;
+const DEMO_THREAD_PREFIX = "demo-thread-";
+
+async function purgeNonDemoMailCache(db: NodePgDatabase, userId: string) {
+  const removed = await db
+    .delete(threadMailCacheTable)
+    .where(
+      and(
+        eq(threadMailCacheTable.userId, userId),
+        notLike(threadMailCacheTable.threadId, `${DEMO_THREAD_PREFIX}%`),
+      ),
+    )
+    .returning({ id: threadMailCacheTable.id });
+
+  if (removed.length > 0) {
+    console.log(`[seed] Removed ${removed.length} non-demo cached inbox thread(s).`);
+  }
+}
+
+async function purgeCorsairGmailForTenant(client: Client, tenantId: string) {
+  const integration = await client.query<{ id: string }>(
+    `SELECT id FROM corsair_integrations WHERE name = ANY($1::text[]) LIMIT 1`,
+    [["gmail", "@corsair-dev/gmail"]],
+  );
+  const integrationId = integration.rows[0]?.id;
+  if (!integrationId) return;
+
+  const accounts = await client.query<{ id: string }>(
+    `SELECT id FROM corsair_accounts WHERE tenant_id = $1 AND integration_id = $2`,
+    [tenantId, integrationId],
+  );
+  const accountIds = accounts.rows.map((row) => row.id);
+  if (accountIds.length === 0) return;
+
+  await client.query(`DELETE FROM corsair_entities WHERE account_id = ANY($1::text[])`, [accountIds]);
+  await client.query(`DELETE FROM corsair_events WHERE account_id = ANY($1::text[])`, [accountIds]);
+  await client.query(`DELETE FROM corsair_accounts WHERE id = ANY($1::text[])`, [accountIds]);
+  console.log(`[seed] Cleared Corsair Gmail sync for demo tenant (${accountIds.length} account(s)).`);
+}
 
 async function seedDemoMailCache(db: NodePgDatabase, userId: string) {
   for (const fixture of DEMO_MAIL_FIXTURES) {
@@ -116,6 +154,8 @@ async function main() {
         .set({ passwordHash, emailVerified: true })
         .where(eq(usersTable.id, userId));
       console.log(`[seed] Demo user already exists: ${email} (password synced from SEED_DEMO_PASSWORD)`);
+      await purgeNonDemoMailCache(db, userId);
+      await purgeCorsairGmailForTenant(client, userId);
       await seedDemoMailCache(db, userId);
       await seedDemoQueueItems(db, userId);
       return;
