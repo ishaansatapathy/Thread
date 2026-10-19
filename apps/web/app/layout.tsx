@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { caveat } from "~/lib/fonts";
+import { caveat, instrumentSerif } from "~/lib/fonts";
 import { GlobalProviders } from "~/providers/global";
 
 const geistSans = localFont({
@@ -12,16 +12,11 @@ const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
   variable: "--font-geist-mono",
 });
-const threadHero = localFont({
-  src: "./fonts/ThreadHero.ttf",
-  variable: "--font-thread-hero",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
-  title: "Thread — Work at the speed of thought",
+  title: "Thread — Your AI Chief of Staff for Google Workspace",
   description:
-    "The professional inbox for email and calendar. Rank urgency, draft replies, and schedule invites — one workspace, your rules.",
+    "Gmail, Calendar, Drive, Docs, Sheets, Meet, Slides, Forms and Classroom — one AI agent that acts across your whole Workspace, only when you approve.",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: "/icon.svg",
@@ -58,7 +53,7 @@ export default function RootLayout({
       </head>
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} ${caveat.variable} ${threadHero.variable} bg-(--landing-bg) text-white antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${caveat.variable} ${instrumentSerif.variable} bg-(--landing-bg) text-white antialiased`}
       >
         <GlobalProviders>{children}</GlobalProviders>
       </body>
