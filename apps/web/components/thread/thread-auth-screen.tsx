@@ -8,9 +8,8 @@ import { ThreadLogoMark, ThreadWordmark } from "./thread-logo";
 type AuthMode = "sign-in" | "sign-up";
 
 const AUTH_NAV = [
+  { label: "Workspace", href: "/#workspace" },
   { label: "How it works", href: "/#how" },
-  { label: "Workflows", href: "/#workflows" },
-  { label: "Integrations", href: "/#integrations" },
   { label: "Agent", href: "/#agent" },
   { label: "FAQ", href: "/#faq" },
 ];
