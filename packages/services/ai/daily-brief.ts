@@ -14,6 +14,7 @@ const SYSTEM_PROMPT = [
   "You are a personal chief of staff preparing a daily brief for a busy professional.",
   "Use a time-appropriate greeting (morning / afternoon / evening) — never assume it is morning.",
   "Use ONLY the facts provided — never invent emails, meetings, or deadlines.",
+  "This brief covers email only: leave meetingInsights empty and omit focusWindow.",
   "Rules:",
   "- DO NOT count things ('you have X emails'). Tell the user WHAT to do.",
   "- Pick the single most important action for todaysFocus — be specific (name, subject, deadline).",
@@ -200,14 +201,16 @@ function buildFallbackBrief(context: BriefGatherResult): DailyBrief {
     });
   }
 
-  const summaryParts: string[] = [];
-  if (awaiting.length > 0) summaryParts.push("replies are waiting on you");
-  if (context.meetings.length > 0) summaryParts.push("meetings need your attention");
-  if (summaryParts.length === 0) summaryParts.push("you have a lighter day ahead");
+  const summary =
+    awaiting.length > 0
+      ? "Replies are waiting on you — start with the one that matters most."
+      : topThread
+        ? "A few new emails came in — nothing urgent, but worth a look."
+        : "Your inbox is clear. Nothing needs you right now.";
 
   return dailyBriefSchema.parse({
     greeting: timeOfDayGreeting(context.userName, context.timeZone),
-    summary: `Today ${summaryParts.join(" and ")} — start with your highest-impact move.`,
+    summary,
     todaysFocus: {
       headline: topThread
         ? `Reply to ${topThread.from}: ${topThread.subject}`
@@ -215,7 +218,7 @@ function buildFallbackBrief(context: BriefGatherResult): DailyBrief {
           ? `Prepare for ${prepMeetings[0].summary}`
           : context.pendingQueue[0]
             ? context.pendingQueue[0].title
-            : "Review your inbox and calendar",
+            : "Inbox zero — you're all caught up",
       detail: topThread?.snippet?.slice(0, 160) || undefined,
       threadId: topThread?.id,
       eventId: !topThread ? prepMeetings[0]?.id : undefined,
@@ -342,15 +345,15 @@ export async function generateDailyBrief(input: {
 
   const hasBriefData =
     context.threads.length > 0 ||
-    context.meetings.length > 0 ||
+    context.waitingOn.length > 0 ||
     context.pendingQueue.length > 0;
 
-  if (!context.gmailConnected && !context.calendarConnected && !hasBriefData) {
-    throw new ServiceError(
-      "PRECONDITION_FAILED",
-      "Connect Gmail or Google Calendar to generate your daily brief.",
-    );
+  if (!context.gmailConnected && !hasBriefData) {
+    throw new ServiceError("PRECONDITION_FAILED", "Connect Gmail to generate your daily brief.");
   }
+
+  // Nothing to summarize: skip the model so it can't invent urgent items.
+  if (!hasBriefData) return buildFallbackBrief(context);
 
   return synthesizeBrief(context);
 }
