@@ -38,6 +38,7 @@ import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
+import { ColumnResizer } from "~/components/app/column-resizer";
 import { QueryErrorState } from "~/components/app/query-error-state";
 import { EmailMessageBody } from "~/components/app/email-message-body";
 import { queueResultMessage } from "~/lib/queue-toast";
@@ -1663,6 +1664,16 @@ export default function InboxPage() {
           </div>
         ) : null}
       </div>
+
+      <ColumnResizer
+        cssVar="--inbox-list-w"
+        storageKey="thread.layout.inbox-list"
+        defaultWidth={360}
+        min={280}
+        max={620}
+        side="left"
+        label="Resize message list"
+      />
 
       <div className="thread-inbox-reading">
         {!isConnected && !hasDemoFixtures ? (
