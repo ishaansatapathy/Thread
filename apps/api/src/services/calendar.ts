@@ -1,6 +1,30 @@
 import { serviceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
+
+// ── Calendar connection status cache (20s TTL) ───────────────────────────────
+// Verification call (events.getMany) adds ~200ms per getConnectionStatus call.
+// Caching avoids paying that on every calendar page load.
+const CALENDAR_CONNECTION_CACHE_TTL_MS = 20_000;
+const calendarConnectionCache = new Map<string, { connected: boolean; expiresAt: number }>();
+
+function getCachedCalendarStatus(tenantId: string): boolean | null {
+  const entry = calendarConnectionCache.get(tenantId);
+  if (!entry || entry.expiresAt <= Date.now()) {
+    calendarConnectionCache.delete(tenantId);
+    return null;
+  }
+  return entry.connected;
+}
+
+function setCachedCalendarStatus(tenantId: string, connected: boolean) {
+  calendarConnectionCache.set(tenantId, { connected, expiresAt: Date.now() + CALENDAR_CONNECTION_CACHE_TTL_MS });
+}
+
+/** Invalidate after Calendar OAuth or disconnect so next check is fresh. */
+export function invalidateCalendarConnectionCache(tenantId: string) {
+  calendarConnectionCache.delete(tenantId);
+}
 import {
   resolveCalendarEventId,
   type CalendarConnectionStatus,
@@ -131,9 +155,45 @@ export class CorsairCalendarService implements CalendarService {
     }
 
     try {
+      // Return cached result if still fresh.
+      const cached = getCachedCalendarStatus(tenantId);
+      if (cached !== null) {
+        return { googlecalendar: cached ? "connected" : "not_connected" };
+      }
+
       await ensureCorsairTenant(tenantId);
       const status = await getCorsair().manage.connectionStatus.get({ tenantId });
-      return { googlecalendar: status.googlecalendar ?? "not_connected" };
+      if ((status.googlecalendar ?? "not_connected") !== "connected") {
+        setCachedCalendarStatus(tenantId, false);
+        return { googlecalendar: status.googlecalendar ?? "not_connected" };
+      }
+
+      // Corsair may report "connected" when Gmail's shared Google token covers Calendar
+      // scopes — but the Calendar plugin hasn't been explicitly authorized. Verify the
+      // connection is genuinely usable by making a lightweight Calendar API call.
+      try {
+        const corsair = getCorsair().withTenant(tenantId);
+        const now = new Date();
+        const end = new Date(now.getTime() + 60_000);
+        await corsair.googlecalendar.api.events.getMany({
+          calendarId: "primary",
+          timeMin: now.toISOString(),
+          timeMax: end.toISOString(),
+          maxResults: 1,
+          singleEvents: true,
+        });
+        setCachedCalendarStatus(tenantId, true);
+      } catch (verifyError) {
+        const msg = verifyError instanceof Error ? verifyError.message : String(verifyError);
+        logger.warn("Calendar connection status: Corsair reports connected but API call failed — treating as not_connected", {
+          tenantId,
+          message: msg,
+        });
+        setCachedCalendarStatus(tenantId, false);
+        return { googlecalendar: "not_connected" };
+      }
+
+      return { googlecalendar: "connected" };
     } catch (error) {
       logger.warn("Calendar connection status failed", {
         tenantId,
@@ -670,6 +730,7 @@ export class CorsairCalendarService implements CalendarService {
   }
 
   async disconnect(tenantId: string): Promise<void> {
+    invalidateCalendarConnectionCache(tenantId);
     const { disconnectCorsairConnection } = await import("./corsair-disconnect");
     await disconnectCorsairConnection(tenantId, "googlecalendar");
   }
