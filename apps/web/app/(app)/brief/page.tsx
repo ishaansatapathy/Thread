@@ -5,20 +5,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowRight,
   Calendar,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Clock,
   Loader2,
   Mail,
-  MessageSquare,
   PenLine,
   RefreshCw,
   Sparkles,
-  Sun,
   Target,
   Timer,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,7 +36,6 @@ import { isDemoLoginEnabled } from "~/lib/demo-config";
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
 type BriefAction = DailyBrief["recommendedActions"][number];
-type FollowUp = RouterOutputs["ai"]["missedFollowUps"][number];
 
 function briefAgentUrl(prompt: string, threadId?: string) {
   const params = new URLSearchParams({ prompt });
@@ -58,7 +55,7 @@ function BriefSection({
   title, icon: Icon, children, empty, badge,
 }: {
   title: string;
-  icon: typeof Sun;
+  icon: LucideIcon;
   children: React.ReactNode;
   empty?: boolean;
   badge?: number;
@@ -194,48 +191,10 @@ function BriefItemRow({
   );
 }
 
-function FollowUpRow({
-  item,
-  onDraft,
-}: {
-  item: FollowUp;
-  onDraft: (prompt: string) => void;
-}) {
-  const eventDate = item.eventDate
-    ? new Date(item.eventDate).toLocaleDateString(undefined, {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      })
-    : "";
-
-  return (
-    <div className="thread-brief-followup-row">
-      <div className="thread-brief-followup-meta">
-        <MessageSquare size={13} style={{ flexShrink: 0, color: "#a78bfa" }} />
-        <div>
-          <p className="thread-brief-followup-title">{item.eventSummary}</p>
-          <p className="thread-brief-followup-sub">
-            {eventDate}
-            {item.attendeeNames.length > 0 ? ` · with ${item.attendeeNames.slice(0, 2).join(", ")}` : ""}
-            {" · "}
-            <span style={{ color: item.daysAgo >= 3 ? "#f87171" : "#fbbf24" }}>
-              {item.daysAgo}d ago, no follow-up
-            </span>
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        className="thread-brief-followup-btn"
-        onClick={() => onDraft(item.agentPrompt)}
-        title={item.suggestedSubject}
-      >
-        <Sparkles size={11} />
-        Draft follow-up
-      </button>
-    </div>
-  );
+function splitGreeting(greeting: string) {
+  const match = /^(.*?),\s*(.+)$/.exec(greeting.trim());
+  if (!match) return { lead: greeting, name: "" };
+  return { lead: match[1]!, name: match[2]!.split(/\s+/)[0]! };
 }
 
 function buildBriefThreadContext(brief: DailyBrief) {
@@ -548,23 +507,18 @@ export default function BriefPage() {
     }
   };
 
-  const followUpsQuery = trpc.ai.missedFollowUps.useQuery(
-    { timeZone },
-    { staleTime: 10 * 60_000, retry: 1 },
-  );
-
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
-  const calendarStatus = trpc.calendar.connectionStatus.useQuery({});
   const cachedThreadsQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 1 }, { staleTime: 120_000 });
-  const connected =
-    inboxStatus.data?.gmail === "connected" ||
-    calendarStatus.data?.googlecalendar === "connected";
+  const connected = inboxStatus.data?.gmail === "connected";
   const hasDemoData = isDemoLoginEnabled() && (cachedThreadsQuery.data?.threads.length ?? 0) > 0;
   const canShowBrief = connected || hasDemoData || Boolean(briefQuery.data);
 
   const brief = briefQuery.data;
-  const followUps = followUpsQuery.data ?? [];
-  const loading = briefQuery.isLoading || inboxStatus.isLoading || calendarStatus.isLoading;
+  const loading = briefQuery.isLoading || inboxStatus.isLoading;
+  const today = useMemo(
+    () => new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+    [],
+  );
 
   useEffect(() => {
     if (!brief) return;
@@ -615,44 +569,55 @@ export default function BriefPage() {
     [brief],
   );
 
-  const handleDraftFollowUp = (agentPrompt: string) => {
-    router.push(briefAgentUrl(agentPrompt));
-  };
-
   return (
     <div className="thread-app-page">
       {demoModal}
       <div className="thread-brief-page">
         <header className="thread-brief-header">
           <div className="thread-brief-header-main">
-            <Sun size={18} style={{ opacity: 0.75 }} />
-            <div>
-              <h1>Daily Brief</h1>
-              <p>Your plan for today — what matters and what to do first.</p>
-            </div>
+            <span className="thread-brief-eyebrow">Daily brief · {today}</span>
+            <h1 className="thread-brief-greeting">
+              {brief ? (
+                (() => {
+                  const { lead, name } = splitGreeting(brief.greeting);
+                  return name ? (
+                    <>
+                      {lead}, <em>{name}</em>
+                    </>
+                  ) : (
+                    lead
+                  );
+                })()
+              ) : (
+                <>
+                  Your <em>day</em>, at a glance
+                </>
+              )}
+            </h1>
+            {brief ? <p className="thread-brief-summary">{brief.summary}</p> : null}
           </div>
           <button
             type="button"
-            className="thread-btn-ghost"
+            className="thread-brief-refresh"
             disabled={briefQuery.isFetching || isForceRefreshing}
-            title="Force-refresh from Gmail + Calendar (bypasses 5-min cache)"
+            title="Rebuild the brief from your latest email"
             onClick={() => {
-              void handleForceRefresh().then(() => toast.message("Brief refreshed from Corsair"));
+              void handleForceRefresh().then(() => toast.message("Brief refreshed"));
             }}
           >
             {briefQuery.isFetching || isForceRefreshing ? (
-              <Loader2 size={13} className="thread-spin" />
+              <Loader2 size={14} className="thread-spin" />
             ) : (
-              <RefreshCw size={13} />
+              <RefreshCw size={14} />
             )}
             Refresh
           </button>
         </header>
 
         {!connected && hasDemoData ? (
-          <div className="thread-demo-inbox-strip" style={{ marginBottom: 16 }}>
+          <div className="thread-demo-inbox-strip">
             <Sparkles size={13} />
-            <span>Demo Daily Brief — AI synthesis from sample inbox + calendar data</span>
+            <span>Demo brief — built from a sample inbox</span>
             <span className="thread-demo-inbox-strip-sep">·</span>
             <Link href="/agent" className="thread-demo-inbox-strip-link">Open Agent</Link>
           </div>
@@ -661,15 +626,19 @@ export default function BriefPage() {
         {loading ? (
           <SkeletonList count={5} />
         ) : !canShowBrief ? (
-          <div className="thread-app-empty thread-brief-empty">
-            <Mail size={22} style={{ opacity: 0.35 }} />
-            <h2>Connect your workspace</h2>
-            <p>Link Gmail or Google Calendar to generate your personal daily brief.</p>
-            <Link href="/settings" className="thread-btn-accent">Open Settings</Link>
+          <div className="thread-brief-empty">
+            <span className="thread-brief-empty-icon">
+              <Mail size={20} />
+            </span>
+            <h2>Connect Gmail to get your brief</h2>
+            <p>Thread reads your unread mail each morning and tells you what to handle first.</p>
+            <Link href="/settings" className="thread-btn-accent">Connect Gmail</Link>
           </div>
         ) : briefQuery.isError && !briefQuery.data ? (
-          <div className="thread-app-empty thread-brief-empty">
-            <AlertTriangle size={22} style={{ opacity: 0.45, color: "#f87171" }} />
+          <div className="thread-brief-empty">
+            <span className="thread-brief-empty-icon" data-tone="danger">
+              <AlertTriangle size={20} />
+            </span>
             <h2>Couldn&apos;t load your brief</h2>
             <p>{briefQuery.error.message}</p>
             <button type="button" className="thread-btn-accent" onClick={() => briefQuery.refetch()}>
@@ -689,25 +658,20 @@ export default function BriefPage() {
               </div>
             ) : null}
 
-            <div className="thread-brief-hero">
-              <p className="thread-brief-greeting">{brief.greeting}</p>
-              <p className="thread-brief-summary">{brief.summary}</p>
-            </div>
-
             <div className="thread-brief-focus-card">
               <div className="thread-brief-focus-label">
-                <Target size={14} />
+                <Target size={13} />
                 Today&apos;s focus
+                {brief.todaysFocus.byTime ? (
+                  <span className="thread-brief-focus-time">{brief.todaysFocus.byTime}</span>
+                ) : null}
               </div>
               <h3>{brief.todaysFocus.headline}</h3>
               {brief.todaysFocus.detail ? <p>{brief.todaysFocus.detail}</p> : null}
-              {brief.todaysFocus.byTime ? (
-                <span className="thread-mono-tag">{brief.todaysFocus.byTime}</span>
-              ) : null}
               <div className="thread-brief-focus-actions">
                 {(() => {
                   const focusTarget = resolveBriefThreadTarget(null, brief, briefThreadContext);
-                  if (!focusTarget.threadId && !brief.todaysFocus.headline) return null;
+                  if (!focusTarget.threadId && visibleNeedsAttention.length === 0) return null;
                   const focusPrompt = buildBriefAgentPrompt(
                     "reply",
                     focusTarget.headline,
@@ -734,42 +698,10 @@ export default function BriefPage() {
               </div>
             </div>
 
-            {brief.focusWindow ? (
-              <div className="thread-brief-banner">
-                <Clock size={14} />
-                <span>{brief.focusWindow.label}</span>
-              </div>
-            ) : null}
-
-            {/* Missed follow-ups — unique section */}
-            {followUps.length > 0 ? (
-              <section className="thread-brief-section thread-brief-followups-section">
-                <div className="thread-brief-section-head">
-                  <MessageSquare size={14} />
-                  <h2>Missed follow-ups</h2>
-                  <span className="thread-brief-badge thread-brief-badge--amber">{followUps.length}</span>
-                </div>
-                <div className="thread-brief-section-body">
-                  {followUps.map((fu) => (
-                    <FollowUpRow
-                      key={fu.eventId}
-                      item={fu}
-                      onDraft={handleDraftFollowUp}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : followUpsQuery.isLoading ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--thread-dim)", margin: "4px 0 12px" }}>
-                <Loader2 size={12} className="thread-spin" />
-                Checking for missed follow-ups…
-              </div>
-            ) : followUpsQuery.isError ? (
-              <div style={{ fontSize: 12, color: "var(--thread-dim)", margin: "4px 0 12px" }}>
-                Couldn&apos;t check follow-ups.{" "}
-                <button type="button" style={{ color: "var(--thread-accent)", background: "none", border: "none", cursor: "pointer", fontSize: 12 }} onClick={() => followUpsQuery.refetch()}>
-                  Retry
-                </button>
+            {visibleNeedsAttention.length === 0 && visibleRisks.length === 0 ? (
+              <div className="thread-brief-clear">
+                <CheckCircle2 size={16} />
+                Nothing else needs you right now. New mail will show up here.
               </div>
             ) : null}
 
@@ -789,24 +721,6 @@ export default function BriefPage() {
                     onToggle={setExpandedId}
                     onToggleEvent={setExpandedEventId}
                     onDismissThread={markBriefThreadDismissed}
-                    timeZone={timeZone}
-                  />
-                ))}
-              </BriefSection>
-
-              <BriefSection
-                title="Meeting insights"
-                icon={Calendar}
-                empty={brief.meetingInsights.length === 0}
-              >
-                {brief.meetingInsights.map((item, i) => (
-                  <BriefItemRow
-                    key={`meet-${i}`}
-                    item={item}
-                    expandedId={expandedId}
-                    expandedEventId={expandedEventId}
-                    onToggle={setExpandedId}
-                    onToggleEvent={setExpandedEventId}
                     timeZone={timeZone}
                   />
                 ))}
