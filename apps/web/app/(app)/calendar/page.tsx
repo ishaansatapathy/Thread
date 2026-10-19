@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -45,11 +45,19 @@ import {
 } from "~/lib/calendar-datetime";
 import {
   type CalendarViewMode,
+  WEEK_STRIP_DAYS,
+  WEEK_STRIP_LEAD,
+  addDays,
+  boundsForDays,
+  dayDiff,
+  getDaysFrom,
   getVisibleDays,
   navigateAnchor,
   prevNextAriaLabel,
   queryBoundsForView,
+  startOfWeek,
   viewPeriodLabel,
+  weekStripStartFor,
 } from "~/lib/calendar-view";
 
 /** Rich client-side demo events — no DB, no API. */
@@ -244,12 +252,35 @@ function resolveQueueItemForEvent(event: CalendarEventItem, items: QueueListItem
   return null;
 }
 
+function scrollWeekStripTo(
+  state: { programmatic: boolean },
+  el: HTMLDivElement,
+  index: number,
+  behavior: ScrollBehavior,
+) {
+  if (el.clientWidth === 0) return;
+  const target = index * (el.clientWidth / 7);
+  if (Math.abs(el.scrollLeft - target) < 1) return;
+  state.programmatic = true;
+  el.scrollTo({ left: target, behavior });
+}
+
 export default function CalendarPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const utils = trpc.useUtils();
   const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
-  const [viewAnchor, setViewAnchor] = useState(() => new Date());
+  const [viewAnchor, setViewAnchor] = useState(() => startOfWeek(new Date()));
+  const [weekStripStart, setWeekStripStart] = useState(() => weekStripStartFor(startOfWeek(new Date())));
+  const [weekScrollEl, setWeekScrollEl] = useState<HTMLDivElement | null>(null);
+  const weekScroll = useRef({
+    programmatic: false,
+    userScrolling: false,
+    settleTimer: 0,
+    el: null as HTMLDivElement | null,
+    stripTime: 0,
+    anchorIndex: WEEK_STRIP_LEAD,
+  });
   const [showCreate, setShowCreate] = useState(false);
   const [summary, setSummary] = useState("");
   const [attendee, setAttendee] = useState("");
@@ -284,17 +315,26 @@ export default function CalendarPage() {
   const [queueAction, setQueueAction] = useState<{ event: CalendarEventItem; item: QueueListItem } | null>(null);
 
   const visibleDays = useMemo(() => getVisibleDays(viewMode, viewAnchor), [viewMode, viewAnchor]);
+  const weekStripDays = useMemo(
+    () => getDaysFrom(weekStripStart, WEEK_STRIP_DAYS).map((date) => ({ date, inMonth: true })),
+    [weekStripStart],
+  );
+  // Week view renders the whole scrollable strip; day/month render exactly what's visible.
+  const gridDays = viewMode === "week" ? weekStripDays : visibleDays;
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const eventQuery = useMemo(() => {
-    const bounds = queryBoundsForView(viewMode, viewAnchor);
+    const bounds =
+      viewMode === "week"
+        ? boundsForDays(weekStripDays.map((day) => day.date))
+        : queryBoundsForView(viewMode, viewAnchor);
     const q = eventSearchInput.trim();
     return {
       ...bounds,
-      maxResults: viewMode === "month" ? 250 : 100,
+      maxResults: viewMode === "day" ? 100 : 250,
       timeZone: browserTimeZone,
       ...(q ? { q } : {}),
     };
-  }, [viewMode, viewAnchor, browserTimeZone, eventSearchInput]);
+  }, [viewMode, viewAnchor, weekStripDays, browserTimeZone, eventSearchInput]);
   const todayKey = localDayKey(new Date());
   const periodLabel = viewPeriodLabel(viewMode, viewAnchor);
 
@@ -324,6 +364,8 @@ export default function CalendarPage() {
     refetchOnMount: "always",
     refetchInterval: isConnected && !dbSearchMode ? 30_000 : false,
     staleTime: 0,
+    // Keep the grid mounted while the scrolled week strip fetches a new range.
+    placeholderData: (prev) => prev,
   });
 
   const dbSearchTerm = eventSearchInput.trim();
@@ -526,7 +568,7 @@ export default function CalendarPage() {
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
-    for (const { date } of visibleDays) {
+    for (const { date } of gridDays) {
       map.set(localDayKey(date), []);
     }
     for (const event of calendarEvents) {
@@ -594,7 +636,7 @@ export default function CalendarPage() {
       });
     }
     return map;
-  }, [calendarEvents, pendingQueue.data?.items, visibleDays]);
+  }, [calendarEvents, pendingQueue.data?.items, gridDays]);
 
   const eventBusy = queueArchive.isPending || queueDelete.isPending;
 
@@ -617,6 +659,82 @@ export default function CalendarPage() {
     }
     return items;
   }, [visibleDays, eventsByDay]);
+
+  // ── Week strip scroll sync ──────────────────────────────────────────────
+  // The strip holds WEEK_STRIP_DAYS columns, 7 visible at a time, snapping per day.
+  // viewAnchor is the first visible day; the strip re-centres around it when the
+  // user nears either edge, so scrolling feels endless.
+  useLayoutEffect(() => {
+    const state = weekScroll.current;
+    if (viewMode !== "week" || !weekScrollEl) {
+      state.el = null;
+      return;
+    }
+    const index = dayDiff(weekStripStart, viewAnchor);
+    if (index < 0 || index > WEEK_STRIP_DAYS - 7) {
+      setWeekStripStart(weekStripStartFor(viewAnchor));
+      return;
+    }
+    const jump = state.el !== weekScrollEl || state.stripTime !== weekStripStart.getTime();
+    state.el = weekScrollEl;
+    state.stripTime = weekStripStart.getTime();
+    state.anchorIndex = index;
+    if (state.userScrolling && !jump) return;
+    scrollWeekStripTo(state, weekScrollEl, index, jump ? "auto" : "smooth");
+  }, [viewMode, viewAnchor, weekStripStart, weekScrollEl]);
+
+  // Column width follows the container, so re-align when it resizes.
+  useEffect(() => {
+    if (!weekScrollEl) return;
+    const state = weekScroll.current;
+    const observer = new ResizeObserver(() => {
+      if (!state.userScrolling) scrollWeekStripTo(state, weekScrollEl, state.anchorIndex, "auto");
+    });
+    observer.observe(weekScrollEl);
+    return () => observer.disconnect();
+  }, [weekScrollEl]);
+
+  useEffect(() => {
+    const state = weekScroll.current;
+    return () => window.clearTimeout(state.settleTimer);
+  }, []);
+
+  const onWeekScroll = () => {
+    const el = weekScrollEl;
+    if (!el || el.clientWidth === 0) return;
+    const state = weekScroll.current;
+    const stripStart = new Date(state.stripTime);
+    const syncAnchor = () => {
+      const index = Math.round(el.scrollLeft / (el.clientWidth / 7));
+      state.anchorIndex = index;
+      const next = addDays(stripStart, index);
+      setViewAnchor((current) => (dayDiff(current, next) === 0 ? current : next));
+      return index;
+    };
+    window.clearTimeout(state.settleTimer);
+    state.settleTimer = window.setTimeout(() => {
+      state.programmatic = false;
+      state.userScrolling = false;
+      const settled = syncAnchor();
+      if (settled < 7 || settled > WEEK_STRIP_DAYS - 14) {
+        setWeekStripStart(addDays(stripStart, settled - WEEK_STRIP_LEAD));
+      }
+    }, 140);
+    // Our own scrolls only sync once they settle; user scrolls update the label live.
+    if (state.programmatic) return;
+    state.userScrolling = true;
+    syncAnchor();
+  };
+
+  const changeViewMode = (mode: CalendarViewMode) => {
+    if (mode === viewMode) return;
+    if (mode === "week") {
+      setViewAnchor((current) => startOfWeek(current));
+    } else if (mode === "day" && visibleDays.some(({ date }) => localDayKey(date) === todayKey)) {
+      setViewAnchor(new Date());
+    }
+    setViewMode(mode);
+  };
 
   const openEvent = (event: CalendarEventItem) => {
     if (event.pending || event.pendingArchive || event.pendingDelete) {
@@ -807,7 +925,7 @@ export default function CalendarPage() {
               role="tab"
               aria-selected={viewMode === mode}
               data-active={viewMode === mode ? "true" : undefined}
-              onClick={() => setViewMode(mode)}
+              onClick={() => changeViewMode(mode)}
             >
               {mode === "day" ? "Day" : mode === "week" ? "Week" : "Month"}
             </button>
@@ -826,7 +944,7 @@ export default function CalendarPage() {
           type="button"
           className="thread-btn-ghost thread-cal-head-action"
           onClick={() => {
-            setViewAnchor(new Date());
+            setViewAnchor(startOfWeek(new Date()));
             setViewMode("week");
           }}
         >
@@ -893,8 +1011,13 @@ export default function CalendarPage() {
           </div>
         ) : null}
 
-        <div className="thread-cal-grid" data-view={viewMode}>
-          {visibleDays.map(({ date, inMonth }) => {
+        <div
+          className="thread-cal-grid"
+          data-view={viewMode}
+          ref={viewMode === "week" ? setWeekScrollEl : undefined}
+          onScroll={viewMode === "week" ? onWeekScroll : undefined}
+        >
+          {gridDays.map(({ date, inMonth }) => {
             const key = localDayKey(date);
             const isToday = key === todayKey;
             const dayEvents = eventsByDay.get(key) ?? [];
