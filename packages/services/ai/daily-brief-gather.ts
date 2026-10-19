@@ -1,17 +1,11 @@
-import type { CalendarEvent } from "../calendar";
 import type { InboxThread } from "../inbox";
 import {
   daysSince,
   extractEmailAddress,
-  findFocusWindows,
-  formatLocalTimeRange,
   normalizeEmail,
-  zonedDayRange,
-  zonedWallTimeToIso,
   type FocusWindow,
 } from "./daily-brief-time";
 import { fenceEmailData } from "./agent-guard";
-import { getCalendarService } from "../calendar";
 import { getInboxService } from "../inbox";
 import { getQueueService } from "../queue";
 import { rankInboxThreads } from "./inbox-priority";
@@ -64,7 +58,6 @@ export type BriefGatherResult = {
 };
 
 const DETAIL_THREAD_LIMIT = 6;
-const MEETING_PREP_SEARCH_LIMIT = 3;
 
 function displayNameFromEmail(email?: string, displayName?: string | null): string {
   if (displayName?.trim()) return displayName.trim();
@@ -83,12 +76,6 @@ function threadSnapshot(thread: InboxThread, extra?: Partial<BriefThreadSnapshot
     unread: thread.unread,
     ...extra,
   };
-}
-
-function meetingNeedsPrep(event: CalendarEvent): boolean {
-  const description = event.description?.trim() ?? "";
-  if (description.length < 24) return true;
-  return !/(agenda|prep|discuss|goal|objective|talking point)/i.test(description);
 }
 
 function isAwaitingUserReply(
@@ -123,18 +110,6 @@ function dedupeThreads(threads: InboxThread[]): InboxThread[] {
   return [...map.values()];
 }
 
-function buildMeetingSearchQuery(event: CalendarEvent): string | null {
-  const summary = event.summary?.trim();
-  const attendee = event.attendees?.find((a) => a.email && !a.organizer)?.email?.trim();
-  if (summary && summary.length > 2) {
-    return `newer_than:30d subject:"${summary.replace(/"/g, "")}"`;
-  }
-  if (attendee) {
-    return `newer_than:30d from:${attendee}`;
-  }
-  return null;
-}
-
 export async function gatherDailyBriefContext(input: {
   tenantId: string;
   userEmail?: string;
@@ -146,19 +121,15 @@ export async function gatherDailyBriefContext(input: {
   const timeZone = input.timeZone?.trim() || "UTC";
   const userName = displayNameFromEmail(input.userEmail, input.displayName);
   const inbox = getInboxService();
-  const calendar = getCalendarService();
   const queue = getQueueService();
 
-  const [gmailStatus, calendarStatus, pendingItems] = await Promise.all([
+  // The brief is email-only for now; calendar signals will be added back later.
+  const [gmailStatus, pendingItems] = await Promise.all([
     inbox.getConnectionStatus(input.tenantId),
-    calendar.getConnectionStatus(input.tenantId),
     queue.listItems(input.tenantId, { status: "pending" }).catch(() => []),
   ]);
 
   const gmailConnected = gmailStatus.gmail === "connected";
-  const calendarConnected = calendarStatus.googlecalendar === "connected";
-
-  const day = zonedDayRange(timeZone);
 
   const cachedThreadsPromise = gmailConnected
     ? Promise.resolve({ threads: [] as InboxThread[] })
@@ -187,7 +158,7 @@ export async function gatherDailyBriefContext(input: {
         .catch(() => ({ threads: [] as InboxThread[] }))
     : cachedThreadsPromise.then(({ threads }) => ({
         threads: threads.filter((t) =>
-          /deadline|due date|by eod|urgent|action required|corsair|hackathon/i.test(
+          /deadline|due date|by eod|urgent|action required/i.test(
             `${t.subject ?? ""} ${t.snippet ?? ""}`,
           ),
         ),
@@ -203,57 +174,6 @@ export async function gatherDailyBriefContext(input: {
         .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
-  const demoCalendarEvents = (): CalendarEvent[] => {
-    const base = new Date();
-    base.setSeconds(0, 0);
-    const start = new Date(base);
-    start.setHours(11, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(12, 0, 0, 0);
-    const focusStart = new Date(base);
-    focusStart.setHours(15, 0, 0, 0);
-    const focusEnd = new Date(focusStart);
-    focusEnd.setHours(16, 0, 0, 0);
-    return [
-      {
-        id: "demo-cal-brief-1",
-        summary: "Corsair Hackathon Demo",
-        start: start.toISOString(),
-        end: end.toISOString(),
-        status: "confirmed",
-        attendees: [{ email: "judge@corsair.dev", displayName: "Judge" }],
-      },
-      {
-        id: "demo-cal-brief-2",
-        summary: "Focus block — deep work",
-        start: focusStart.toISOString(),
-        end: focusEnd.toISOString(),
-        status: "confirmed",
-      },
-    ];
-  };
-
-  const eventsPromise = calendarConnected
-    ? calendar
-        .listEvents(input.tenantId, {
-          timeMin: day.timeMin,
-          timeMax: day.timeMax,
-          maxResults: 25,
-          timeZone,
-        })
-        .catch(() => ({ events: [] as CalendarEvent[] }))
-    : Promise.resolve({ events: demoCalendarEvents() });
-
-  const freeBusyPromise = calendarConnected
-    ? calendar
-        .checkFreeBusy(input.tenantId, {
-          startDateTime: day.timeMin,
-          endDateTime: day.timeMax,
-          timeZone,
-        })
-        .catch(() => ({ conflicts: [] as CalendarEvent[] }))
-    : Promise.resolve({ conflicts: [] as CalendarEvent[] });
-
   // Waiting on others — sent mail with no reply in last 5 days.
   const waitingOnPromise = gmailConnected
     ? inbox
@@ -264,15 +184,12 @@ export async function gatherDailyBriefContext(input: {
         .catch(() => ({ threads: [] as InboxThread[] }))
     : Promise.resolve({ threads: [] as InboxThread[] });
 
-  const [unreadList, deadlineList, invoiceList, eventsResult, freeBusyResult, waitingOnList] =
-    await Promise.all([
-      unreadPromise,
-      deadlinePromise,
-      invoicePromise,
-      eventsPromise,
-      freeBusyPromise,
-      waitingOnPromise,
-    ]);
+  const [unreadList, deadlineList, invoiceList, waitingOnList] = await Promise.all([
+    unreadPromise,
+    deadlinePromise,
+    invoicePromise,
+    waitingOnPromise,
+  ]);
 
   // Unread-only for email signals — read mail (e.g. opened from notification) drops off the brief.
   const merged = dedupeThreads([
@@ -338,66 +255,16 @@ export async function gatherDailyBriefContext(input: {
     );
   }
 
-  const todayEvents = (eventsResult.events ?? []).filter((e) => e.status !== "cancelled");
-  const prepCandidates = todayEvents.filter(meetingNeedsPrep).slice(0, MEETING_PREP_SEARCH_LIMIT);
-
-  const relatedCounts = await Promise.all(
-    prepCandidates.map(async (event) => {
-      const query = buildMeetingSearchQuery(event);
-      if (!query || !gmailConnected) return 0;
-      try {
-        const found = await inbox.listThreads(input.tenantId, { maxResults: 5, query });
-        return found.threads.length;
-      } catch {
-        return 0;
-      }
-    }),
-  );
-
-  const meetings: BriefMeetingSnapshot[] = todayEvents.map((event) => {
-    const prepIndex = prepCandidates.findIndex((c) => c.id === event.id);
-    return {
-      id: event.id,
-      summary: event.summary?.trim() || "Untitled meeting",
-      start: event.start,
-      end: event.end,
-      needsPrep: meetingNeedsPrep(event),
-      relatedEmailCount: prepIndex >= 0 ? relatedCounts[prepIndex] ?? 0 : 0,
-      attendeeNames: (event.attendees ?? [])
-        .map((a) => a.displayName?.trim() || a.email?.split("@")[0] || "")
-        .filter(Boolean)
-        .slice(0, 4),
-    };
-  });
-
-  const busySlots = (freeBusyResult.conflicts ?? []).map((slot) => ({
-    start: slot.start ?? day.timeMin,
-    end: slot.end ?? day.timeMax,
-  }));
-
-  const focusWindows = findFocusWindows({
-    dayStartIso: zonedWallTimeToIso(day.dateKey, "09:00:00", timeZone),
-    dayEndIso: zonedWallTimeToIso(day.dateKey, "18:00:00", timeZone),
-    busySlots,
-    minMinutes: 90,
-  });
-
-  const focusWindowLabel =
-    focusWindows[0] != null
-      ? formatLocalTimeRange(focusWindows[0].startIso, focusWindows[0].endIso, timeZone)
-      : undefined;
-
   return {
     userName,
     userEmail: input.userEmail,
     timeZone,
     gmailConnected,
-    calendarConnected,
+    calendarConnected: false,
     threads: threadSnapshots,
     rankedThreadIds,
-    meetings,
-    focusWindows,
-    focusWindowLabel,
+    meetings: [],
+    focusWindows: [],
     pendingQueue: pendingItems.slice(0, 8).map((item) => ({
       id: item.id,
       title: item.title,
@@ -430,7 +297,7 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
     `User: ${context.userName}`,
     `Timezone: ${context.timeZone}`,
     `Gmail connected: ${context.gmailConnected}`,
-    `Calendar connected: ${context.calendarConnected}`,
+    "Scope: email only — do not mention calendar, meetings or focus time.",
   ];
 
   if (context.focusWindowLabel) {
@@ -499,12 +366,8 @@ export function serializeGatherForModel(context: BriefGatherResult): string {
     }
   }
 
-  if (!context.gmailConnected && !context.calendarConnected) {
-    lines.push("", "Demo workspace — sample mail and calendar data. Suggest connecting Gmail and Calendar for live sync.");
-  } else if (!context.gmailConnected && context.threads.length > 0) {
-    lines.push("", "Gmail not connected — using demo inbox cache.");
-  } else if (!context.calendarConnected && context.meetings.length > 0) {
-    lines.push("", "Calendar not connected — using demo calendar preview.");
+  if (!context.gmailConnected && context.threads.length > 0) {
+    lines.push("", "Gmail not connected — using cached inbox data.");
   }
 
   return lines.join("\n");
