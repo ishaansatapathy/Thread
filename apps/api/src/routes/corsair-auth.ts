@@ -5,7 +5,7 @@ import AuthService from "@repo/services/auth";
 import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 
 import { env } from "../env";
-import { CorsairCalendarService } from "../services/calendar";
+import { CorsairCalendarService, invalidateCalendarConnectionCache } from "../services/calendar";
 import { CorsairInboxService, invalidateConnectionCache } from "../services/inbox";
 import { backfillCorsairTenant } from "../services/corsair-backfill";
 import { isCorsairConfigured } from "../corsair";
@@ -132,6 +132,9 @@ corsairAuthRouter.get("/gmail/callback", async (req, res) => {
     const user = await authService.resolveSession(req, res);
     if (user) {
       invalidateConnectionCache(user.id);
+      // Gmail OAuth may share Google token with Calendar scopes — bust Calendar
+      // cache so the next check re-verifies via an actual Calendar API call.
+      invalidateCalendarConnectionCache(user.id);
       void backfillCorsairTenant(user.id);
       // Register Gmail Pub/Sub watch when topic is configured (best-effort).
       void inboxService.registerGmailWatch(user.id).catch((err: unknown) => {
@@ -216,6 +219,7 @@ corsairAuthRouter.get("/calendar/callback", async (req, res) => {
     if (webhooksBaseUrl) {
       const user = await authService.resolveSession(req, res);
       if (user) {
+        invalidateCalendarConnectionCache(user.id);
         void backfillCorsairTenant(user.id);
         void calendarService.registerWebhook(user.id, `${webhooksBaseUrl}/webhooks/calendar`).catch(
           (err: unknown) => {
