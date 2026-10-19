@@ -11,8 +11,12 @@ import { dailyBriefSchema, generateDailyBrief, isInboxAiConfigured, analyzeInbox
 
 const memBriefCache = new Map<string, { data: z.infer<typeof dailyBriefSchema>; expiresAt: number }>();
 
+// Bump the version to discard briefs cached under older generation logic.
+const BRIEF_CACHE_VERSION = "v2";
+
 function todayDateKey(timeZone: string): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: timeZone || "UTC" });
+  const date = new Date().toLocaleDateString("en-CA", { timeZone: timeZone || "UTC" });
+  return `${BRIEF_CACHE_VERSION}:${date}`;
 }
 
 async function getDbCachedBrief(

@@ -10,11 +10,12 @@ import { generatePath } from "../../utils/path-generator";
 const TAGS = ["Brief"];
 const getPath = generatePath("/brief");
 
-/** YYYY-MM-DD in any timezone — just needs to be consistent per user. */
+// Keep in sync with BRIEF_CACHE_VERSION in routes/ai/route.ts.
 function todayDateKey(timeZone?: string): string {
-  return new Date().toLocaleDateString("en-CA", {
+  const date = new Date().toLocaleDateString("en-CA", {
     timeZone: timeZone?.trim() || "UTC",
   });
+  return `v2:${date}`;
 }
 
 export const briefRouter = router({
