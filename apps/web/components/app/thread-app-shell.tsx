@@ -11,7 +11,6 @@ import {
   Search,
   LogOut,
   ChevronsUpDown,
-  PanelsTopLeft,
   ListChecks,
   Bot,
   BarChart2,
@@ -29,6 +28,7 @@ import { ThreadCalendarConnect } from "./thread-calendar-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 import { useSyncEvents } from "~/hooks/use-sync-events";
 import { DemoBar } from "./demo-bar";
+import { ColumnResizer } from "./column-resizer";
 
 const NAV = [
   { label: "Brief", href: "/brief", icon: Sun },
@@ -147,10 +147,6 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
         <Settings size={16} />
         Settings
       </Link>
-      <Link href="/" className="thread-app-nav-item" onClick={() => setMobileNavOpen(false)}>
-        <PanelsTopLeft size={16} />
-        Landing page
-      </Link>
     </>
   );
 
@@ -232,6 +228,16 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
+
+      <ColumnResizer
+        cssVar="--app-side-w"
+        storageKey="thread.layout.sidebar"
+        defaultWidth={252}
+        min={200}
+        max={360}
+        side="left"
+        label="Resize sidebar"
+      />
 
       <div className="thread-app-main">
         <header className="thread-app-topbar">
