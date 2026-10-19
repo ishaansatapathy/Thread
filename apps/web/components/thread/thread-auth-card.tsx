@@ -13,7 +13,6 @@ import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 import { env } from "~/env";
 import { isDemoLoginEnabled } from "~/lib/demo-config";
 import { trpc } from "~/trpc/client";
-import { ThreadLogoMark } from "./thread-logo";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -205,9 +204,9 @@ export function ThreadAuthCard({
 
   return (
     <div className="thread-auth-card">
-      <div className="thread-auth-logo">
-        <ThreadLogoMark size={52} />
-      </div>
+      <span className="thread-auth-eyebrow">
+        {twoFactorStep ? "Two-step verification" : isLogin ? "Sign in" : "Create account"}
+      </span>
 
       <h1 className="thread-auth-title">
         {twoFactorStep ? (
