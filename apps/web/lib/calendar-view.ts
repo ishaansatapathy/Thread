@@ -14,13 +14,53 @@ export function startOfWeek(date: Date) {
   return copy;
 }
 
+export function startOfDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+export function addDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+/** Whole calendar days from `from` to `to` (DST-safe). */
+export function dayDiff(from: Date, to: Date) {
+  const a = startOfDay(from);
+  const b = startOfDay(to);
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+export function getDaysFrom(start: Date, count: number) {
+  const first = startOfDay(start);
+  return Array.from({ length: count }, (_, index) => addDays(first, index));
+}
+
+/** Week view is a rolling 7-day window that starts on the anchor day. */
 export function getWeekDays(anchor: Date) {
-  const monday = startOfWeek(anchor);
-  return Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(monday);
-    day.setDate(monday.getDate() + index);
-    return day;
-  });
+  return getDaysFrom(anchor, 7);
+}
+
+/** Days rendered in the horizontally scrollable week strip. */
+export const WEEK_STRIP_DAYS = 35;
+/** How many days before the visible window the strip starts. */
+export const WEEK_STRIP_LEAD = 14;
+
+export function weekStripStartFor(windowStart: Date) {
+  return addDays(startOfDay(windowStart), -WEEK_STRIP_LEAD);
+}
+
+export function boundsForDays(days: Date[]) {
+  const start = startOfDay(days[0]!);
+  const end = startOfDay(days[days.length - 1]!);
+  end.setHours(23, 59, 59, 999);
+  const pad = 24 * 60 * 60 * 1000;
+  return {
+    timeMin: new Date(start.getTime() - pad).toISOString(),
+    timeMax: new Date(end.getTime() + pad).toISOString(),
+  };
 }
 
 /** Standard 6-row month grid (Mon–Sun), including leading/trailing days. */
@@ -49,16 +89,7 @@ export function getVisibleDays(mode: CalendarViewMode, anchor: Date): CalendarGr
 }
 
 export function queryBoundsForView(mode: CalendarViewMode, anchor: Date) {
-  const days = getVisibleDays(mode, anchor);
-  const start = new Date(days[0]!.date);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(days[days.length - 1]!.date);
-  end.setHours(23, 59, 59, 999);
-  const pad = 24 * 60 * 60 * 1000;
-  return {
-    timeMin: new Date(start.getTime() - pad).toISOString(),
-    timeMax: new Date(end.getTime() + pad).toISOString(),
-  };
+  return boundsForDays(getVisibleDays(mode, anchor).map((day) => day.date));
 }
 
 export function navigateAnchor(mode: CalendarViewMode, anchor: Date, direction: -1 | 1) {
@@ -81,6 +112,12 @@ export function viewPeriodLabel(mode: CalendarViewMode, anchor: Date) {
       day: "numeric",
       year: "numeric",
     });
+  }
+  if (mode === "week") {
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).formatRange(
+      startOfDay(anchor),
+      addDays(startOfDay(anchor), 6),
+    );
   }
   return anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
