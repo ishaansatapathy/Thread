@@ -210,15 +210,36 @@ export function ThreadAuthCard({
       </div>
 
       <h1 className="thread-auth-title">
-        {twoFactorStep ? "Enter verification code" : isLogin ? "Log in to Thread" : "Create your account"}
+        {twoFactorStep ? (
+          <>
+            Check your <em>inbox</em>
+          </>
+        ) : isLogin ? (
+          <>
+            Welcome <em>back</em>
+          </>
+        ) : (
+          <>
+            Start with <em>Thread</em>
+          </>
+        )}
       </h1>
+      <p className="thread-auth-subtitle">
+        {twoFactorStep
+          ? "Enter the 6-digit code we just emailed you."
+          : isLogin
+            ? "Log in to your AI chief of staff."
+            : "Create an account — it takes under a minute."}
+      </p>
 
       {error && !mounted && <p className="thread-auth-error">{error}</p>}
 
       {!mounted ? (
         <>
           <div className="thread-auth-google-wide thread-auth-google-placeholder" aria-hidden />
-          <p className="thread-auth-or">or</p>
+          <p className="thread-auth-or">
+            <span>or</span>
+          </p>
           <AuthFormPlaceholder fields={isLogin ? 2 : 4} />
           <div className="thread-auth-footer thread-auth-footer-placeholder" aria-hidden />
         </>
@@ -238,7 +259,9 @@ export function ThreadAuthCard({
                   Try demo — no signup
                 </a>
               ) : null}
-              <p className="thread-auth-or">or</p>
+              <p className="thread-auth-or">
+                <span>or continue with email</span>
+              </p>
             </>
           )}
 
@@ -347,8 +370,32 @@ export function ThreadAuthCard({
           <p className="thread-auth-error">{error || "Check your details and try again."}</p>
         )}
 
+            {turnstileEnabled && !twoFactorStep && (
+              <div className="thread-auth-turnstile">
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={turnstileSiteKey!}
+                  onSuccess={setTurnstileToken}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => {
+                    setTurnstileToken(null);
+                    setError("Security check failed to load. Refresh and try again.");
+                  }}
+                  options={{ theme: "dark", size: "flexible", appearance: "interaction-only" }}
+                />
+              </div>
+            )}
+
             <button type="submit" className="thread-auth-submit" disabled={loading || (turnstileEnabled && !turnstileToken && !twoFactorStep)}>
-              {loading ? "Please wait…" : twoFactorStep ? "Verify" : isLogin ? "Sign in" : "Create account"}
+              {loading
+                ? "Please wait…"
+                : twoFactorStep
+                  ? "Verify"
+                  : turnstileEnabled && !turnstileToken
+                    ? "Verifying you're human…"
+                    : isLogin
+                      ? "Sign in"
+                      : "Create account"}
             </button>
           </form>
 
@@ -370,22 +417,6 @@ export function ThreadAuthCard({
             </button>
           )}
         </>
-      )}
-
-      {turnstileEnabled && mounted && !twoFactorStep && (
-        <div className="thread-auth-turnstile">
-          <Turnstile
-            ref={turnstileRef}
-            siteKey={turnstileSiteKey!}
-            onSuccess={setTurnstileToken}
-            onExpire={() => setTurnstileToken(null)}
-            onError={() => {
-              setTurnstileToken(null);
-              setError("Security check failed to load. Refresh and try again.");
-            }}
-            options={{ theme: "dark", size: "normal", appearance: "always" }}
-          />
-        </div>
       )}
     </div>
   );
