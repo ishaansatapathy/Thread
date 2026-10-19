@@ -45,6 +45,7 @@ export function ThreadAuthScreen({
 
   return (
     <div className="thread-page thread-auth-screen">
+      <div className="thread-auth-glow" aria-hidden />
       <header className="thread-auth-screen-nav">
         <div className="thread-auth-screen-nav-inner">
           {brand}
