@@ -21,6 +21,7 @@ import {
 import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { AgentMentionInput } from "~/components/app/agent-mention-input";
+import { ColumnResizer } from "~/components/app/column-resizer";
 import { AgentContextPicker } from "~/components/app/agent-context-picker";
 import { AgentFocusChip, type AgentFocusState } from "~/components/app/agent-focus-chip";
 import { AgentSessionSidebar } from "~/components/app/agent-session-sidebar";
@@ -701,8 +702,28 @@ function AgentPageContent() {
           onNewChat={() => void handleNewChat()}
           disabled={isPending || createSession.isPending}
         />
+        <ColumnResizer
+          cssVar="--agent-chats-w"
+          storageKey="thread.layout.agent-chats"
+          defaultWidth={220}
+          min={180}
+          max={380}
+          side="left"
+          offset={7}
+          label="Resize chat list"
+        />
 
         <div className="thread-agent-page">
+          <ColumnResizer
+            cssVar="--agent-actions-w"
+            storageKey="thread.layout.agent-actions"
+            defaultWidth={320}
+            min={260}
+            max={560}
+            side="right"
+            offset={9}
+            label="Resize actions panel"
+          />
           <div className="thread-agent-pane">
             <div className="thread-agent-pane-head">
               <Bot size={14} style={{ opacity: 0.7 }} />
