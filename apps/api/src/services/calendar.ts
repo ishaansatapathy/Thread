@@ -1,3 +1,4 @@
+import { serviceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 import { getGoogleOAuthConfig } from "@repo/services/env";
 import {
@@ -58,6 +59,12 @@ function truncateRecurrenceRules(recurrence: string[], splitStart: string, allDa
   });
 }
 
+function optionalString(value: string | null | undefined): string | undefined {
+  if (value == null) return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 function mapEvent(event: {
   id?: string;
   summary?: string;
@@ -91,20 +98,20 @@ function mapEvent(event: {
   return {
     id: event.id,
     summary: event.summary?.trim() || "Untitled event",
-    description: event.description,
-    location: event.location,
+    description: optionalString(event.description),
+    location: optionalString(event.location),
     start: event.start?.dateTime ?? event.start?.date,
     end: event.end?.dateTime ?? event.end?.date,
     allDay,
-    htmlLink: event.htmlLink,
-    hangoutLink: meetLink,
-    status: event.status,
-    recurringEventId: event.recurringEventId,
+    htmlLink: optionalString(event.htmlLink),
+    hangoutLink: optionalString(meetLink),
+    status: optionalString(event.status),
+    recurringEventId: optionalString(event.recurringEventId),
     isRecurring: Boolean(event.recurringEventId),
     attendees: event.attendees?.map((attendee) => ({
-      email: attendee.email,
-      displayName: attendee.displayName,
-      responseStatus: attendee.responseStatus,
+      email: optionalString(attendee.email),
+      displayName: optionalString(attendee.displayName),
+      responseStatus: optionalString(attendee.responseStatus),
       organizer: attendee.organizer,
       optional: attendee.optional,
     })),
@@ -195,25 +202,42 @@ export class CorsairCalendarService implements CalendarService {
     }
 
     const corsair = getCorsair().withTenant(tenantId);
-    // singleEvents expands recurring series into individual instances and
-    // annotates each with recurringEventId, which we surface as a badge.
-    const result = await corsair.googlecalendar.api.events.getMany({
-      calendarId: "primary",
-      timeMin: opts.timeMin,
-      timeMax: opts.timeMax,
-      timeZone: opts.timeZone?.trim() || undefined,
-      singleEvents: true,
-      orderBy: "startTime",
-      maxResults: Math.min(Math.max(opts.maxResults ?? 50, 1), 250),
-      pageToken: opts.pageToken,
-      ...(opts.q ? { q: opts.q } : {}),
-    });
+    try {
+      // singleEvents expands recurring series into individual instances and
+      // annotates each with recurringEventId, which we surface as a badge.
+      const result = await corsair.googlecalendar.api.events.getMany({
+        calendarId: "primary",
+        timeMin: opts.timeMin,
+        timeMax: opts.timeMax,
+        timeZone: opts.timeZone?.trim() || undefined,
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: Math.min(Math.max(opts.maxResults ?? 50, 1), 250),
+        pageToken: opts.pageToken,
+        ...(opts.q ? { q: opts.q } : {}),
+      });
 
-    const events = (result.items ?? [])
-      .map(mapEvent)
-      .filter((event: CalendarEvent | null): event is CalendarEvent => Boolean(event));
+      const events = (result.items ?? [])
+        .map(mapEvent)
+        .filter((event: CalendarEvent | null): event is CalendarEvent => Boolean(event));
 
-    return { events, nextPageToken: result.nextPageToken };
+      return { events, nextPageToken: result.nextPageToken };
+    } catch (error) {
+      const message = extractCalendarApiError(error);
+      logger.error("calendar.listEvents failed", {
+        tenantId,
+        timeMin: opts.timeMin,
+        timeMax: opts.timeMax,
+        message,
+      });
+      if (/401|403|invalid_grant|unauthorized|token|expired|revoked|invalid credentials/i.test(message)) {
+        throw serviceError(
+          "UNAUTHORIZED",
+          "Calendar connection expired. Open Settings and reconnect Google Calendar.",
+        );
+      }
+      throw serviceError("INTERNAL", `Could not load calendar events: ${message}`);
+    }
   }
 
   /**
