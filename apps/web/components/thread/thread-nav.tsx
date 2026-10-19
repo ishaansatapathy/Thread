@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Github, ArrowRight, Menu, X } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import { ThreadLogoMark, ThreadWordmark } from "./thread-logo";
 import { useThreadAuth } from "./thread-auth-provider";
 import { useThreadUser } from "~/components/app/use-thread-user";
 
 const NAV = [
+  { label: "Workspace", href: "#workspace" },
   { label: "How it works", href: "#how" },
-  { label: "Workflows", href: "#workflows" },
-  { label: "Integrations", href: "#integrations" },
   { label: "Agent", href: "#agent" },
   { label: "FAQ", href: "#faq" },
 ];
@@ -19,6 +18,14 @@ export function ThreadNav() {
   const { openAuth } = useThreadAuth();
   const { user, isLoading } = useThreadUser();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -36,7 +43,7 @@ export function ThreadNav() {
   const closeMenu = () => setMenuOpen(false);
 
   return (
-    <header className="thread-nav">
+    <header className="thread-nav" data-scrolled={scrolled || menuOpen}>
       <div className="thread-nav-inner">
         <Link
           href="/"
@@ -56,17 +63,8 @@ export function ThreadNav() {
         </nav>
 
         <div className="thread-nav-actions">
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="GitHub"
-            className="thread-nav-icon-btn"
-          >
-            <Github size={15} />
-          </a>
           {user ? (
-            <Link href="/inbox" className="thread-btn-accent thread-nav-cta" onClick={closeMenu}>
+            <Link href="/inbox" className="lp-pill-btn thread-nav-cta" onClick={closeMenu}>
               <span className="thread-nav-cta-text">Open Thread</span>
               <ArrowRight size={15} />
             </Link>
@@ -85,13 +83,13 @@ export function ThreadNav() {
               </button>
               <button
                 type="button"
-                className="thread-btn-accent thread-nav-cta"
+                className="lp-pill-btn thread-nav-cta"
                 onClick={() => {
                   closeMenu();
                   openAuth("sign-in");
                 }}
               >
-                <span className="thread-nav-cta-text">Connect Gmail</span>
+                Get started
               </button>
             </>
           )}
@@ -142,7 +140,7 @@ export function ThreadNav() {
                   openAuth("sign-in");
                 }}
               >
-                Connect Gmail
+                Get started
               </button>
             )}
           </nav>
