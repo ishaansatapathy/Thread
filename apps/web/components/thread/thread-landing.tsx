@@ -1,33 +1,23 @@
 import "./thread.css";
+import "./landing/landing.css";
 import { ThreadNav } from "./thread-nav";
-import { ThreadHero } from "./thread-hero";
-import { ThreadProcess } from "./thread-process";
-import { ThreadRotator } from "./thread-rotator";
-import { ThreadShowcase } from "./thread-showcase";
-import {
-  ThreadAgent,
-  ThreadCta,
-  ThreadFaq,
-  ThreadFooter,
-  ThreadIntegrations,
-  ThreadCapabilities,
-  ThreadMarquee,
-  ThreadWorkflows,
-} from "./thread-sections";
+import { LpSmoothScroll } from "./landing/lp-smooth-scroll";
+import { LpHero } from "./landing/lp-hero";
+import { LpCarousel } from "./landing/lp-carousel";
+import { LpStack } from "./landing/lp-stack";
+import { LpFlow } from "./landing/lp-flow";
+import { ThreadAgent, ThreadCta, ThreadFaq, ThreadFooter } from "./thread-sections";
 
 export function ThreadLanding() {
   return (
-    <div className="thread-page">
+    <div className="thread-page lp-page">
+      <LpSmoothScroll />
       <ThreadNav />
       <main>
-        <ThreadHero />
-        <ThreadMarquee />
-        <ThreadProcess />
-        <ThreadIntegrations />
-        <ThreadShowcase />
-        <ThreadWorkflows />
-        <ThreadRotator />
-        <ThreadCapabilities />
+        <LpHero />
+        <LpCarousel />
+        <LpStack />
+        <LpFlow />
         <ThreadAgent />
         <ThreadFaq />
         <ThreadCta />
