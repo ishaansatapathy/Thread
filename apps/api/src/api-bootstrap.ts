@@ -11,6 +11,7 @@ import { isEmailConfigured } from "@repo/services/env";
 import { registerInboxService } from "@repo/services/inbox";
 import { registerQueueService } from "@repo/services/queue";
 import { registerSettingsService } from "@repo/services/settings";
+import { registerWorkspaceService } from "@repo/services/workspace";
 
 import { bootstrapCorsair } from "./corsair-bootstrap";
 import { runMigrations } from "./migrate";
@@ -19,6 +20,7 @@ import { DbContactsService } from "./services/contacts";
 import { CorsairInboxService } from "./services/inbox";
 import { ThreadQueueService } from "./services/queue";
 import { DbSettingsService } from "./services/settings";
+import { CorsairWorkspaceService } from "./services/workspace";
 
 export type ApiBootstrapOptions = {
   /** Skip long-running cron / Redis when running as a serverless function. */
@@ -62,6 +64,14 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
     registerQueueService(new ThreadQueueService());
   } catch (err) {
     logger.warn("Queue service registration failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  try {
+    registerWorkspaceService(new CorsairWorkspaceService());
+  } catch (err) {
+    logger.warn("Workspace service registration failed", {
       message: err instanceof Error ? err.message : String(err),
     });
   }

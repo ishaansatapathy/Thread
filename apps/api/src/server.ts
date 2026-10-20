@@ -30,6 +30,7 @@ import { corsairMcpGate, corsairOfficialMcpRouter } from "./routes/corsair-mcp";
 import { corsairManagementRouter } from "./routes/corsair-management";
 import { corsairPermissionsRouter } from "./routes/corsair-permissions";
 import { agentStreamRouter } from "./routes/agent-stream";
+import { agentUploadsRouter } from "./routes/agent-uploads";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
 import { enrichThreadOpenApi, type OpenApiDocumentWithPaths } from "./openapi-enrichment";
@@ -336,6 +337,7 @@ app.use("/mcp", mcpRouter);
 app.use("/corsair/permissions", corsairPermissionsRouter);
 app.use("/api/corsair", corsairManagementRouter);
 app.use("/agent/stream", agentStreamRouter);
+app.use("/agent/uploads", agentUploadsRouter);
 app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);
 
