@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP — 57 domain tools at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
-  "version": "2.5.0",
+  "description": "Thread MCP — 71 domain tools (Gmail, Calendar, Drive, Sheets, Docs, Meet) at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
+  "version": "2.6.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -249,6 +249,62 @@
     {
       "name": "search_labels_db",
       "description": "Search synced Gmail labels via corsair.gmail.db.labels.search."
+    },
+    {
+      "name": "get_workspace_connection_status",
+      "description": "Check which Google Workspace apps (Drive, Sheets, Docs, Meet) the user has connected. Call before Workspace actions when unsure."
+    },
+    {
+      "name": "search_drive",
+      "description": "Search the user's Google Drive by name. Use foldersOnly to find a folder id before saving or moving files. Omit query to list recent files."
+    },
+    {
+      "name": "queue_drive_save_files",
+      "description": "Queue saving files to Google Drive for approval. Sources: Gmail attachments (messageId + attachmentId from get_thread) and/or files the user attached in chat (uploadIds from the [Attached file …] note). Optionally into a folder (creates it on approval if needed)."
+    },
+    {
+      "name": "queue_drive_create_folder",
+      "description": "Queue creating a new Google Drive folder for approval."
+    },
+    {
+      "name": "queue_drive_move_file",
+      "description": "Queue moving a Drive file into a folder for approval. Get fileId from search_drive."
+    },
+    {
+      "name": "queue_drive_share_file",
+      "description": "Queue sharing a Drive file or folder with someone for approval."
+    },
+    {
+      "name": "queue_sheet_create",
+      "description": "Queue creating a Google Sheet for approval, optionally filled with rows (first row = headers). Use to turn data, notes, CSV text or a list into a spreadsheet."
+    },
+    {
+      "name": "queue_sheet_append_rows",
+      "description": "Queue appending rows to an existing Google Sheet for approval."
+    },
+    {
+      "name": "read_sheet",
+      "description": "Read rows from a Google Sheet (spreadsheetId from search_drive or a link)."
+    },
+    {
+      "name": "queue_doc_create",
+      "description": "Queue creating a formatted Google Doc for approval from markdown (# headings, - bullets, 1. lists, **bold**). Use for proposals, notes, summaries, minutes."
+    },
+    {
+      "name": "read_doc",
+      "description": "Read the plain text of a Google Doc (documentId from search_drive or a link)."
+    },
+    {
+      "name": "create_meet_link",
+      "description": "Create a new Google Meet link right away (nothing is sent to anyone). To invite people, put the link in queue_calendar_invite or queue_email."
+    },
+    {
+      "name": "list_meet_conferences",
+      "description": "List the user's recent Google Meet conferences (newest first) to find one with a transcript."
+    },
+    {
+      "name": "get_meet_transcript",
+      "description": "Get the transcript of a finished Google Meet conference (conferenceRecord like conferenceRecords/abc from list_meet_conferences). Use to extract notes and action items."
     }
   ],
   "resources": [
@@ -317,7 +373,9 @@
         "method": "tools/call",
         "params": {
           "name": "get_daily_brief",
-          "arguments": { "timeZone": "Asia/Kolkata" }
+          "arguments": {
+            "timeZone": "Asia/Kolkata"
+          }
         }
       },
       "headers": {
@@ -332,7 +390,9 @@
         "method": "tools/call",
         "params": {
           "name": "list_inbox",
-          "arguments": { "maxResults": 10 }
+          "arguments": {
+            "maxResults": 10
+          }
         }
       },
       "headers": {
@@ -347,7 +407,9 @@
         "method": "tools/call",
         "params": {
           "name": "rank_inbox",
-          "arguments": { "autoLabel": true }
+          "arguments": {
+            "autoLabel": true
+          }
         }
       }
     },
@@ -359,7 +421,9 @@
         "method": "tools/call",
         "params": {
           "name": "quick_add_event",
-          "arguments": { "text": "Lunch with Sarah tomorrow at noon" }
+          "arguments": {
+            "text": "Lunch with Sarah tomorrow at noon"
+          }
         }
       }
     },
@@ -404,7 +468,9 @@
         "method": "tools/call",
         "params": {
           "name": "send_draft",
-          "arguments": { "draftId": "<gmail-draft-id>" }
+          "arguments": {
+            "draftId": "<gmail-draft-id>"
+          }
         }
       }
     }

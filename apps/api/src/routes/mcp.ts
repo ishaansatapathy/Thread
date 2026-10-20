@@ -23,6 +23,8 @@ import { logger } from "@repo/logger";
 import { getInboxService } from "@repo/services/inbox";
 import { getQueueService } from "@repo/services/queue";
 import { getCalendarService } from "@repo/services/calendar";
+import { getWorkspaceService } from "@repo/services/workspace";
+import { WORKSPACE_TOOLS, executeWorkspaceTool } from "@repo/services/workspace/tools";
 import { analyzeInboxThreads, isInboxAiConfigured } from "@repo/services/ai/inbox-priority";
 import { generateDailyBrief } from "@repo/services/ai/daily-brief";
 import { getSmartReplies } from "@repo/services/ai/smart-reply";
@@ -784,9 +786,14 @@ const MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  ...WORKSPACE_TOOLS.map((tool) => ({
+    name: tool.function.name,
+    description: tool.function.description,
+    inputSchema: tool.function.parameters,
+  })),
 ];
 
-const MCP_SERVER_VERSION = "2.5.0";
+const MCP_SERVER_VERSION = "2.6.0";
 
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers
@@ -1483,8 +1490,16 @@ async function callTool(
       return toolResult(result);
     }
 
-    default:
+    default: {
+      const outcome = await executeWorkspaceTool(name, args, {
+        tenantId: userId,
+        queue,
+        workspace: getWorkspaceService(),
+        origin: "agent",
+      });
+      if (outcome) return toolResult(outcome.result);
       throw Object.assign(new Error(`Unknown tool: ${name}`), { code: -32601 });
+    }
   }
 }
 
@@ -1496,7 +1511,7 @@ mcpRouter.get("/", (_req: Request, res: Response) => {
   return res.json({
     name: "thread-mcp",
     version: MCP_SERVER_VERSION,
-    description: "Thread MCP server — Gmail inbox + approval queue tools for AI assistants",
+    description: "Thread MCP server — Gmail, Calendar, Drive, Sheets, Docs and Meet tools with an approval queue",
     protocol: "MCP 2024-11 / JSON-RPC 2.0",
     endpoint: "/mcp",
     corsairOfficialMcp: {
