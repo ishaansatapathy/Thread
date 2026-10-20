@@ -6,7 +6,8 @@ export type QueueItemKind =
   | "meeting_bundle"
   | "calendar_archive"
   | "calendar_delete"
-  | "calendar_update";
+  | "calendar_update"
+  | "workspace_action";
 
 export type DraftSendPayload = {
   draftId: string;
@@ -83,7 +84,7 @@ export type QueueItem = {
   resolvedAt?: string;
 };
 
-export type QueueEnqueueOrigin = "inbox" | "agent" | "calendar";
+export type QueueEnqueueOrigin = "inbox" | "agent" | "calendar" | "workspace";
 
 export type QueueEnqueueOptions = {
   origin?: QueueEnqueueOrigin;
@@ -156,6 +157,16 @@ export interface QueueService {
   enqueueDraftSend(
     userId: string,
     input: { draftId: string; title?: string; preview?: string },
+    opts?: QueueEnqueueOptions,
+  ): Promise<QueueItem>;
+  enqueueWorkspaceAction(
+    userId: string,
+    input: {
+      payload: import("../workspace/schemas").WorkspaceActionPayload;
+      title?: string;
+      preview?: string;
+      sourceThreadId?: string;
+    },
     opts?: QueueEnqueueOptions,
   ): Promise<QueueItem>;
   approve(

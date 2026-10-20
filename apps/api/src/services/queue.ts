@@ -14,7 +14,14 @@ import {
   parseEmailQueuePayload,
   parseMeetingBundlePayload,
 } from "@repo/services/queue/schemas";
+import { getWorkspaceService } from "@repo/services/workspace";
+import {
+  describeWorkspaceAction,
+  parseWorkspaceActionPayload,
+  type WorkspaceActionPayload,
+} from "@repo/services/workspace/schemas";
 import { parseQuickAddText } from "./parse-quick-add";
+import { executeWorkspaceAction } from "./workspace-actions";
 import { isQuickDeleteIntent, parseQuickDeleteText, type ParsedQuickDelete } from "./parse-quick-delete";
 import { executeQueuedCorsairApproval } from "./corsair-queue-bridge";
 import type {
@@ -765,6 +772,56 @@ export class ThreadQueueService implements QueueService {
     return this.maybeAutoApprove(userId, mapRow(row), { origin: opts?.origin ?? "inbox" });
   }
 
+  async enqueueWorkspaceAction(
+    userId: string,
+    input: {
+      payload: WorkspaceActionPayload;
+      title?: string;
+      preview?: string;
+      sourceThreadId?: string;
+    },
+  ) {
+    const payload = parseWorkspaceActionPayload(input.payload);
+    const described = describeWorkspaceAction(payload);
+    const title = truncate(input.title?.trim() || described.title, 200);
+    const preview = truncate(input.preview?.trim() || described.preview);
+
+    // The agent can repeat a tool call within one turn — reuse an identical live item.
+    const fingerprint = JSON.stringify(payload);
+    const since = new Date(Date.now() - DUPLICATE_QUEUE_WINDOW_MS);
+    const recent = await db
+      .select()
+      .from(threadQueueItemsTable)
+      .where(and(eq(threadQueueItemsTable.userId, userId), eq(threadQueueItemsTable.kind, "workspace_action")))
+      .orderBy(desc(threadQueueItemsTable.createdAt))
+      .limit(10);
+    const duplicate = recent.find(
+      (row) =>
+        row.createdAt &&
+        row.createdAt >= since &&
+        row.status === "pending" &&
+        JSON.stringify(row.payload) === fingerprint,
+    );
+    if (duplicate) return mapRow(duplicate);
+
+    const [row] = await db
+      .insert(threadQueueItemsTable)
+      .values({
+        userId,
+        kind: "workspace_action",
+        title,
+        preview,
+        payload,
+        sourceThreadId: input.sourceThreadId,
+        status: "pending",
+      })
+      .returning();
+
+    if (!row) throw serviceError("INTERNAL", "Could not queue the Workspace action");
+    incrementCounter(`queue.enqueued.workspace.${payload.action}`);
+    return mapRow(row);
+  }
+
   async approve(
     userId: string,
     itemId: string,
@@ -787,8 +844,9 @@ export class ThreadQueueService implements QueueService {
     }
 
     try {
+      let result: Record<string, unknown> | undefined;
       try {
-        await this.executeItem(userId, claimed.kind, claimed.payload, {
+        result = await this.executeItem(userId, claimed.id, claimed.kind, claimed.payload, {
           ...opts,
           preview: claimed.preview ?? undefined,
         });
@@ -799,7 +857,13 @@ export class ThreadQueueService implements QueueService {
 
       const [approved] = await db
         .update(threadQueueItemsTable)
-        .set({ status: "approved", resolvedAt: new Date(), processingAt: null, errorMessage: null })
+        .set({
+          status: "approved",
+          resolvedAt: new Date(),
+          processingAt: null,
+          errorMessage: null,
+          ...(result ? { payload: { ...claimed.payload, result } } : {}),
+        })
         .where(
           and(
             eq(threadQueueItemsTable.id, itemId),
@@ -867,13 +931,14 @@ export class ThreadQueueService implements QueueService {
 
   private async executeItem(
     userId: string,
+    itemId: string,
     kind: QueueItemKind,
     payload: Record<string, unknown>,
     opts?: {
       archive?: { startDateTime: string; endDateTime: string; timeZone?: string };
       preview?: string | null;
     },
-  ) {
+  ): Promise<Record<string, unknown> | undefined> {
     const inbox = getInboxService();
     const calendar = getCalendarService();
     const demoUser = await isDemoUserId(userId);
@@ -1019,6 +1084,15 @@ export class ThreadQueueService implements QueueService {
           location: updatePayload.location,
         });
         return;
+      }
+      case "workspace_action": {
+        const action = parseWorkspaceActionPayload(payload);
+        return executeWorkspaceAction(getWorkspaceService(), userId, action, async (completed) => {
+          await db
+            .update(threadQueueItemsTable)
+            .set({ payload: { ...payload, completed } })
+            .where(and(eq(threadQueueItemsTable.id, itemId), eq(threadQueueItemsTable.userId, userId)));
+        });
       }
       default:
         throw serviceError("INTERNAL", `Unsupported queue item kind: ${String(kind)}`);
