@@ -278,7 +278,27 @@ export interface InboxService {
     tenantId: string,
     opts?: { name?: string; limit?: number; offset?: number },
   ): Promise<{ labels: Array<{ id: string; name?: string }> }>;
+
+  /** Reads List-Unsubscribe headers of a message to pick the best way out of a mailing list. */
+  getUnsubscribeInfo(tenantId: string, messageId: string): Promise<UnsubscribeInfo>;
+  /** One-click POST or mailto unsubscribe; returns website for lists that need a browser. */
+  unsubscribe(tenantId: string, messageId: string): Promise<UnsubscribeResult>;
 }
+
+export type UnsubscribeMethod = "one_click" | "mailto" | "website" | "none";
+
+export type UnsubscribeInfo = {
+  method: UnsubscribeMethod;
+  url?: string;
+  mailto?: { to: string; subject: string; body: string };
+};
+
+export type UnsubscribeResult = {
+  method: UnsubscribeMethod;
+  done: boolean;
+  url?: string;
+  detail: string;
+};
 
 let inboxService: InboxService | null = null;
 

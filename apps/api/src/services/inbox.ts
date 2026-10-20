@@ -8,8 +8,11 @@ import type {
   InboxThread,
   ListThreadsOptions,
   ListThreadsResult,
+  UnsubscribeInfo,
+  UnsubscribeResult,
 } from "@repo/services/inbox";
 import { INBOX_PAGE_SIZE } from "@repo/services/inbox";
+import { parseListUnsubscribe, postOneClickUnsubscribe } from "./unsubscribe";
 
 import { getCorsair, getCorsairGmailRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
@@ -1210,6 +1213,50 @@ export class CorsairInboxService implements InboxService {
     const corsair = getCorsair().withTenant(tenantId);
     await corsair.gmail.api.threads.delete({ id: threadId });
     await mailCache.remove(tenantId, threadId);
+  }
+
+  async getUnsubscribeInfo(tenantId: string, messageId: string): Promise<UnsubscribeInfo> {
+    if (!this.isConfigured()) return { method: "none" };
+    const status = await this.getConnectionStatus(tenantId);
+    if (status.gmail !== "connected") return { method: "none" };
+    const corsair = getCorsair().withTenant(tenantId);
+    // metadata without metadataHeaders returns every header, including List-Unsubscribe.
+    const detail = await corsair.gmail.api.messages.get({ id: messageId, format: "metadata" });
+    const headers = collectMessageHeaders(detail.payload as GmailMetadataMessage["payload"]);
+    return parseListUnsubscribe(getHeader(headers, "List-Unsubscribe"), getHeader(headers, "List-Unsubscribe-Post"));
+  }
+
+  async unsubscribe(tenantId: string, messageId: string): Promise<UnsubscribeResult> {
+    const info = await this.getUnsubscribeInfo(tenantId, messageId);
+    switch (info.method) {
+      case "one_click": {
+        try {
+          if (await postOneClickUnsubscribe(info.url!)) {
+            return { method: "one_click", done: true, detail: "Unsubscribed — the sender accepted the request." };
+          }
+        } catch (error) {
+          logger.warn("unsubscribe.one_click_failed", {
+            tenantId,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return {
+          method: "website",
+          done: false,
+          url: info.url,
+          detail: "The sender did not accept one-click unsubscribe — finish on their page.",
+        };
+      }
+      case "mailto": {
+        const mailto = info.mailto!;
+        await this.sendMessage(tenantId, { to: mailto.to, subject: mailto.subject, body: mailto.body });
+        return { method: "mailto", done: true, detail: `Unsubscribe request sent to ${mailto.to}.` };
+      }
+      case "website":
+        return { method: "website", done: false, url: info.url, detail: "This sender asks you to confirm on their page." };
+      default:
+        return { method: "none", done: false, detail: "This email has no unsubscribe option." };
+    }
   }
 
   async untrashThread(tenantId: string, threadId: string): Promise<void> {

@@ -655,6 +655,44 @@ export const inboxRouter = router({
       }
     }),
 
+  unsubscribeInfo: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/messages/{messageId}/unsubscribe"), tags: TAGS } })
+    .input(z.object({ messageId: z.string().min(1).max(256) }))
+    .output(
+      z.object({
+        method: z.enum(["one_click", "mailto", "website", "none"]),
+        url: z.string().optional(),
+        mailtoAddress: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      try {
+        const info = await getInboxService().getUnsubscribeInfo(ctx.user.id, input.messageId);
+        return { method: info.method, url: info.url, mailtoAddress: info.mailto?.to };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  unsubscribe: protectedProcedure
+    .meta({ openapi: { method: "POST", path: getPath("/messages/{messageId}/unsubscribe"), tags: TAGS } })
+    .input(z.object({ messageId: z.string().min(1).max(256) }))
+    .output(
+      z.object({
+        method: z.enum(["one_click", "mailto", "website", "none"]),
+        done: z.boolean(),
+        url: z.string().optional(),
+        detail: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await getInboxService().unsubscribe(ctx.user.id, input.messageId);
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
   untrashThread: protectedProcedure
     .meta({ openapi: { method: "POST", path: getPath("/threads/{threadId}/untrash"), tags: TAGS } })
     .input(z.object({ threadId: z.string().min(1) }))
