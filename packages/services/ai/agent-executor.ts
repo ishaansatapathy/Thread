@@ -31,6 +31,8 @@ import { getThreadContext } from "./thread-context";
 import { summarizeThread } from "./summarize-thread";
 import { threadLine } from "./agent-internals";
 import type { AgentActionCard } from "./agent";
+import { getWorkspaceService } from "../workspace";
+import { executeWorkspaceTool } from "../workspace/tools";
 
 export type AgentExecutorContext = {
   tenantId: string;
@@ -93,8 +95,17 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         const thread = await inbox.getThread(tenantId, threadId, { userEmail });
         if (!thread) return JSON.stringify({ error: "Thread not found" });
         const fencedMessages = (thread.messages ?? []).slice(0, 5).map((m) => ({
+          messageId: m.id,
           from: m.from ?? "?",
           body: fenceEmailData(m.body.slice(0, 2000)),
+          attachments: (m.attachments ?? [])
+            .filter((a) => a.attachmentId)
+            .map((a) => ({
+              attachmentId: a.attachmentId,
+              filename: a.filename,
+              mimeType: a.mimeType,
+              size: a.size,
+            })),
         }));
         actions.push({
           kind: "thread",
@@ -807,8 +818,17 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         return JSON.stringify({ success: true, threadId, deleted: true });
       }
 
-      default:
-        return JSON.stringify({ error: `Unknown tool: ${name}` });
+      default: {
+        const outcome = await executeWorkspaceTool(name, args, {
+          tenantId,
+          queue,
+          workspace: getWorkspaceService(),
+          origin: "agent",
+        });
+        if (!outcome) return JSON.stringify({ error: `Unknown tool: ${name}` });
+        if (outcome.card) actions.push(outcome.card);
+        return JSON.stringify(outcome.result);
+      }
     }
   };
 }

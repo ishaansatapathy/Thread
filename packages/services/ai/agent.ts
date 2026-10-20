@@ -24,7 +24,17 @@ export type AgentHistoryMessage = {
 };
 
 export type AgentActionCard = {
-  kind: "email_queued" | "calendar_queued" | "inbox_search" | "inbox_ranked" | "queue_list" | "thread" | "calendar" | "email";
+  kind:
+    | "email_queued"
+    | "calendar_queued"
+    | "workspace_queued"
+    | "inbox_search"
+    | "inbox_ranked"
+    | "queue_list"
+    | "thread"
+    | "calendar"
+    | "email"
+    | "workspace";
   title: string;
   detail?: string;
   href?: string;
