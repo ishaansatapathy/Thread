@@ -1,18 +1,28 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { logger } from "@repo/logger";
 import AuthService from "@repo/services/auth";
 import { sanitizeRedirectPath } from "@repo/services/auth/safe-redirect";
 
+import {
+  WORKSPACE_PLUGIN_LABELS,
+  isWorkspacePlugin,
+  type WorkspacePlugin,
+} from "@repo/services/workspace";
+
 import { env } from "../env";
 import { CorsairCalendarService, invalidateCalendarConnectionCache } from "../services/calendar";
 import { CorsairInboxService, invalidateConnectionCache } from "../services/inbox";
 import { backfillCorsairTenant } from "../services/corsair-backfill";
+import { CorsairWorkspaceService, invalidateWorkspaceConnectionCache } from "../services/workspace";
 import { isCorsairConfigured } from "../corsair";
+import { getCorsairOAuthModule } from "../corsair-imports";
 
 const authService = new AuthService();
 const inboxService = new CorsairInboxService();
 const calendarService = new CorsairCalendarService();
+const workspaceService = new CorsairWorkspaceService();
+const WORKSPACE_OAUTH_COOKIE = "thread_workspace_oauth";
 
 export const corsairAuthRouter = Router();
 
@@ -185,12 +195,92 @@ corsairAuthRouter.get("/calendar", async (req, res) => {
   }
 });
 
+corsairAuthRouter.get("/workspace/:plugin", async (req, res) => {
+  const pluginParam = req.params.plugin ?? "";
+  if (!isWorkspacePlugin(pluginParam)) {
+    return res.redirect(`${env.CLIENT_URL}/settings?error=${encodeURIComponent("Unknown Google app.")}`);
+  }
+  const label = WORKSPACE_PLUGIN_LABELS[pluginParam];
+
+  if (!isCorsairConfigured() || !workspaceService.isConfigured()) {
+    return res.redirect(
+      `${env.CLIENT_URL}/settings?error=${encodeURIComponent(`${label} integration is not configured on the server.`)}`,
+    );
+  }
+
+  const user = await authService.resolveSession(req, res);
+  if (!user) {
+    return res.redirect(`${env.CLIENT_URL}/sign-in?returnTo=${encodeURIComponent("/settings")}`);
+  }
+
+  const returnTo = sanitizeRedirectPath(typeof req.query.state === "string" ? req.query.state : "/settings");
+
+  try {
+    const url = await workspaceService.getConnectUrl(user.id, pluginParam);
+    setOAuthCookie(res, WORKSPACE_OAUTH_COOKIE, returnTo);
+    return res.redirect(url);
+  } catch (error) {
+    logger.error("Workspace connect start failed", {
+      plugin: pluginParam,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return res.redirect(
+      `${env.CLIENT_URL}${returnTo}?error=${encodeURIComponent(`Could not start ${label} connection. Try again.`)}`,
+    );
+  }
+});
+
+/** Drive / Sheets / Docs / Meet share the Calendar redirect URI; the signed state names the plugin. */
+async function completeWorkspaceCallback(
+  req: Request,
+  res: Response,
+  plugin: WorkspacePlugin,
+  query: { code?: string; state?: string; error?: string; error_description?: string },
+) {
+  const label = WORKSPACE_PLUGIN_LABELS[plugin];
+  const returnTo = readReturnTo(req, WORKSPACE_OAUTH_COOKIE, "/settings");
+  clearOAuthCookie(res, WORKSPACE_OAUTH_COOKIE);
+  const back = (params: string) =>
+    res.redirect(
+      `${env.CLIENT_URL}${returnTo}${returnTo.includes("?") ? "&" : "?"}${params}${params.startsWith("workspace=") ? "" : `&plugin=${plugin}`}`,
+    );
+
+  if (query.error) {
+    return back(`error=${encodeURIComponent(query.error_description ?? `${label} connection was cancelled.`)}`);
+  }
+  if (!query.code || !query.state) {
+    return back(`error=${encodeURIComponent(`${label} authorization did not complete.`)}`);
+  }
+
+  try {
+    await calendarService.completeCalendarOAuth({ code: query.code, state: query.state });
+    const user = await authService.resolveSession(req, res);
+    if (user) invalidateWorkspaceConnectionCache(user.id);
+    return back(`workspace=connected&plugin=${plugin}`);
+  } catch (error) {
+    logger.error("Workspace OAuth callback failed", {
+      plugin,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return back(
+      `error=${encodeURIComponent(`${label} connection failed. Check the Google OAuth consent screen scopes and that the ${label} API is enabled.`)}`,
+    );
+  }
+}
+
 corsairAuthRouter.get("/calendar/callback", async (req, res) => {
   const parsed = callbackQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.redirect(
       `${env.CLIENT_URL}/calendar?error=${encodeURIComponent("Invalid Calendar callback.")}`,
     );
+  }
+
+  const statePlugin = parsed.data.state
+    ? getCorsairOAuthModule().decodeOAuthState(parsed.data.state)?.plugin
+    : undefined;
+  if (statePlugin && isWorkspacePlugin(statePlugin)) {
+    return completeWorkspaceCallback(req, res, statePlugin, parsed.data);
   }
 
   const { code, state, error: oauthError, error_description: errorDescription } = parsed.data;
