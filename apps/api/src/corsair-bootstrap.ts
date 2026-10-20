@@ -29,6 +29,13 @@ export async function bootstrapCorsair() {
   try {
     const corsair = getCorsair();
     const { setupCorsair } = getCorsairSetupModule();
+    // Workspace plugins reuse the Calendar callback URI (already registered in the
+    // Google OAuth client); the callback reads the plugin from the signed state.
+    const workspaceCredentials = {
+      client_id: google.clientId,
+      client_secret: google.clientSecret,
+      redirect_url: getCorsairCalendarRedirectUri(),
+    };
     const output = await setupCorsair(corsair, {
       caller: "script",
       credentials: {
@@ -42,6 +49,9 @@ export async function bootstrapCorsair() {
           client_secret: google.clientSecret,
           redirect_url: getCorsairCalendarRedirectUri(),
         },
+        googledrive: workspaceCredentials,
+        googlesheets: workspaceCredentials,
+        googlemeet: workspaceCredentials,
       },
     });
 

@@ -2,6 +2,9 @@ import { Pool } from "pg";
 import { createCorsair } from "corsair";
 import { gmail } from "@corsair-dev/gmail";
 import { googlecalendar } from "@corsair-dev/googlecalendar";
+import { googledrive } from "@corsair-dev/googledrive";
+import { googlemeet } from "@corsair-dev/googlemeet";
+import { googlesheets } from "@corsair-dev/googlesheets";
 import { createPgPool } from "@repo/database/pg";
 
 import { env } from "./env";
@@ -9,6 +12,7 @@ import { formatCorsairApprovalMessage } from "./services/corsair-approval";
 import {
   buildGmailPluginOptions,
   buildGoogleCalendarPluginOptions,
+  buildWorkspacePluginOptions,
 } from "./services/corsair-plugin-config";
 
 let pool: Pool | null = null;
@@ -45,6 +49,9 @@ export function getCorsair() {
       plugins: [
         gmail(buildGmailPluginOptions()),
         googlecalendar(buildGoogleCalendarPluginOptions()),
+        googledrive(buildWorkspacePluginOptions()),
+        googlesheets(buildWorkspacePluginOptions()),
+        googlemeet(buildWorkspacePluginOptions()),
       ],
       database: getCorsairPool(),
       kek,

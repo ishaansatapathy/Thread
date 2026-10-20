@@ -2,11 +2,19 @@ import { logger } from "@repo/logger";
 
 import { getCorsair, getCorsairPool, isCorsairConfigured } from "../corsair";
 
-export type CorsairConnectionProvider = "gmail" | "googlecalendar";
+export type CorsairConnectionProvider =
+  | "gmail"
+  | "googlecalendar"
+  | "googledrive"
+  | "googlesheets"
+  | "googlemeet";
 
 const INTEGRATION_NAME_CANDIDATES: Record<CorsairConnectionProvider, string[]> = {
   gmail: ["gmail", "@corsair-dev/gmail"],
   googlecalendar: ["googlecalendar", "@corsair-dev/googlecalendar", "google-calendar"],
+  googledrive: ["googledrive", "@corsair-dev/googledrive"],
+  googlesheets: ["googlesheets", "@corsair-dev/googlesheets"],
+  googlemeet: ["googlemeet", "@corsair-dev/googlemeet"],
 };
 
 /**

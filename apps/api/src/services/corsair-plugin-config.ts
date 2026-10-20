@@ -64,6 +64,16 @@ export function buildGmailPluginOptions() {
   };
 }
 
+// Drive, Sheets and Meet writes only run after a Thread Queue approval, so writes
+// are allowed and anything destructive still needs Corsair approval.
+export function buildWorkspacePluginOptions() {
+  return {
+    permissions: {
+      mode: "cautious" as const,
+    },
+  };
+}
+
 export function buildGoogleCalendarPluginOptions() {
   return {
     webhookHooks: buildGoogleCalendarWebhookHooks(),
