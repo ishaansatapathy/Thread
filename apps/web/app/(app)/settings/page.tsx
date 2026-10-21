@@ -7,7 +7,7 @@ import {
   Calendar,
   ShieldCheck,
   User,
-  CheckCircle2,
+
   LogOut,
   ListChecks,
   Unlink,
@@ -400,10 +400,7 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        <p style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--thread-dim)", marginTop: 14 }}>
-          <CheckCircle2 size={13} color="#34d399" />
-          Your mail stays in your Postgres + Google account.
-        </p>
+
       </section>
     </div>
   );
