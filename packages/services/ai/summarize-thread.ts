@@ -109,7 +109,7 @@ export async function summarizeThread(input: {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      { jsonObject: true, temperature: 0.3 },
+      { jsonObject: true, temperature: 0.3, task: "summarize_thread" },
     );
 
     const parsed = JSON.parse(raw) as RawResult;

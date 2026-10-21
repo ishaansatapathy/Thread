@@ -31,21 +31,26 @@ describe("rankInboxThreads", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          choices: [
+          status: "completed",
+          output: [
             {
-              message: {
-                content: JSON.stringify({
-                  items: [
-                    {
-                      id: "t2",
-                      urgency: "critical",
-                      score: 95,
-                      reason: "Contract deadline mentioned in subject.",
-                      category: "deadline",
-                    },
-                  ],
-                }),
-              },
+              type: "message",
+              content: [
+                {
+                  type: "output_text",
+                  text: JSON.stringify({
+                    items: [
+                      {
+                        id: "t2",
+                        urgency: "critical",
+                        score: 95,
+                        reason: "Contract deadline mentioned in subject.",
+                        category: "deadline",
+                      },
+                    ],
+                  }),
+                },
+              ],
             },
           ],
         }),

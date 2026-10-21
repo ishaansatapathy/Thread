@@ -194,7 +194,7 @@ export async function getMeetingPrep(input: {
         { role: "system", content: MEETING_PREP_SYSTEM },
         { role: "user", content: prompt },
       ],
-      { jsonObject: true, temperature: 0.35 },
+      { jsonObject: true, temperature: 0.35, task: "meeting_prep" },
     );
     ai = JSON.parse(raw) as AIPrep;
   } catch {

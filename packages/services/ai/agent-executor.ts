@@ -22,6 +22,7 @@ import {
   validateAgentEmailArgs,
   type SendCounter,
 } from "./agent-guard";
+import { humanizeEmailBody } from "./writing-style";
 import { generateDailyBrief } from "./daily-brief";
 import { getMeetingPrep } from "./meeting-prep";
 import { getMissedFollowUps } from "./missed-followups";
@@ -157,7 +158,8 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         } catch (err) {
           return JSON.stringify({ success: false, error: err instanceof ServiceError ? err.message : "Invalid email parameters" });
         }
-        const { to, subject, body } = validated;
+        const { to, subject } = validated;
+        const body = humanizeEmailBody(validated.body);
         const mode = args.mode === "draft" ? "draft" : "send";
         const threadId = typeof args.threadId === "string" ? args.threadId : undefined;
         const cc = typeof args.cc === "string" ? args.cc.trim() : undefined;
@@ -603,7 +605,7 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
       case "create_draft_email": {
         const to = String(args.to ?? "").trim();
         const subject = String(args.subject ?? "").trim();
-        const body = String(args.body ?? "").trim();
+        const body = humanizeEmailBody(String(args.body ?? "").trim());
         if (!to || !subject || !body) return JSON.stringify({ success: false, error: "to, subject, and body are required" });
         const draft = await inbox.createDraft(tenantId, {
           to,
@@ -800,7 +802,7 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         const draftId = String(args.draftId ?? "").trim();
         const to = String(args.to ?? "").trim();
         const subject = String(args.subject ?? "").trim();
-        const body = String(args.body ?? "");
+        const body = humanizeEmailBody(String(args.body ?? ""));
         if (!draftId || !to || !subject) {
           return JSON.stringify({ success: false, error: "draftId, to, and subject are required" });
         }

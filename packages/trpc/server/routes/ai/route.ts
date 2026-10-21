@@ -85,6 +85,7 @@ import { getContactIntel } from "@repo/services/ai/contact-intel";
 import { summarizeThread } from "@repo/services/ai/summarize-thread";
 import { getInboxService } from "@repo/services/inbox";
 import { findMeetingSlots } from "@repo/services/ai/meeting-slots";
+import { describeModelRouting } from "@repo/services/ai/openai-config";
 
 import { mapServiceError, protectedProcedure, router } from "../../trpc";
 import { generatePath } from "../../utils/path-generator";
@@ -175,7 +176,7 @@ export const aiRouter = router({
     .query(async () => {
       return {
         openai: isInboxAiConfigured(),
-        model: isInboxAiConfigured() ? process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini" : undefined,
+        model: isInboxAiConfigured() ? describeModelRouting() : undefined,
       };
     }),
 

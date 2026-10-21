@@ -227,7 +227,7 @@ async function analyzeBatch(threads: InboxRankInput[]): Promise<InboxRankItem[]>
       },
       { role: "user", content: buildAnalysisPrompt(threads) },
     ],
-    { jsonObject: true, temperature: 0.15 },
+    { jsonObject: true, temperature: 0.15, task: "inbox_priority" },
   );
 
   try {

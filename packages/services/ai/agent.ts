@@ -12,6 +12,7 @@ import {
   estimateTokenCount,
   MAX_AGENT_CONTEXT_TOKENS,
 } from "./agent-guard";
+import { planAgentModel } from "./model-router";
 import { AGENT_TOOLS } from "./agent-internals";
 import { buildToolExecutor } from "./agent-executor";
 import { createToolMemoryTracker, prepareAgentRun } from "./agent-run";
@@ -140,9 +141,17 @@ export async function runAgentChat(
     { role: "user", content: input.message.trim() },
   ];
 
+  const routing = planAgentModel(tenantId, {
+    message: input.message,
+    historyTokens: estimatedTokens,
+    toolMemoryCount: (input.toolMemory ?? []).length,
+    hasThreadFocus: Boolean(prepared.effectiveFocus?.threadId),
+  });
+
   const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
     maxRounds: 6,
     timeoutMs: 120_000,
+    ...routing,
   });
 
   return {

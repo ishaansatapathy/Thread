@@ -21,6 +21,7 @@ import {
   estimateTokenCount,
   MAX_AGENT_CONTEXT_TOKENS,
 } from "./agent-guard";
+import { planAgentModel } from "./model-router";
 import type { AgentActionCard, AgentChatResult, AgentHistoryMessage } from "./agent";
 import { buildToolExecutor } from "./agent-executor";
 
@@ -110,11 +111,19 @@ export async function runAgentChatStream(
     { role: "user", content: input.message.trim() },
   ];
 
+  const routing = planAgentModel(tenantId, {
+    message: input.message,
+    historyTokens: estimateTokenCount(previewMessages),
+    toolMemoryCount: (input.toolMemory ?? []).length,
+    hasThreadFocus: Boolean(prepared.effectiveFocus?.threadId),
+  });
+
   const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
     maxRounds: 6,
     timeoutMs: 120_000,
     onToken: onTokenDelta,
     signal: opts?.signal,
+    ...routing,
   });
 
   return {

@@ -1,73 +1,47 @@
+import { logger } from "@repo/logger";
+
 import { ServiceError } from "../errors";
 
-import { fetchOpenAi } from "./openai-fetch";
+import { resolveTaskModel, type AiTask } from "./model-router";
+import { createResponse } from "./openai-responses";
 
-const DEFAULT_MODEL = "gpt-4o-mini";
+export { getOpenAiModel, getSmartModel, isOpenAiConfigured } from "./openai-config";
+
 const DEFAULT_TIMEOUT_MS = 60_000;
+const MAX_OUTPUT_TOKENS = 8_000;
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-export function isOpenAiConfigured() {
-  return Boolean(process.env.OPENAI_API_KEY?.trim());
-}
-
-export function getOpenAiModel() {
-  return process.env.OPENAI_MODEL?.trim() || DEFAULT_MODEL;
-}
-
+/** One-shot completion for a named feature; the router picks model and reasoning effort per task. */
 export async function createChatCompletion(
   messages: ChatMessage[],
-  opts?: { temperature?: number; jsonObject?: boolean },
+  opts: { task: AiTask; temperature?: number; jsonObject?: boolean },
 ) {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    throw new ServiceError("PRECONDITION_FAILED", "OpenAI is not configured. Set OPENAI_API_KEY.");
+  const inputChars = messages.reduce((n, m) => n + m.content.length, 0);
+  const decision = resolveTaskModel(opts.task, inputChars);
+  if (decision.tier === "smart") {
+    logger.info("ai.model_escalated", { task: opts.task, reason: decision.reason, inputChars });
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   try {
-    const response = await fetchOpenAi(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: getOpenAiModel(),
-          messages,
-          temperature: opts?.temperature ?? 0.2,
-          ...(opts?.jsonObject ? { response_format: { type: "json_object" } } : {}),
-        }),
-        signal: controller.signal,
-      },
-      { label: "openai.chat.completions" },
-    );
-
-    const payload = (await response.json()) as {
-      error?: { message?: string };
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-
-    if (!response.ok) {
-      throw new ServiceError(
-        "INTERNAL",
-        payload.error?.message?.trim() || "OpenAI request failed. Try again shortly.",
-      );
-    }
-
-    const content = payload.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new ServiceError("INTERNAL", "OpenAI returned an empty response.");
-    }
-
-    return content;
+    const { text } = await createResponse({
+      model: decision.model,
+      effort: decision.effort,
+      input: messages,
+      temperature: opts.temperature,
+      json: opts.jsonObject,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      signal: controller.signal,
+      label: `ai.${opts.task}`,
+    });
+    if (!text) throw new ServiceError("INTERNAL", "OpenAI returned an empty response.");
+    return text;
   } catch (error) {
     if (error instanceof ServiceError) throw error;
     if (error instanceof Error && error.name === "AbortError") {

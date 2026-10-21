@@ -264,7 +264,7 @@ async function synthesizeBrief(context: BriefGatherResult): Promise<DailyBrief> 
           ].join("\n"),
         },
       ],
-      { jsonObject: true, temperature: 0.35 },
+      { jsonObject: true, temperature: 0.35, task: "daily_brief" },
     );
 
     const parsed = dailyBriefModelSchema.parse(JSON.parse(content));

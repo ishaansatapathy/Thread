@@ -80,7 +80,7 @@ Respond with JSON only: { "subject": "...", "agentPrompt": "..." }`;
         },
         { role: "user", content: prompt },
       ],
-      { jsonObject: true, temperature: 0.3 },
+      { jsonObject: true, temperature: 0.3, task: "missed_followups" },
     );
     return JSON.parse(raw) as AIFollowUpSuggestion;
   } catch {

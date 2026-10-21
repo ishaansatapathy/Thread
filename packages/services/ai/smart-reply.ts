@@ -8,6 +8,7 @@
 import { getInboxService } from "../inbox";
 import { normalizeEmail } from "./daily-brief-time";
 import { createChatCompletion, isOpenAiConfigured } from "./openai";
+import { EMAIL_VOICE_RULES, humanizeEmailBody } from "./writing-style";
 
 export type SmartReplySuggestion = {
   label: string;
@@ -20,24 +21,20 @@ export type SmartReplyResult = {
   replyToName: string;
 };
 
-const SYSTEM_PROMPT = `You are an expert email assistant. Based on the email thread provided, generate exactly 3 smart reply options.
+const SYSTEM_PROMPT = `You write reply options for the user's latest email. Generate exactly 3.
 
-Each reply should:
-- Be ready to send as-is (complete, professional)
-- Address the latest message in the thread specifically
-- Vary in length and tone: one short (1-2 sentences), one standard (2-3 sentences), one detailed (3-5 sentences)
+Each reply must:
+- Answer the latest message specifically and be ready to send as-is
+- Take a different stance where it makes sense (e.g. yes / not yet / ask a question), not just different lengths
+- Stay short: option 1 is one sentence, option 2 is two or three, option 3 is at most five
+- Use a 2-4 word label describing the stance, e.g. "Confirm Thursday", "Ask for the deck", "Decline politely"
 
 Respond with JSON only:
-{
-  "replies": [
-    { "label": "Quick acknowledgement", "body": "..." },
-    { "label": "Standard reply",       "body": "..." },
-    { "label": "Detailed response",    "body": "..." }
-  ]
-}
+{ "replies": [ { "label": "...", "body": "..." }, { "label": "...", "body": "..." }, { "label": "...", "body": "..." } ] }
 
-Do NOT include subject line or greeting like "Hi [Name]," — just the message body.
-Keep each reply direct and professional.`;
+No subject line and no greeting line like "Hi [Name],". Body text only.
+
+${EMAIL_VOICE_RULES}`;
 
 function buildThreadSummary(messages: Array<{ from?: string; body: string; date?: string }>): string {
   return messages
@@ -104,14 +101,14 @@ Generate 3 smart reply options for the latest message above.`;
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      { jsonObject: true, temperature: 0.5 },
+      { jsonObject: true, temperature: 0.5, task: "smart_reply" },
     );
 
     const parsed = JSON.parse(raw) as RawResult;
     const suggestions = (parsed.replies ?? [])
       .filter((r) => r.label && r.body)
       .slice(0, 3)
-      .map((r) => ({ label: r.label!, body: r.body! }));
+      .map((r) => ({ label: r.label!, body: humanizeEmailBody(r.body!) }));
 
     return { suggestions, replyTo: replyToEmail, replyToName };
   } catch {

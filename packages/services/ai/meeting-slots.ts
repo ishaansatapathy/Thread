@@ -187,7 +187,7 @@ export async function findMeetingSlots(input: {
 
       const raw = await createChatCompletion(
         [{ role: "user", content: prompt }],
-        { jsonObject: false, temperature: 0.2 },
+        { jsonObject: false, temperature: 0.2, task: "meeting_slots" },
       );
       const indices: number[] = JSON.parse(raw.replace(/[^[\]0-9,]/g, ""));
       const picked = indices

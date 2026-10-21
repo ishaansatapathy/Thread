@@ -39,7 +39,6 @@ import {
   dismissBriefThreadFromQueueItem,
   dismissBriefThreadsFromAgentActions,
 } from "~/lib/brief-dismissals";
-import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 import { useQueueIntegrationGate } from "~/components/app/connect-required-modal";
 
 type ChatMessage = {
@@ -538,8 +537,6 @@ function AgentPageContent() {
   const approvalSettingsReady = !approvalDefaults.isLoading && approvalDefaults.data !== undefined;
   const ready = status.data?.ready === true;
 
-  const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(meQuery.data?.email, "agent");
-
   // Brief / inbox deep-links: reset session bootstrap when URL params change.
   useEffect(() => {
     if (!urlPrompt) return;
@@ -681,8 +678,6 @@ function AgentPageContent() {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
       return false;
     }
-
-    if (isDemoUser && !tryFeature()) return false;
 
     streamAbortRef.current?.abort();
     const abortController = new AbortController();
@@ -869,7 +864,6 @@ function AgentPageContent() {
 
   return (
     <div className="thread-app-page">
-      {demoModal}
       <div className="thread-agent-layout" data-fullscreen={fullscreen ? "true" : undefined}>
         <AgentSessionSidebar
           activeSessionId={activeSessionId}
@@ -923,7 +917,7 @@ function AgentPageContent() {
                     ? "Auto-approve · agent"
                     : "Queue first · agent"
                   : ready
-                    ? status.data?.model ?? "gpt-4o-mini"
+                    ? status.data?.model ?? "Smart routing"
                     : "OpenAI required"}
               </span>
               {isPending ? (

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { logger } from "@repo/logger";
 import { isAgentConfigured, runAgentChat } from "@repo/services/ai/agent";
+import { describeModelRouting } from "@repo/services/ai/openai-config";
 import { eq } from "@repo/database";
 import db from "@repo/database";
 import { agentChatHistoryTable } from "@repo/database/schema";
@@ -86,7 +87,7 @@ export const agentRouter = router({
     )
     .query(async () => ({
       ready: isAgentConfigured(),
-      model: isAgentConfigured() ? process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini" : undefined,
+      model: isAgentConfigured() ? describeModelRouting() : undefined,
     })),
 
   chat: protectedProcedure

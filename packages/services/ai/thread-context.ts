@@ -199,7 +199,7 @@ export async function getThreadContext(input: {
         { role: "system", content: CONTEXT_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      { jsonObject: true, temperature: 0.3 },
+      { jsonObject: true, temperature: 0.3, task: "thread_context" },
     );
     ai = JSON.parse(raw) as AIContextResult;
   } catch {

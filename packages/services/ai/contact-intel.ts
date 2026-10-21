@@ -142,7 +142,7 @@ export async function getContactIntel(input: {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
-        { jsonObject: true, temperature: 0.4 },
+        { jsonObject: true, temperature: 0.4, task: "contact_intel" },
       );
 
       const parsed = JSON.parse(raw) as {
