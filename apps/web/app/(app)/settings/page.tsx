@@ -2,11 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Mail, Calendar, ShieldCheck, User, CheckCircle2, LogOut, ListChecks, Unlink } from "lucide-react";
+import {
+  Mail,
+  Calendar,
+  ShieldCheck,
+  User,
+  CheckCircle2,
+  LogOut,
+  ListChecks,
+  Unlink,
+  HardDrive,
+  FileSpreadsheet,
+  Video,
+} from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { useThreadUser, initials } from "~/components/app/use-thread-user";
 import { useDemoMode } from "~/hooks/use-demo-mode";
+
+const WORKSPACE_ROWS = [
+  {
+    plugin: "googledrive",
+    label: "Google Drive + Docs",
+    description: "Save attachments, organise and share files, and write formatted Google Docs.",
+    icon: HardDrive,
+  },
+  { plugin: "googlesheets", label: "Google Sheets", description: "Turn data into spreadsheets and add rows.", icon: FileSpreadsheet },
+  { plugin: "googlemeet", label: "Google Meet", description: "Create meeting links and read transcripts.", icon: Video },
+] as const;
 
 function ConnectionRow({
   connected,
@@ -163,6 +186,15 @@ export default function SettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const workspaceStatus = trpc.workspace.connectionStatus.useQuery({});
+  const disconnectWorkspace = trpc.workspace.disconnect.useMutation({
+    onSuccess: async (_data, variables) => {
+      await utils.workspace.connectionStatus.invalidate();
+      toast.success(`${WORKSPACE_ROWS.find((r) => r.plugin === variables.plugin)?.label ?? "App"} disconnected`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const disconnectCalendar = trpc.calendar.disconnectCalendar.useMutation({
     onSuccess: async () => {
       await utils.calendar.connectionStatus.invalidate();
@@ -231,7 +263,10 @@ export default function SettingsPage() {
       {/* Connections */}
       <section className="thread-set-section">
         <h2>Connections</h2>
-        <p>Thread reads Gmail and Calendar through Corsair. Connect once — disconnect anytime.</p>
+        <p>
+          Connect the Google apps you use. Thread reads through Corsair, and every change waits in Queue
+          for your approval. Disconnect anytime.
+        </p>
 
         {isDemoUser ? (
           <div className="thread-demo-inbox-strip" style={{ marginBottom: 14 }}>
@@ -279,6 +314,33 @@ export default function SettingsPage() {
             demoBlockedHint="Use your own account for a personal calendar connection."
           />
         </div>
+
+        {WORKSPACE_ROWS.map((row) => {
+          const state = workspaceStatus.data?.[row.plugin];
+          const connected = state === "connected";
+          return (
+            <div className="thread-set-row" key={row.plugin}>
+              <span className="thread-set-row-icon">
+                <row.icon size={17} />
+              </span>
+              <div className="thread-set-row-meta">
+                <h4>{row.label}</h4>
+                <p>{state === "not_configured" ? "Not available on this server yet." : row.description}</p>
+              </div>
+              {state === "not_configured" ? null : (
+                <ConnectionRow
+                  connected={connected}
+                  connectHref={`/api-connect/workspace/${row.plugin}?state=/settings`}
+                  connectedLabel="Connected"
+                  onDisconnect={() => disconnectWorkspace.mutate({ plugin: row.plugin })}
+                  disconnecting={disconnectWorkspace.isPending && disconnectWorkspace.variables?.plugin === row.plugin}
+                  demoBlocked={isDemoUser && !connected}
+                  demoBlockedHint="Use your own Google account to connect Workspace apps."
+                />
+              )}
+            </div>
+          );
+        })}
       </section>
 
       {/* Approval defaults */}
