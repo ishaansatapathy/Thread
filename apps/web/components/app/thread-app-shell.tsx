@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Inbox,
-  Calendar,
+  ChevronDown,
+  LayoutGrid,
   Settings,
   Search,
   LogOut,
@@ -23,21 +23,109 @@ import { trpc } from "~/trpc/client";
 import { ThreadWordmark } from "~/components/thread/thread-logo";
 import { ThreadCommand } from "./thread-command";
 import { ShortcutsHelp } from "./shortcuts-help";
-import { ThreadGmailConnect, ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
-import { ThreadCalendarConnect } from "./thread-calendar-connect";
+import { ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
+import { ThreadWorkspaceConnect, useWorkspaceConnections, type AppKey } from "./thread-workspace-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 import { useSyncEvents } from "~/hooks/use-sync-events";
 import { DemoBar } from "./demo-bar";
 import { ColumnResizer } from "./column-resizer";
 
-const NAV = [
+const NAV_TOP = [
   { label: "Brief", href: "/brief", icon: Sun },
-  { label: "Inbox", href: "/inbox", icon: Inbox },
-  { label: "Queue", href: "/queue", icon: ListChecks },
-  { label: "Calendar", href: "/calendar", icon: Calendar },
   { label: "Agent", href: "/agent", icon: Bot },
-  { label: "Analytics", href: "/analytics", icon: BarChart2 },
+  { label: "Queue", href: "/queue", icon: ListChecks },
 ];
+
+const NAV_BOTTOM = [{ label: "Analytics", href: "/analytics", icon: BarChart2 }];
+
+const GOOGLE_APPS: Array<{ label: string; href: string; status: AppKey }> = [
+  { label: "Mail", href: "/inbox", status: "gmail" },
+  { label: "Calendar", href: "/calendar", status: "googlecalendar" },
+  { label: "Drive", href: "/apps/drive", status: "googledrive" },
+  { label: "Docs", href: "/apps/docs", status: "googledocs" },
+  { label: "Sheets", href: "/apps/sheets", status: "googlesheets" },
+  { label: "Meet", href: "/apps/meet", status: "googlemeet" },
+];
+
+const APPS_OPEN_KEY = "thread.nav.appsOpen";
+
+function GoogleAppsGroup({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const { states } = useWorkspaceConnections();
+  const activeIndex = GOOGLE_APPS.findIndex((a) => pathname === a.href);
+  const childActive = activeIndex >= 0;
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(APPS_OPEN_KEY) === "false") setOpen(false);
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (childActive) setOpen(true);
+  }, [childActive]);
+
+  const toggle = () => {
+    setOpen((v) => {
+      try {
+        window.localStorage.setItem(APPS_OPEN_KEY, String(!v));
+      } catch {
+        /* storage blocked */
+      }
+      return !v;
+    });
+  };
+
+  const connected = GOOGLE_APPS.filter((a) => states[a.status] === "connected").length;
+
+  return (
+    <div className="thread-nav-group" data-open={open}>
+      <button
+        type="button"
+        className="thread-app-nav-item thread-nav-group-head"
+        data-active={!open && childActive}
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        <LayoutGrid size={16} />
+        Google apps
+        <span className="thread-nav-group-count">
+          {connected}/{GOOGLE_APPS.length}
+        </span>
+        <ChevronDown size={14} className="thread-nav-group-chevron" />
+      </button>
+      <div
+        className="thread-nav-tree"
+        hidden={!open}
+        style={activeIndex >= 0 ? ({ "--active-i": activeIndex } as CSSProperties) : undefined}
+        data-has-active={activeIndex >= 0}
+      >
+        {GOOGLE_APPS.map((app) => {
+          const active = pathname === app.href;
+          const state = states[app.status];
+          return (
+            <Link
+              key={app.href}
+              href={app.href}
+              className="thread-nav-leaf"
+              data-active={active}
+              onClick={onNavigate}
+            >
+              <span className="thread-nav-leaf-label">{app.label}</span>
+              {state === "connected" ? (
+                <i className="thread-nav-leaf-dot" aria-label="Connected" />
+              ) : state === "loading" ? null : (
+                <span className="thread-nav-leaf-off">Off</span>
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/brief": { title: "Daily Brief", sub: "Your plan for today — at a glance" },
@@ -47,6 +135,10 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/agent": { title: "Agent", sub: "AI assistant — always through Queue" },
   "/analytics": { title: "Analytics", sub: "Queue activity & trends" },
   "/settings": { title: "Settings", sub: "Account & connections" },
+  "/apps/drive": { title: "Drive", sub: "Files Thread can save and organise" },
+  "/apps/docs": { title: "Docs", sub: "Documents the agent can read and write" },
+  "/apps/sheets": { title: "Sheets", sub: "Spreadsheets from your data" },
+  "/apps/meet": { title: "Meet", sub: "Meetings, links and transcripts" },
 };
 
 export function ThreadAppShell({ children }: { children: ReactNode }) {
@@ -115,27 +207,32 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
   const navLinks = (
     <>
       <span className="thread-app-nav-label">Workspace</span>
-      {NAV.map((item) => {
-        const active = pathname === item.href;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="thread-app-nav-item"
-            data-active={active}
-            onClick={() => setMobileNavOpen(false)}
-          >
-            <item.icon size={16} />
-            {item.label}
-            {item.href === "/inbox" && queueCount > 0 && (
-              <span className="thread-app-nav-count">{queueCount}</span>
-            )}
-            {item.href === "/queue" && queueCount > 0 && (
-              <span className="thread-app-nav-count">{queueCount}</span>
-            )}
-          </Link>
-        );
-      })}
+      {NAV_TOP.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="thread-app-nav-item"
+          data-active={pathname === item.href}
+          onClick={() => setMobileNavOpen(false)}
+        >
+          <item.icon size={16} />
+          {item.label}
+          {item.href === "/queue" && queueCount > 0 && <span className="thread-app-nav-count">{queueCount}</span>}
+        </Link>
+      ))}
+      <GoogleAppsGroup pathname={pathname ?? ""} onNavigate={() => setMobileNavOpen(false)} />
+      {NAV_BOTTOM.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className="thread-app-nav-item"
+          data-active={pathname === item.href}
+          onClick={() => setMobileNavOpen(false)}
+        >
+          <item.icon size={16} />
+          {item.label}
+        </Link>
+      ))}
 
       <span className="thread-app-nav-label">Account</span>
       <Link
@@ -274,8 +371,7 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
           </button>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <ThreadCalendarConnect />
-            <ThreadGmailConnect />
+            <ThreadWorkspaceConnect />
           </div>
         </header>
 
