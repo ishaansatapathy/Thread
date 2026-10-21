@@ -8,6 +8,10 @@ import {
   Calendar,
   CheckCircle2,
   Clock3,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  HardDrive,
   Loader2,
   Mail,
   Search,
@@ -39,6 +43,28 @@ const KIND_LABEL: Record<string, string> = {
   calendar_update: "Update event details",
 };
 
+const WORKSPACE_ACTION_LABEL: Record<string, { label: string; approve: string; busy: string }> = {
+  drive_save_files: { label: "Save to Drive", approve: "Approve & save", busy: "Saving…" },
+  drive_create_folder: { label: "Create folder", approve: "Approve & create", busy: "Creating…" },
+  drive_move_file: { label: "Move file", approve: "Approve & move", busy: "Moving…" },
+  drive_share_file: { label: "Share file", approve: "Approve & share", busy: "Sharing…" },
+  sheets_create: { label: "Create sheet", approve: "Approve & create", busy: "Creating…" },
+  sheets_append_rows: { label: "Add rows", approve: "Approve & add", busy: "Adding…" },
+  docs_create: { label: "Create doc", approve: "Approve & create", busy: "Creating…" },
+};
+
+function workspaceMeta(payload: Record<string, unknown>) {
+  return WORKSPACE_ACTION_LABEL[String(payload.action ?? "")];
+}
+
+type WorkspaceResult = { url?: string; label?: string; links?: Array<{ label: string; url: string }> };
+
+function readWorkspaceResult(payload: Record<string, unknown>): WorkspaceResult | null {
+  const result = payload.result;
+  if (!result || typeof result !== "object") return null;
+  return result as WorkspaceResult;
+}
+
 type ArchiveConfirmState = {
   itemId: string;
   title: string;
@@ -46,7 +72,13 @@ type ArchiveConfirmState = {
   endAt: string;
 };
 
-function kindIcon(kind: string) {
+function kindIcon(kind: string, payload: Record<string, unknown>) {
+  if (kind === "workspace_action") {
+    const action = String(payload.action ?? "");
+    if (action.startsWith("sheets_")) return FileSpreadsheet;
+    if (action.startsWith("docs_")) return FileText;
+    return HardDrive;
+  }
   if (kind === "calendar_delete") return Trash2;
   if (kind === "calendar_update") return Sparkles;
   if (kind === "calendar_archive") return Archive;
@@ -55,6 +87,7 @@ function kindIcon(kind: string) {
 }
 
 function kindLabel(kind: string, payload: Record<string, unknown>) {
+  if (kind === "workspace_action") return workspaceMeta(payload)?.label ?? "Workspace action";
   if (kind === "calendar_delete" && payload.cancelWithNotify === true) return "Cancel event";
   return KIND_LABEL[kind] ?? kind;
 }
@@ -228,7 +261,9 @@ export default function QueuePage() {
   }, [items, search]);
 
   const approveLabel = (item: (typeof items)[number]) => {
+    const workspace = item.kind === "workspace_action" ? workspaceMeta(item.payload) : undefined;
     if (activeItemId === item.id && activeAction === "approve") {
+      if (workspace) return workspace.busy;
       if (item.kind === "calendar_archive") return "Proceeding…";
       if (item.kind === "email_draft") return "Saving…";
       if (item.kind === "draft_send") return "Sending…";
@@ -239,6 +274,7 @@ export default function QueuePage() {
       return item.payload.cancelWithNotify === true ? "Approve cancel" : "Approve delete";
     }
     if (item.kind === "draft_send") return "Approve & send draft";
+    if (workspace) return workspace.approve;
     return "Approve & send";
   };
 
@@ -286,8 +322,8 @@ export default function QueuePage() {
         <div>
           <h2>Approval queue</h2>
           <p>
-            Replies, drafts, and calendar actions wait here. Nothing sends until you approve — human
-            in the loop, powered by Corsair.
+            Replies, calendar changes and Drive, Sheets and Docs actions wait here. Nothing runs until
+            you approve.
           </p>
         </div>
         <Link
@@ -359,7 +395,11 @@ export default function QueuePage() {
       ) : (
         <div className="thread-queue-list">
           {filtered.map((item) => {
-            const Icon = kindIcon(item.kind);
+            const Icon = kindIcon(item.kind, item.payload);
+            const workspaceResult =
+              item.kind === "workspace_action" && item.status === "approved"
+                ? readWorkspaceResult(item.payload)
+                : null;
             const isPending = item.status === "pending" || item.status === "processing";
             const isProcessing = item.status === "processing";
             const canRetry = item.status === "failed";
@@ -399,6 +439,28 @@ export default function QueuePage() {
                 ) : null}
                 {item.errorMessage ? (
                   <p className="thread-queue-card-error">{item.errorMessage}</p>
+                ) : null}
+                {workspaceResult?.url ? (
+                  <div className="thread-queue-card-links">
+                    <a href={workspaceResult.url} target="_blank" rel="noopener noreferrer" className="thread-queue-card-link">
+                      <ExternalLink size={12} />
+                      {workspaceResult.label ?? "Open"}
+                    </a>
+                    {(workspaceResult.links ?? [])
+                      .filter((link) => link.url !== workspaceResult.url)
+                      .slice(0, 6)
+                      .map((link) => (
+                        <a
+                          key={link.url}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="thread-queue-card-link thread-queue-card-link--quiet"
+                        >
+                          {link.label}
+                        </a>
+                      ))}
+                  </div>
                 ) : null}
 
                 {isPending || canRetry ? (

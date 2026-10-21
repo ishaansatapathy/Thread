@@ -54,6 +54,12 @@ export function queueResultMessage(item: QueueToastItem): { title: string; queue
       : { title: "Event update queued — approve in Queue", queued: true };
   }
 
+  if (item.kind === "workspace_action") {
+    return approved
+      ? { title: "Done in Google Workspace", queued: false }
+      : { title: "Queued — approve in Queue to run", queued: true };
+  }
+
   return approved
     ? { title: "Action completed", queued: false }
     : { title: "Added to approval queue", queued: true };
