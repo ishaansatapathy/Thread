@@ -26,7 +26,7 @@ import {
   Paperclip,
   Clock,
   RefreshCw,
-  ExternalLink,
+  MoreHorizontal,
 } from "lucide-react";
 
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
@@ -39,6 +39,8 @@ import { isDemoLoginEnabled } from "~/lib/demo-config";
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { ColumnResizer } from "~/components/app/column-resizer";
+import { SaveToDrive } from "~/components/app/save-to-drive";
+import { UnsubscribeBanner } from "~/components/app/unsubscribe-banner";
 import { QueryErrorState } from "~/components/app/query-error-state";
 import { EmailMessageBody } from "~/components/app/email-message-body";
 import { queueResultMessage } from "~/lib/queue-toast";
@@ -355,6 +357,17 @@ export default function InboxPage() {
 
   // ── Bulk select ────────────────────────────────────────────────────────────
   const [bulkMode, setBulkMode] = useState(false);
+  const [rowMenuId, setRowMenuId] = useState<string | null>(null);
+  const [rowMenuPlacement, setRowMenuPlacement] = useState<"up" | "down">("down");
+
+  useEffect(() => {
+    if (!rowMenuId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRowMenuId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [rowMenuId]);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
   const toggleBulk = useCallback((id: string) => {
@@ -458,6 +471,22 @@ export default function InboxPage() {
             threads: old.threads.map((t) =>
               t.id === variables.threadId ? { ...t, unread: false } : t,
             ),
+          };
+        },
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const markUnread = trpc.inbox.markThreadUnread.useMutation({
+    onSuccess: (_data, variables) => {
+      utils.inbox.listThreads.setData(
+        { maxResults: PAGE_SIZE, query: appliedQuery || undefined },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            threads: old.threads.map((t) => (t.id === variables.threadId ? { ...t, unread: true } : t)),
           };
         },
       );
@@ -1585,23 +1614,70 @@ export default function InboxPage() {
                     </span>
                   </button>
                   {!bulkMode ? (
-                    <div className="thread-inbox-row-hover-actions">
+                    <div className="thread-inbox-row-more">
                       <button
                         type="button"
                         className="thread-inbox-hover-btn"
-                        title="Archive (e)"
-                        onClick={(ev) => { ev.stopPropagation(); archiveThread.mutate({ threadId: thread.id }); }}
+                        aria-label="More actions"
+                        aria-expanded={rowMenuId === thread.id}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          if (rowMenuId === thread.id) {
+                            setRowMenuId(null);
+                            return;
+                          }
+                          // Open upward when the row sits near the bottom of the viewport.
+                          const rect = ev.currentTarget.getBoundingClientRect();
+                          setRowMenuPlacement(window.innerHeight - rect.bottom < 220 ? "up" : "down");
+                          setRowMenuId(thread.id);
+                        }}
                       >
-                        <Archive size={13} />
+                        <MoreHorizontal size={14} />
                       </button>
-                      <button
-                        type="button"
-                        className="thread-inbox-hover-btn"
-                        title="Snooze until tomorrow"
-                        onClick={(ev) => { ev.stopPropagation(); snoozeThread(thread.id, "tomorrow"); }}
-                      >
-                        <BellOff size={13} />
-                      </button>
+                      {rowMenuId === thread.id ? (
+                        <>
+                          <div
+                            className="thread-inbox-row-menu-backdrop"
+                            onClick={(ev) => { ev.stopPropagation(); setRowMenuId(null); }}
+                          />
+                          <div className="thread-inbox-row-menu" role="menu" data-placement={rowMenuPlacement}>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(ev) => { ev.stopPropagation(); setRowMenuId(null); archiveThread.mutate({ threadId: thread.id }); }}
+                            >
+                              <Archive size={13} /> Archive
+                              <kbd>E</kbd>
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(ev) => { ev.stopPropagation(); setRowMenuId(null); snoozeThread(thread.id, "tomorrow"); }}
+                            >
+                              <BellOff size={13} /> Snooze until tomorrow
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                setRowMenuId(null);
+                                if (thread.unread) markRead.mutate({ threadId: thread.id });
+                                else markUnread.mutate({ threadId: thread.id });
+                              }}
+                            >
+                              <Mail size={13} /> {thread.unread ? "Mark as read" : "Mark as unread"}
+                            </button>
+                            <Link
+                              role="menuitem"
+                              href={`/agent?thread=${encodeURIComponent(thread.id)}&prompt=${encodeURIComponent("Summarize this email and tell me what I should do next.")}`}
+                              onClick={(ev) => { ev.stopPropagation(); setRowMenuId(null); }}
+                            >
+                              <Sparkles size={13} /> Ask Agent
+                            </Link>
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -1998,12 +2074,21 @@ export default function InboxPage() {
                           />
                           {message.attachments && message.attachments.length > 0 ? (
                             <div className="thread-inbox-attachments">
-                              <p className="thread-inbox-attachments-label">
-                                <FileText size={12} />
-                                {message.attachments.length === 1
-                                  ? "1 attachment"
-                                  : `${message.attachments.length} attachments`}
-                              </p>
+                              <div className="thread-inbox-attachments-head">
+                                <p className="thread-inbox-attachments-label">
+                                  <FileText size={12} />
+                                  {message.attachments.length === 1
+                                    ? "1 attachment"
+                                    : `${message.attachments.length} attachments`}
+                                </p>
+                                {message.id ? (
+                                  <SaveToDrive
+                                    messageId={message.id}
+                                    threadId={selectedId ?? undefined}
+                                    attachments={message.attachments}
+                                  />
+                                ) : null}
+                              </div>
                               <ul className="thread-inbox-attachment-list">
                                 {message.attachments.map((att) => {
                                   const sizeLabel = att.size > 0
@@ -2062,29 +2147,16 @@ export default function InboxPage() {
               const unsubMatch = allText.match(/href=["']([^"']*?unsubscribe[^"']*?)["']/i)
                 ?? allText.match(/href=["']([^"']*?optout[^"']*?)["']/i)
                 ?? allText.match(/href=["']([^"']*?opt-out[^"']*?)["']/i);
-              if (!unsubMatch) return null;
-              const unsubUrl = unsubMatch[1];
+              // Email HTML is untrusted: only plain web links, never javascript:/data: URLs.
+              const bodyLinkUrl = unsubMatch?.[1] && /^https?:\/\//i.test(unsubMatch[1]) ? unsubMatch[1] : undefined;
+              const latestMessageId = msgs[msgs.length - 1]?.id;
               return (
-                <div className="thread-unsub-banner">
-                  <span className="thread-unsub-banner-label">Looks like a mailing list</span>
-                  <a
-                    href={unsubUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="thread-unsub-btn"
-                  >
-                    <ExternalLink size={11} />
-                    Unsubscribe
-                  </a>
-                  <button
-                    type="button"
-                    className="thread-unsub-archive"
-                    onClick={() => selectedId && archiveThread.mutate({ threadId: selectedId })}
-                  >
-                    <Archive size={11} />
-                    Archive
-                  </button>
-                </div>
+                <UnsubscribeBanner
+                  key={latestMessageId ?? selectedId ?? "none"}
+                  messageId={latestMessageId}
+                  bodyLinkUrl={bodyLinkUrl}
+                  onArchive={() => selectedId && archiveThread.mutate({ threadId: selectedId })}
+                />
               );
             })()}
 
