@@ -1,21 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Bot,
   Calendar,
   CheckCircle2,
+  FileSpreadsheet,
+  FileUp,
+  HardDrive,
   Loader2,
   Mail,
+  Maximize2,
+  Minimize2,
   Paperclip,
   PenLine,
   Search,
   Sparkles,
   ListChecks,
   Square,
+  Upload,
+  X,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -79,7 +86,58 @@ const SUGGESTIONS = [
     prompt:
       "Queue a 30-minute calendar invite tomorrow at 3pm titled Team sync. Queue for my approval before it goes out.",
   },
+  {
+    label: "Save attachments to Drive",
+    icon: HardDrive,
+    prompt:
+      "Find my latest email with an attachment and queue saving the attachments to a Drive folder named after the sender.",
+  },
+  {
+    label: "Turn data into a sheet",
+    icon: FileSpreadsheet,
+    prompt:
+      "Look at my last 10 emails and queue a Google Sheet listing sender, subject and date for each.",
+  },
 ];
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const ATTACHMENT_LINE = /^\[Attached file: (.+) \(uploadId: [0-9a-f-]{36}\)\]$/;
+
+type PendingFile = {
+  localId: string;
+  name: string;
+  size: number;
+  status: "uploading" | "ready" | "error";
+  uploadId?: string;
+  error?: string;
+};
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Shows "[Attached file: …]" notes the agent reads as compact file chips. */
+function renderMessageContent(content: string) {
+  const lines = content.split("\n");
+  const files = lines.map((line) => ATTACHMENT_LINE.exec(line.trim())?.[1]).filter(Boolean) as string[];
+  if (files.length === 0) return content;
+  const text = lines.filter((line) => !ATTACHMENT_LINE.test(line.trim())).join("\n").trim();
+  return (
+    <>
+      {text}
+      <span className="thread-agent-msg-files">
+        {files.map((name, i) => (
+          <span key={`${name}-${i}`} className="thread-agent-file" data-status="ready">
+            <FileUp size={11} />
+            <span className="thread-agent-file-name">{name}</span>
+          </span>
+        ))}
+      </span>
+    </>
+  );
+}
 
 function actionIcon(kind: ActionCard["kind"]) {
   switch (kind) {
@@ -87,6 +145,9 @@ function actionIcon(kind: ActionCard["kind"]) {
       return Mail;
     case "calendar_queued":
       return Calendar;
+    case "workspace_queued":
+    case "workspace":
+      return HardDrive;
     case "queue_list":
       return ListChecks;
     case "inbox_ranked":
@@ -202,10 +263,11 @@ function ActionPanel({
               <>
                 Agent emails and calendar actions can run immediately when{" "}
                 <strong style={{ color: "var(--thread-text)" }}>Auto-approve</strong> is on in Settings.
+                Drive, Sheets and Docs changes always wait in Queue.
               </>
             ) : (
               <>
-                Drafts, sends, and calendar invites go to{" "}
+                Emails, invites and Drive, Sheets or Docs changes go to{" "}
                 <strong style={{ color: "var(--thread-text)" }}>Queue</strong> for your approval first.
               </>
             )}
@@ -220,7 +282,7 @@ function ActionPanel({
     .reverse()
     .find(
       (a) =>
-        (a.kind === "email_queued" || a.kind === "calendar_queued") &&
+        (a.kind === "email_queued" || a.kind === "calendar_queued" || a.kind === "workspace_queued") &&
         a.disposition === "queued" &&
         a.queueItemId,
     );
@@ -237,7 +299,11 @@ function ActionPanel({
     if (!queuedAction?.queueItemId) return;
     const kind =
       queuedItem?.kind ??
-      (queuedAction.kind === "calendar_queued" ? "calendar_invite" : "email_send");
+      (queuedAction.kind === "calendar_queued"
+        ? "calendar_invite"
+        : queuedAction.kind === "workspace_queued"
+          ? "workspace_action"
+          : "email_send");
     if (!checkBeforeApprove(kind)) return;
     approve.mutate({ id: queuedAction.queueItemId });
   };
@@ -249,9 +315,21 @@ function ActionPanel({
         <Icon size={14} style={{ opacity: 0.7 }} />
         {latest.title}
         {latest.href ? (
-          <Link href={latest.href} className="thread-mono-tag" style={{ marginLeft: "auto" }}>
-            Open →
-          </Link>
+          /^https?:\/\//.test(latest.href) ? (
+            <a
+              href={latest.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="thread-mono-tag"
+              style={{ marginLeft: "auto" }}
+            >
+              Open →
+            </a>
+          ) : (
+            <Link href={latest.href} className="thread-mono-tag" style={{ marginLeft: "auto" }}>
+              Open →
+            </Link>
+          )
         ) : null}
       </div>
       <div className="thread-agent-feed">
@@ -352,6 +430,84 @@ function AgentPageContent() {
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [focus, setFocus] = useState<AgentFocusState>({});
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [files, setFiles] = useState<PendingFile[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadOne = async (file: File, localId: string) => {
+    try {
+      const res = await fetch("/agent/uploads", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-File-Name": encodeURIComponent(file.name),
+          "X-File-Type": file.type || "application/octet-stream",
+          "x-thread-csrf": "1",
+        },
+        body: file,
+      });
+      const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !body.id) throw new Error(body.error ?? "Upload failed");
+      setFiles((prev) =>
+        prev.map((f) => (f.localId === localId ? { ...f, status: "ready", uploadId: body.id } : f)),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setFiles((prev) => prev.map((f) => (f.localId === localId ? { ...f, status: "error", error: message } : f)));
+      toast.error(`${file.name}: ${message}`);
+    }
+  };
+
+  const addFiles = (list: FileList | File[]) => {
+    const incoming = Array.from(list);
+    const room = Math.max(0, 10 - files.length);
+    if (incoming.length > room) toast.message("Up to 10 files per message.");
+    for (const file of incoming.slice(0, room)) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        toast.error(`${file.name} is larger than 4 MB.`);
+        continue;
+      }
+      if (file.size === 0) {
+        toast.error(`${file.name} is empty.`);
+        continue;
+      }
+      const localId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setFiles((prev) => [...prev, { localId, name: file.name, size: file.size, status: "uploading" }]);
+      void uploadOne(file, localId);
+    }
+  };
+
+  const dragHasFiles = (e: DragEvent<HTMLDivElement>) => Array.from(e.dataTransfer.types).includes("Files");
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragActive(true);
+  };
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragActive(false);
+  };
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    if (isPending) {
+      toast.message("Wait for the current reply to finish.");
+      return;
+    }
+    addFiles(e.dataTransfer.files);
+  };
   const [sessionReady, setSessionReady] = useState(false);
 
   const feedRef = useRef<HTMLDivElement>(null);
@@ -510,7 +666,16 @@ function AgentPageContent() {
   };
 
   const send = (text: string): boolean => {
-    const message = text.trim();
+    if (files.some((f) => f.status === "uploading")) {
+      toast.message("Files are still uploading…");
+      return false;
+    }
+    const readyFiles = files.filter((f) => f.status === "ready" && f.uploadId);
+    const typed = text.trim();
+    const attachmentNotes = readyFiles.map((f) => `[Attached file: ${f.name} (uploadId: ${f.uploadId})]`);
+    const message = [typed || (readyFiles.length > 0 ? "Save the attached files to my Google Drive." : ""), ...attachmentNotes]
+      .filter(Boolean)
+      .join("\n");
     if (!message || isPending || !activeSessionId) return false;
     if (!ready) {
       toast.message("Add OPENAI_API_KEY to enable Thread Agent.");
@@ -524,6 +689,7 @@ function AgentPageContent() {
     streamAbortRef.current = abortController;
 
     setInput("");
+    setFiles([]);
     setLastActions([]);
     setStreamStatus(null);
     const hasFocus = Boolean(focus.threadId || focus.eventId);
@@ -692,10 +858,19 @@ function AgentPageContent() {
     await persistFocus(next);
   };
 
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
   return (
     <div className="thread-app-page">
       {demoModal}
-      <div className="thread-agent-layout">
+      <div className="thread-agent-layout" data-fullscreen={fullscreen ? "true" : undefined}>
         <AgentSessionSidebar
           activeSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
@@ -724,7 +899,21 @@ function AgentPageContent() {
             offset={9}
             label="Resize actions panel"
           />
-          <div className="thread-agent-pane">
+          <div
+            className="thread-agent-pane thread-agent-chat"
+            data-dragging={dragActive ? "true" : undefined}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {dragActive ? (
+              <div className="thread-agent-drop" aria-hidden>
+                <Upload size={20} />
+                <span>Drop files to attach</span>
+                <small>Up to 4 MB each · ask me to save them to Drive</small>
+              </div>
+            ) : null}
             <div className="thread-agent-pane-head">
               <Bot size={14} style={{ opacity: 0.7 }} />
               Thread Agent
@@ -749,6 +938,15 @@ function AgentPageContent() {
                   Stop
                 </button>
               ) : null}
+              <button
+                type="button"
+                className="thread-agent-fullscreen-btn"
+                onClick={() => setFullscreen((v) => !v)}
+                aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+                title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+              >
+                {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+              </button>
             </div>
 
             <div className="thread-agent-feed" ref={feedRef}>
@@ -802,7 +1000,9 @@ function AgentPageContent() {
                 >
                   {msg.role === "assistant" ? <Bot size={13} style={{ opacity: 0.55, flexShrink: 0 }} /> : null}
                   <span style={{ whiteSpace: "pre-wrap" }}>
-                    {typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)}
+                    {typeof msg.content === "string"
+                      ? renderMessageContent(msg.content)
+                      : JSON.stringify(msg.content)}
                   </span>
                 </div>
               ))}
@@ -854,7 +1054,51 @@ function AgentPageContent() {
                     <Paperclip size={12} />
                     Attach
                   </button>
+                  <button
+                    type="button"
+                    className="thread-agent-attach-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isPending}
+                    title="Upload files (or drag them into the chat)"
+                  >
+                    <Upload size={12} />
+                    Upload file
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    hidden
+                    onChange={(e) => {
+                      if (e.target.files) addFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
                 </div>
+                {files.length > 0 ? (
+                  <div className="thread-agent-files">
+                    {files.map((f) => (
+                      <span key={f.localId} className="thread-agent-file" data-status={f.status} title={f.error ?? f.name}>
+                        {f.status === "uploading" ? (
+                          <Loader2 size={11} className="thread-spin" />
+                        ) : (
+                          <FileUp size={11} />
+                        )}
+                        <span className="thread-agent-file-name">{f.name}</span>
+                        <span className="thread-agent-file-size">
+                          {f.status === "error" ? "failed" : formatBytes(f.size)}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${f.name}`}
+                          onClick={() => setFiles((prev) => prev.filter((x) => x.localId !== f.localId))}
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <AgentContextPicker
                   open={pickerOpen}
                   onClose={() => setPickerOpen(false)}
