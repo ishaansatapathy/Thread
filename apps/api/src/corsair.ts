@@ -9,6 +9,7 @@ import { createPgPool } from "@repo/database/pg";
 
 import { env } from "./env";
 import { formatCorsairApprovalMessage } from "./services/corsair-approval";
+import { googleclassroom, googleforms, googleslides } from "./services/corsair-custom-plugins";
 import {
   buildGmailPluginOptions,
   buildGoogleCalendarPluginOptions,
@@ -52,6 +53,9 @@ export function getCorsair() {
         googledrive(buildWorkspacePluginOptions()),
         googlesheets(buildWorkspacePluginOptions()),
         googlemeet(buildWorkspacePluginOptions()),
+        googleforms(buildWorkspacePluginOptions()),
+        googleslides(buildWorkspacePluginOptions()),
+        googleclassroom(buildWorkspacePluginOptions()),
       ],
       database: getCorsairPool(),
       kek,

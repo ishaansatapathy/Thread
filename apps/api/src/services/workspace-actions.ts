@@ -147,5 +147,57 @@ export async function executeWorkspaceAction(
       });
       return { url: doc.url, label: `Open ${payload.title}` };
     }
+
+    case "forms_create": {
+      const folder = await resolveFolder(workspace, tenantId, payload);
+      const form = await workspace.formsCreate(tenantId, {
+        title: payload.title,
+        description: payload.description,
+        questions: payload.questions,
+        isQuiz: payload.isQuiz,
+        folderId: folder?.id,
+      });
+      return formResult(form, payload.title);
+    }
+
+    case "forms_add_questions": {
+      const form = await workspace.formsAddQuestions(tenantId, { formId: payload.formId, questions: payload.questions });
+      return formResult(form, payload.formTitle ?? "form");
+    }
+
+    case "slides_create": {
+      const folder = await resolveFolder(workspace, tenantId, payload);
+      const presentation = await workspace.slidesCreate(tenantId, {
+        title: payload.title,
+        outline: payload.outline,
+        folderId: folder?.id,
+      });
+      return { url: presentation.url, label: `Open ${payload.title}` };
+    }
+
+    case "classroom_post_announcement": {
+      await workspace.classroomPostAnnouncement(tenantId, { courseId: payload.courseId, text: payload.text });
+      return { label: `Posted to ${payload.courseName ?? "course"}` };
+    }
+
+    case "classroom_create_coursework": {
+      const work = await workspace.classroomCreateCourseWork(tenantId, {
+        courseId: payload.courseId,
+        title: payload.title,
+        description: payload.description,
+        dueDate: payload.dueDate,
+        maxPoints: payload.maxPoints,
+      });
+      return { url: work.url, label: `Assigned "${payload.title}" in ${payload.courseName ?? "course"}` };
+    }
   }
+}
+
+function formResult(form: { url: string; responderUrl?: string; published: boolean }, title: string): WorkspaceActionResult {
+  const links = form.responderUrl ? [{ label: "Link to share with responders", url: form.responderUrl }] : [];
+  return {
+    url: form.url,
+    label: form.published ? `Open ${title}` : `Open ${title} (not accepting responses yet — publish it in Forms)`,
+    links,
+  };
 }

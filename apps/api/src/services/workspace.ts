@@ -6,12 +6,22 @@ import { getGoogleOAuthConfig } from "@repo/services/env";
 import { ServiceError, serviceError } from "@repo/services/errors";
 import {
   WORKSPACE_PLUGINS,
+  type ClassroomAnnouncement,
+  type ClassroomCourse,
+  type ClassroomCourseWork,
+  type ClassroomDueWork,
+  type ClassroomSubmission,
   type DocumentRef,
   type DriveFile,
   type DriveRole,
+  type FormQuestion,
+  type FormRef,
+  type FormResponse,
   type MeetConference,
   type MeetSpace,
   type MeetTranscript,
+  type PresentationRef,
+  type SlideOutlineSlide,
   type SpreadsheetRef,
   type StagedUploadMeta,
   type WorkspaceConnectionState,
@@ -23,6 +33,7 @@ import {
 import { getCorsair, getCorsairCalendarRedirectUri, isCorsairConfigured } from "../corsair";
 import { getCorsairOAuthModule } from "../corsair-imports";
 import { markdownToDocsRequests } from "../utils/markdown-to-docs";
+import { outlineToSlidesRequests } from "../utils/outline-to-slides";
 import {
   escapeDriveQuery,
   quoteSheetName,
@@ -237,6 +248,128 @@ export function extractDocsText(content: DocsElement[]): string {
   return out;
 }
 
+// ── Forms ───────────────────────────────────────────────────────────────────
+
+type FormItem = { title?: string; questionItem?: { question?: { questionId?: string } } };
+type FormApiResponse = {
+  responseId?: string;
+  lastSubmittedTime?: string;
+  answers?: Record<string, { textAnswers?: { answers?: Array<{ value?: string }> } }>;
+};
+
+const CHOICE_TYPE: Record<string, string> = { multiple_choice: "RADIO", checkboxes: "CHECKBOX", dropdown: "DROP_DOWN" };
+
+/** Forms API `Question` body. Grading is only attached for quizzes (the API rejects it otherwise). */
+export function formQuestionBody(question: FormQuestion, isQuiz = false): Record<string, unknown> {
+  const body: Record<string, unknown> = { required: question.required ?? false };
+  const choiceType = CHOICE_TYPE[question.type];
+  if (choiceType) {
+    body.choiceQuestion = { type: choiceType, options: (question.options ?? []).map((value) => ({ value })) };
+  } else {
+    body.textQuestion = { paragraph: question.type === "paragraph" };
+  }
+  // Paragraph answers can't be auto-graded; Forms only accepts an answer key for choice and short-answer.
+  if (isQuiz && question.type !== "paragraph" && (question.points !== undefined || question.correctAnswers?.length)) {
+    body.grading = {
+      pointValue: question.points ?? 1,
+      ...(question.correctAnswers?.length
+        ? { correctAnswers: { answers: question.correctAnswers.map((value) => ({ value })) } }
+        : {}),
+    };
+  }
+  return body;
+}
+
+function createItemRequests(questions: FormQuestion[], startIndex: number, isQuiz: boolean) {
+  return questions.map((question, i) => ({
+    createItem: {
+      item: { title: question.title.slice(0, 500), questionItem: { question: formQuestionBody(question, isQuiz) } },
+      location: { index: startIndex + i },
+    },
+  }));
+}
+
+// ── Slides ──────────────────────────────────────────────────────────────────
+
+type SlidesApiSlide = {
+  pageElements?: Array<{ shape?: { text?: { textElements?: Array<{ textRun?: { content?: string } }> } } }>;
+};
+
+// ── Classroom ───────────────────────────────────────────────────────────────
+
+type ClassroomApiCourse = { id?: string; name?: string; section?: string; courseState?: string };
+type ClassroomApiCourseWork = {
+  id?: string;
+  title?: string;
+  description?: string;
+  dueDate?: { year?: number; month?: number; day?: number };
+  dueTime?: { hours?: number; minutes?: number };
+  workType?: string;
+  state?: string;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Classroom stores due dates as UTC date + time parts. */
+function classroomDueMs(date?: { year?: number; month?: number; day?: number }, time?: { hours?: number; minutes?: number }) {
+  if (!date?.year || !date.month || !date.day) return undefined;
+  return Date.UTC(date.year, date.month - 1, date.day, time?.hours ?? 23, time?.minutes ?? 59);
+}
+
+/** ISO date-time (with offset) → Classroom UTC parts. A bare date means 23:59 UTC that day. */
+export function toClassroomDue(iso: string) {
+  const bare = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (bare) {
+    return {
+      dueDate: { year: Number(bare[1]), month: Number(bare[2]), day: Number(bare[3]) },
+      dueTime: { hours: 23, minutes: 59 },
+    };
+  }
+  const d = new Date(iso);
+  return {
+    dueDate: { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() },
+    dueTime: { hours: d.getUTCHours(), minutes: d.getUTCMinutes() },
+  };
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/** Follows Classroom's nextPageToken, capped so a huge roster can't stall a request. */
+async function fetchAllPages<T>(tenantId: string, url: string, key: string, maxPages = 5): Promise<T[]> {
+  const out: T[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const sep = url.includes("?") ? "&" : "?";
+    const { data } = await googleFetch<Record<string, unknown> & { nextPageToken?: string }>(
+      tenantId,
+      "googleclassroom",
+      pageToken ? `${url}${sep}pageToken=${encodeURIComponent(pageToken)}` : url,
+    );
+    out.push(...((data[key] as T[] | undefined) ?? []));
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+  return out;
+}
+
+function formatClassroomDate(date?: { year?: number; month?: number; day?: number }, time?: { hours?: number; minutes?: number }) {
+  if (!date?.year || !date.month || !date.day) return undefined;
+  const iso = `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+  if (time?.hours === undefined) return iso;
+  return `${iso}T${String(time.hours).padStart(2, "0")}:${String(time.minutes ?? 0).padStart(2, "0")}:00Z`;
+}
+
 async function verifyPlugin(tenantId: string, name: WorkspacePlugin): Promise<boolean> {
   try {
     switch (name) {
@@ -248,6 +381,15 @@ async function verifyPlugin(tenantId: string, name: WorkspacePlugin): Promise<bo
         return true;
       case "googlemeet":
         await call(tenantId, name, "conferenceRecords", "list", { pageSize: 1 });
+        return true;
+      case "googleforms":
+        await googleFetch(tenantId, name, "https://forms.googleapis.com/v1/forms/thread-connection-check");
+        return true;
+      case "googleslides":
+        await googleFetch(tenantId, name, "https://slides.googleapis.com/v1/presentations/thread-connection-check");
+        return true;
+      case "googleclassroom":
+        await googleFetch(tenantId, name, "https://classroom.googleapis.com/v1/courses?pageSize=1");
         return true;
     }
   } catch (error) {
@@ -769,6 +911,417 @@ export class CorsairWorkspaceService implements WorkspaceService {
       return { conferenceRecord: record, entries, text: text.trim(), truncated };
     } catch (error) {
       userFacingGoogleError(error, "Reading the Meet transcript");
+    }
+  }
+
+  // ── Forms ────────────────────────────────────────────────────────────────
+
+  async formsCreate(
+    tenantId: string,
+    input: { title: string; description?: string; questions: FormQuestion[]; isQuiz?: boolean; folderId?: string },
+  ): Promise<FormRef> {
+    let formId: string | undefined;
+    try {
+      const { data } = await googleFetch<{ formId?: string }>(tenantId, "googleforms", "https://forms.googleapis.com/v1/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ info: { title: input.title } }),
+      });
+      formId = data.formId;
+    } catch (error) {
+      userFacingGoogleError(error, "Creating the Google Form");
+    }
+    if (!formId) throw serviceError("INTERNAL", "Forms did not return the new form id");
+
+    // forms.create only takes a title. Quiz mode must be on before graded items are added.
+    const requests: Record<string, unknown>[] = [];
+    if (input.isQuiz) {
+      requests.push({ updateSettings: { settings: { quizSettings: { isQuiz: true } }, updateMask: "quizSettings.isQuiz" } });
+    }
+    if (input.description) {
+      requests.push({ updateFormInfo: { info: { description: input.description }, updateMask: "description" } });
+    }
+    requests.push(...createItemRequests(input.questions, 0, input.isQuiz ?? false));
+    await this.formsBatchUpdate(tenantId, formId, requests);
+
+    if (input.folderId) {
+      try {
+        await this.driveMoveFile(tenantId, { fileId: formId, folderId: input.folderId });
+      } catch {
+        // Form was created; failing to file it away isn't worth failing the whole action over.
+      }
+    }
+    return this.formsPublish(tenantId, formId);
+  }
+
+  async formsAddQuestions(tenantId: string, input: { formId: string; questions: FormQuestion[] }): Promise<FormRef> {
+    let form: { items?: unknown[]; settings?: { quizSettings?: { isQuiz?: boolean } } };
+    try {
+      ({ data: form } = await googleFetch<typeof form>(
+        tenantId,
+        "googleforms",
+        `https://forms.googleapis.com/v1/forms/${encodeURIComponent(input.formId)}`,
+      ));
+    } catch (error) {
+      userFacingGoogleError(error, "Opening the Google Form");
+    }
+    const requests = createItemRequests(input.questions, form.items?.length ?? 0, form.settings?.quizSettings?.isQuiz ?? false);
+    await this.formsBatchUpdate(tenantId, input.formId, requests);
+    // Never touch publish state here: the owner may have closed responses on purpose.
+    return this.formsRef(tenantId, input.formId);
+  }
+
+  private async formsBatchUpdate(tenantId: string, formId: string, requests: Record<string, unknown>[]) {
+    if (requests.length === 0) return;
+    try {
+      await googleFetch(tenantId, "googleforms", `https://forms.googleapis.com/v1/forms/${encodeURIComponent(formId)}:batchUpdate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requests }),
+      });
+    } catch (error) {
+      userFacingGoogleError(error, "Writing the Google Form questions");
+    }
+  }
+
+  /**
+   * Forms created through the API after 2026-06-30 start unpublished and can't take
+   * responses until published. Publishing also yields the real responder link,
+   * which is a separate id from formId and can't be derived from it.
+   */
+  private async formsPublish(tenantId: string, formId: string): Promise<FormRef> {
+    try {
+      await googleFetch(
+        tenantId,
+        "googleforms",
+        `https://forms.googleapis.com/v1/forms/${encodeURIComponent(formId)}:setPublishSettings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            publishSettings: { publishState: { isPublished: true, isAcceptingResponses: true } },
+            updateMask: "publishState",
+          }),
+        },
+      );
+    } catch (error) {
+      logger.warn("workspace.forms_publish_failed", {
+        tenantId,
+        formId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return this.formsRef(tenantId, formId);
+  }
+
+  /** Reads back the responder link and whether the form is actually live. */
+  private async formsRef(tenantId: string, formId: string): Promise<FormRef> {
+    const url = `https://docs.google.com/forms/d/${formId}/edit`;
+    try {
+      const { data } = await googleFetch<{
+        responderUri?: string;
+        publishSettings?: { publishState?: { isPublished?: boolean; isAcceptingResponses?: boolean } };
+      }>(tenantId, "googleforms", `https://forms.googleapis.com/v1/forms/${encodeURIComponent(formId)}?fields=responderUri,publishSettings`);
+      const state = data.publishSettings?.publishState;
+      // Legacy forms have no publishSettings and are always live.
+      const published = state ? Boolean(state.isPublished && state.isAcceptingResponses) : true;
+      return { formId, url, responderUrl: data.responderUri, published };
+    } catch {
+      return { formId, url, published: false };
+    }
+  }
+
+  async formsGetResponses(
+    tenantId: string,
+    input: { formId: string; maxResponses?: number },
+  ): Promise<{ responses: FormResponse[]; truncated: boolean }> {
+    const max = Math.min(input.maxResponses ?? 50, 200);
+    try {
+      const [{ data: form }, { data: responseList }] = await Promise.all([
+        googleFetch<{ items?: FormItem[] }>(tenantId, "googleforms", `https://forms.googleapis.com/v1/forms/${encodeURIComponent(input.formId)}`),
+        googleFetch<{ responses?: FormApiResponse[]; nextPageToken?: string }>(
+          tenantId,
+          "googleforms",
+          `https://forms.googleapis.com/v1/forms/${encodeURIComponent(input.formId)}/responses?pageSize=${max}`,
+        ),
+      ]);
+      const titleByQuestionId = new Map<string, string>();
+      for (const item of form.items ?? []) {
+        const questionId = item.questionItem?.question?.questionId;
+        if (questionId) titleByQuestionId.set(questionId, item.title ?? "Untitled question");
+      }
+      const all = responseList.responses ?? [];
+      const responses: FormResponse[] = all.slice(0, max).map((r) => ({
+        responseId: r.responseId ?? "",
+        submittedAt: r.lastSubmittedTime,
+        answers: Object.entries(r.answers ?? {}).map(([questionId, answer]) => ({
+          question: titleByQuestionId.get(questionId) ?? "Question",
+          answer: (answer.textAnswers?.answers ?? []).map((a) => a.value ?? "").join(", "),
+        })),
+      }));
+      return { responses, truncated: all.length > max || Boolean(responseList.nextPageToken) };
+    } catch (error) {
+      userFacingGoogleError(error, "Reading form responses");
+    }
+  }
+
+  // ── Slides ───────────────────────────────────────────────────────────────
+
+  async slidesCreate(
+    tenantId: string,
+    input: { title: string; outline: SlideOutlineSlide[]; folderId?: string },
+  ): Promise<PresentationRef> {
+    let presentationId: string | undefined;
+    let defaultSlideId: string | undefined;
+    try {
+      const { data } = await googleFetch<{ presentationId?: string; slides?: Array<{ objectId?: string }> }>(
+        tenantId,
+        "googleslides",
+        "https://slides.googleapis.com/v1/presentations",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: input.title }) },
+      );
+      presentationId = data.presentationId;
+      defaultSlideId = data.slides?.[0]?.objectId;
+    } catch (error) {
+      userFacingGoogleError(error, "Creating the Google Slides presentation");
+    }
+    if (!presentationId || !defaultSlideId) {
+      throw serviceError("INTERNAL", "Slides did not return the new presentation id");
+    }
+
+    const requests = outlineToSlidesRequests(input.outline, defaultSlideId);
+    try {
+      await googleFetch(tenantId, "googleslides", `https://slides.googleapis.com/v1/presentations/${presentationId}:batchUpdate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requests }),
+      });
+    } catch (error) {
+      userFacingGoogleError(error, "Writing the Slides content");
+    }
+
+    if (input.folderId) {
+      try {
+        await this.driveMoveFile(tenantId, { fileId: presentationId, folderId: input.folderId });
+      } catch {
+        // Presentation exists; folder placement is a nicety.
+      }
+    }
+    return { presentationId, url: `https://docs.google.com/presentation/d/${presentationId}/edit` };
+  }
+
+  async slidesReadText(tenantId: string, input: { presentationId: string }): Promise<{ title?: string; text: string }> {
+    try {
+      const { data } = await googleFetch<{ title?: string; slides?: SlidesApiSlide[] }>(
+        tenantId,
+        "googleslides",
+        `https://slides.googleapis.com/v1/presentations/${encodeURIComponent(input.presentationId)}`,
+      );
+      const text = (data.slides ?? [])
+        .map((slide, i) => {
+          const lines = (slide.pageElements ?? [])
+            .flatMap((el) => el.shape?.text?.textElements ?? [])
+            .map((t) => t.textRun?.content ?? "")
+            .join("");
+          return `Slide ${i + 1}:\n${lines.trim()}`;
+        })
+        .join("\n\n");
+      return { title: data.title, text };
+    } catch (error) {
+      userFacingGoogleError(error, "Reading the presentation");
+    }
+  }
+
+  // ── Classroom ────────────────────────────────────────────────────────────
+
+  async classroomListCourses(tenantId: string, opts: { maxResults?: number }): Promise<ClassroomCourse[]> {
+    try {
+      const params = new URLSearchParams({
+        courseStates: "ACTIVE",
+        pageSize: String(Math.min(opts.maxResults ?? 20, 50)),
+      });
+      const { data } = await googleFetch<{ courses?: ClassroomApiCourse[] }>(
+        tenantId,
+        "googleclassroom",
+        `https://classroom.googleapis.com/v1/courses?${params.toString()}`,
+      );
+      return (data.courses ?? [])
+        .filter((c): c is ClassroomApiCourse & { id: string; name: string } => Boolean(c.id && c.name))
+        .map((c) => ({ id: c.id, name: c.name, section: c.section, courseState: c.courseState }));
+    } catch (error) {
+      userFacingGoogleError(error, "Listing Classroom courses");
+    }
+  }
+
+  async classroomListCourseWork(tenantId: string, input: { courseId: string }): Promise<ClassroomCourseWork[]> {
+    try {
+      const { data } = await googleFetch<{ courseWork?: ClassroomApiCourseWork[] }>(
+        tenantId,
+        "googleclassroom",
+        `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(input.courseId)}/courseWork?pageSize=50&orderBy=dueDate desc`,
+      );
+      return (data.courseWork ?? [])
+        .filter((w): w is ClassroomApiCourseWork & { id: string; title: string } => Boolean(w.id && w.title))
+        .map((w) => ({
+          id: w.id,
+          title: w.title,
+          description: w.description,
+          dueDate: formatClassroomDate(w.dueDate, w.dueTime),
+          workType: w.workType,
+          state: w.state,
+        }));
+    } catch (error) {
+      userFacingGoogleError(error, "Listing Classroom coursework");
+    }
+  }
+
+  async classroomListAnnouncements(tenantId: string, input: { courseId: string }): Promise<ClassroomAnnouncement[]> {
+    try {
+      const { data } = await googleFetch<{ announcements?: Array<{ id?: string; text?: string; creationTime?: string }> }>(
+        tenantId,
+        "googleclassroom",
+        `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(input.courseId)}/announcements?pageSize=20&orderBy=updateTime desc`,
+      );
+      return (data.announcements ?? [])
+        .filter((a): a is { id: string; text: string; creationTime?: string } => Boolean(a.id && a.text))
+        .map((a) => ({ id: a.id, text: a.text, creationTime: a.creationTime }));
+    } catch (error) {
+      userFacingGoogleError(error, "Listing Classroom announcements");
+    }
+  }
+
+  async classroomPostAnnouncement(tenantId: string, input: { courseId: string; text: string }): Promise<{ id: string }> {
+    try {
+      const { data } = await googleFetch<{ id?: string }>(
+        tenantId,
+        "googleclassroom",
+        `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(input.courseId)}/announcements`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: input.text }) },
+      );
+      if (!data.id) throw serviceError("INTERNAL", "Classroom did not return the new announcement id");
+      return { id: data.id };
+    } catch (error) {
+      userFacingGoogleError(error, "Posting the Classroom announcement");
+    }
+  }
+
+  /**
+   * Upcoming (and up to a week overdue) coursework across every active course in
+   * one call, so "what's due this week?" doesn't burn an agent round per course.
+   * For courses where the user is a student, their own submission state is attached.
+   */
+  async classroomListDueWork(tenantId: string, input: { withinDays: number }): Promise<ClassroomDueWork[]> {
+    const courses = await this.classroomListCourses(tenantId, { maxResults: 30 });
+    const now = Date.now();
+    const from = now - 7 * DAY_MS;
+    const to = now + input.withinDays * DAY_MS;
+
+    const perCourse = await mapLimit(courses, 5, async (course) => {
+      const base = `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(course.id)}`;
+      let work: ClassroomApiCourseWork[] = [];
+      try {
+        ({ data: { courseWork: work = [] } } = await googleFetch<{ courseWork?: ClassroomApiCourseWork[] }>(
+          tenantId,
+          "googleclassroom",
+          `${base}/courseWork?courseWorkStates=PUBLISHED&pageSize=50&orderBy=dueDate desc`,
+        ));
+      } catch (error) {
+        logger.warn("workspace.classroom_coursework_failed", { tenantId, courseId: course.id, message: String(error) });
+        return [];
+      }
+      const due = work.filter((w) => {
+        const at = classroomDueMs(w.dueDate, w.dueTime);
+        return w.id && w.title && at !== undefined && at >= from && at <= to;
+      });
+      if (due.length === 0) return [];
+
+      const mine = new Map<string, { state?: string; late?: boolean }>();
+      try {
+        const { data } = await googleFetch<{
+          studentSubmissions?: Array<{ courseWorkId?: string; state?: string; late?: boolean }>;
+        }>(tenantId, "googleclassroom", `${base}/courseWork/-/studentSubmissions?userId=me&pageSize=100`);
+        for (const s of data.studentSubmissions ?? []) {
+          if (s.courseWorkId) mine.set(s.courseWorkId, { state: s.state, late: s.late });
+        }
+      } catch {
+        // Teachers have no submissions of their own; that's expected, not an error.
+      }
+
+      return due.map((w) => ({
+        id: w.id!,
+        title: w.title!,
+        description: w.description,
+        dueDate: formatClassroomDate(w.dueDate, w.dueTime),
+        workType: w.workType,
+        state: w.state,
+        courseId: course.id,
+        courseName: course.name,
+        mySubmissionState: mine.get(w.id!)?.state,
+        late: mine.get(w.id!)?.late,
+      }));
+    });
+
+    return perCourse.flat().sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+  }
+
+  /** Who turned in, who hasn't, and who was late — joined with the roster for names. */
+  async classroomListSubmissions(
+    tenantId: string,
+    input: { courseId: string; courseWorkId: string },
+  ): Promise<ClassroomSubmission[]> {
+    const base = `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(input.courseId)}`;
+    try {
+      const [submissions, students] = await Promise.all([
+        fetchAllPages<{ userId?: string; state?: string; late?: boolean; assignedGrade?: number }>(
+          tenantId,
+          `${base}/courseWork/${encodeURIComponent(input.courseWorkId)}/studentSubmissions?pageSize=100`,
+          "studentSubmissions",
+        ),
+        fetchAllPages<{ userId?: string; profile?: { name?: { fullName?: string }; emailAddress?: string } }>(
+          tenantId,
+          `${base}/students?pageSize=100`,
+          "students",
+        ),
+      ]);
+      const roster = new Map(students.map((s) => [s.userId, s.profile]));
+      return submissions.map((s) => {
+        const profile = roster.get(s.userId);
+        return {
+          studentName: profile?.name?.fullName ?? "Unknown student",
+          studentEmail: profile?.emailAddress,
+          state: s.state ?? "NEW",
+          late: s.late ?? false,
+          assignedGrade: s.assignedGrade,
+        };
+      });
+    } catch (error) {
+      userFacingGoogleError(error, "Reading Classroom submissions");
+    }
+  }
+
+  async classroomCreateCourseWork(
+    tenantId: string,
+    input: { courseId: string; title: string; description?: string; dueDate?: string; maxPoints?: number },
+  ): Promise<{ id: string; url?: string }> {
+    const body: Record<string, unknown> = {
+      title: input.title,
+      workType: "ASSIGNMENT",
+      state: "PUBLISHED",
+      ...(input.description ? { description: input.description } : {}),
+      ...(input.maxPoints !== undefined ? { maxPoints: input.maxPoints } : {}),
+      ...(input.dueDate ? toClassroomDue(input.dueDate) : {}),
+    };
+    try {
+      const { data } = await googleFetch<{ id?: string; alternateLink?: string }>(
+        tenantId,
+        "googleclassroom",
+        `https://classroom.googleapis.com/v1/courses/${encodeURIComponent(input.courseId)}/courseWork`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      );
+      if (!data.id) throw serviceError("INTERNAL", "Classroom did not return the new assignment id");
+      return { id: data.id, url: data.alternateLink };
+    } catch (error) {
+      userFacingGoogleError(error, "Creating the Classroom assignment");
     }
   }
 

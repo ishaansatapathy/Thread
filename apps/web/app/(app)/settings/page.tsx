@@ -14,6 +14,9 @@ import {
   HardDrive,
   FileSpreadsheet,
   Video,
+  ClipboardList,
+  Presentation,
+  GraduationCap,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -28,6 +31,14 @@ const WORKSPACE_ROWS = [
   },
   { plugin: "googlesheets", label: "Google Sheets", description: "Turn data into spreadsheets and add rows.", icon: FileSpreadsheet },
   { plugin: "googlemeet", label: "Google Meet", description: "Create meeting links and read transcripts.", icon: Video },
+  { plugin: "googleforms", label: "Google Forms", description: "Build surveys, quizzes and sign-ups, and read responses.", icon: ClipboardList },
+  { plugin: "googleslides", label: "Google Slides", description: "Turn an outline or email thread into a slide deck.", icon: Presentation },
+  {
+    plugin: "googleclassroom",
+    label: "Google Classroom",
+    description: "See courses, coursework and announcements, and post updates.",
+    icon: GraduationCap,
+  },
 ] as const;
 
 function ConnectionRow({

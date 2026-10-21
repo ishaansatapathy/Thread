@@ -52,6 +52,9 @@ export async function bootstrapCorsair() {
         googledrive: workspaceCredentials,
         googlesheets: workspaceCredentials,
         googlemeet: workspaceCredentials,
+        googleforms: workspaceCredentials,
+        googleslides: workspaceCredentials,
+        googleclassroom: workspaceCredentials,
       },
     });
 

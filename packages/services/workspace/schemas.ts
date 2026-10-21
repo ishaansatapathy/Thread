@@ -6,6 +6,42 @@ const mimeTypeSchema = z.string().trim().min(1).max(200);
 const cellSchema = z.string().max(5000);
 const rowsSchema = z.array(z.array(cellSchema).max(60)).max(500);
 
+const CHOICE_TYPES = new Set(["multiple_choice", "checkboxes", "dropdown"]);
+
+const formQuestionSchema = z
+  .object({
+    title: z.string().trim().min(1).max(500),
+    type: z.enum(["short_answer", "paragraph", "multiple_choice", "checkboxes", "dropdown"]),
+    options: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+    required: z.boolean().optional(),
+    points: z.number().int().min(0).max(1000).optional(),
+    correctAnswers: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+  })
+  .superRefine((q, ctx) => {
+    if (CHOICE_TYPES.has(q.type) && (q.options?.length ?? 0) < 2) {
+      ctx.addIssue({ code: "custom", path: ["options"], message: `${q.type} needs at least 2 options` });
+    }
+    if (q.correctAnswers?.length && CHOICE_TYPES.has(q.type)) {
+      const missing = q.correctAnswers.filter((a) => !q.options?.includes(a));
+      if (missing.length) {
+        ctx.addIssue({ code: "custom", path: ["correctAnswers"], message: `not among options: ${missing.join(", ")}` });
+      }
+    }
+  });
+
+const questionsSchema = z.array(formQuestionSchema).min(1).max(50);
+
+/** ISO 8601 date (2026-10-25) or date-time with offset (2026-10-25T23:59:00+05:30). */
+const dueDateSchema = z
+  .string()
+  .trim()
+  .refine((v) => !Number.isNaN(new Date(v).getTime()), { message: "dueDate must be an ISO 8601 date or date-time" });
+
+const slideSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  bullets: z.array(z.string().max(500)).max(20),
+});
+
 export const gmailAttachmentSourceSchema = z.object({
   type: z.literal("gmail_attachment"),
   messageId: idSchema,
@@ -83,6 +119,41 @@ export const workspaceActionPayloadSchema = z.discriminatedUnion("action", [
     markdown: z.string().min(1).max(100_000),
     ...folderTargetFields,
   }),
+  z.object({
+    action: z.literal("forms_create"),
+    title: nameSchema,
+    description: z.string().max(5000).optional(),
+    questions: questionsSchema,
+    isQuiz: z.boolean().optional(),
+    ...folderTargetFields,
+  }),
+  z.object({
+    action: z.literal("forms_add_questions"),
+    formId: idSchema,
+    formTitle: nameSchema.optional(),
+    questions: questionsSchema,
+  }),
+  z.object({
+    action: z.literal("slides_create"),
+    title: nameSchema,
+    outline: z.array(slideSchema).min(1).max(50),
+    ...folderTargetFields,
+  }),
+  z.object({
+    action: z.literal("classroom_post_announcement"),
+    courseId: idSchema,
+    courseName: nameSchema.optional(),
+    text: z.string().trim().min(1).max(10_000),
+  }),
+  z.object({
+    action: z.literal("classroom_create_coursework"),
+    courseId: idSchema,
+    courseName: nameSchema.optional(),
+    title: z.string().trim().min(1).max(300),
+    description: z.string().max(10_000).optional(),
+    dueDate: dueDateSchema.optional(),
+    maxPoints: z.number().min(0).max(10_000).optional(),
+  }),
 ]);
 
 export type WorkspaceActionPayload = z.infer<typeof workspaceActionPayloadSchema>;
@@ -107,9 +178,9 @@ export function parseWorkspaceActionPayload(payload: Record<string, unknown>) {
 }
 
 /** Which Workspace plugin must be connected for a queued action to run. */
-export function workspaceActionRequirements(payload: WorkspaceActionPayload): Array<
-  "googledrive" | "googlesheets"
-> {
+export function workspaceActionRequirements(
+  payload: WorkspaceActionPayload,
+): Array<"googledrive" | "googlesheets" | "googleforms" | "googleslides" | "googleclassroom"> {
   switch (payload.action) {
     case "drive_save_files":
     case "drive_create_folder":
@@ -121,6 +192,15 @@ export function workspaceActionRequirements(payload: WorkspaceActionPayload): Ar
       return payload.folderId || payload.folderName ? ["googlesheets", "googledrive"] : ["googlesheets"];
     case "sheets_append_rows":
       return ["googlesheets"];
+    case "forms_create":
+      return payload.folderId || payload.folderName ? ["googleforms", "googledrive"] : ["googleforms"];
+    case "forms_add_questions":
+      return ["googleforms"];
+    case "slides_create":
+      return payload.folderId || payload.folderName ? ["googleslides", "googledrive"] : ["googleslides"];
+    case "classroom_post_announcement":
+    case "classroom_create_coursework":
+      return ["googleclassroom"];
   }
 }
 
@@ -166,6 +246,36 @@ export function describeWorkspaceAction(payload: WorkspaceActionPayload): { titl
       return {
         title: `Create doc "${payload.title}"`,
         preview: `${payload.markdown.replace(/\s+/g, " ").slice(0, 200)}${folderSuffix(payload)}`,
+      };
+    case "forms_create":
+      return {
+        title: `Create ${payload.isQuiz ? "quiz" : "form"} "${payload.title}"`,
+        preview: `${payload.questions.length} question${payload.questions.length === 1 ? "" : "s"}${folderSuffix(payload)}`,
+      };
+    case "forms_add_questions":
+      return {
+        title: `Add ${payload.questions.length} question${payload.questions.length === 1 ? "" : "s"} to ${payload.formTitle ?? "form"}`,
+        preview: payload.questions
+          .slice(0, 3)
+          .map((q) => q.title)
+          .join(" · "),
+      };
+    case "slides_create":
+      return {
+        title: `Create presentation "${payload.title}"`,
+        preview: `${payload.outline.length} slide${payload.outline.length === 1 ? "" : "s"}`,
+      };
+    case "classroom_post_announcement":
+      return {
+        title: `Post announcement to ${payload.courseName ?? "course"}`,
+        preview: payload.text.replace(/\s+/g, " ").slice(0, 200),
+      };
+    case "classroom_create_coursework":
+      return {
+        title: `Create assignment "${payload.title}" in ${payload.courseName ?? "course"}`,
+        preview: [payload.dueDate ? `Due ${payload.dueDate}` : "No due date", payload.maxPoints !== undefined ? `${payload.maxPoints} pts` : ""]
+          .filter(Boolean)
+          .join(" · "),
       };
   }
 }

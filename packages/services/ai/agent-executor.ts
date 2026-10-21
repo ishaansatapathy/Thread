@@ -346,7 +346,9 @@ export function buildToolExecutor(ctx: AgentExecutorContext) {
         if (!itemId) return JSON.stringify({ success: false, error: "itemId is required" });
         const result = await queue.approve(tenantId, itemId);
         actions.push({ kind: "queue_list", title: "Queue item approved", detail: result.title, href: "/queue", lines: [`${result.kind}: ${result.title}`] });
-        return JSON.stringify({ success: true, itemId, status: result.status });
+        // Workspace actions store their links (new form/doc/deck, responder link) on the payload once run.
+        const output = (result.payload as { result?: unknown } | undefined)?.result;
+        return JSON.stringify({ success: true, itemId, status: result.status, ...(output ? { result: output } : {}) });
       }
 
       case "dismiss_queue_item": {

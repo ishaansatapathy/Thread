@@ -34,6 +34,9 @@ export const workspaceRouter = router({
         googledrive: connectionStateSchema,
         googlesheets: connectionStateSchema,
         googlemeet: connectionStateSchema,
+        googleforms: connectionStateSchema,
+        googleslides: connectionStateSchema,
+        googleclassroom: connectionStateSchema,
       }),
     )
     .query(async ({ ctx }) => {
@@ -61,7 +64,7 @@ export const workspaceRouter = router({
     .meta({ openapi: { method: "GET", path: getPath("/files"), tags: TAGS } })
     .input(
       z.object({
-        app: z.enum(["drive", "docs", "sheets"]),
+        app: z.enum(["drive", "docs", "sheets", "forms", "slides"]),
         query: z.string().trim().max(200).optional(),
       }),
     )
@@ -87,7 +90,11 @@ export const workspaceRouter = router({
             ? "application/vnd.google-apps.document"
             : input.app === "sheets"
               ? "application/vnd.google-apps.spreadsheet"
-              : undefined;
+              : input.app === "forms"
+                ? "application/vnd.google-apps.form"
+                : input.app === "slides"
+                  ? "application/vnd.google-apps.presentation"
+                  : undefined;
         const files = await getWorkspaceService().driveListFiles(ctx.user.id, {
           query: input.query || undefined,
           mimeType,
@@ -127,6 +134,25 @@ export const workspaceRouter = router({
       try {
         const meetings = await getWorkspaceService().meetListConferences(ctx.user.id, { maxResults: 20 });
         return { meetings: meetings.map((m) => ({ name: m.name, startTime: m.startTime, endTime: m.endTime })) };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  listClassroomCourses: protectedProcedure
+    .meta({ openapi: { method: "GET", path: getPath("/classroom/courses"), tags: TAGS } })
+    .input(z.object({}))
+    .output(
+      z.object({
+        courses: z.array(
+          z.object({ id: z.string(), name: z.string(), section: z.string().optional(), courseState: z.string().optional() }),
+        ),
+      }),
+    )
+    .query(async ({ ctx }) => {
+      try {
+        const courses = await getWorkspaceService().classroomListCourses(ctx.user.id, { maxResults: 50 });
+        return { courses };
       } catch (error) {
         mapServiceError(error);
       }

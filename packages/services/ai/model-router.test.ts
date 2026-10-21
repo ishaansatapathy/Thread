@@ -18,6 +18,10 @@ describe("classifyAgentRequest — stays fast for everyday actions", () => {
     "Mark everything from LinkedIn as read",
     "Draft a reply thanking them",
     "kal ki meetings dikhao",
+    "What homework is due this week?",
+    "Create an RSVP form with name and email",
+    "Of course, send Priya the address",
+    "Make a 3 slide deck about our launch plan",
   ])("%s", (message) => {
     expect(tier(message)).toBe("fast");
   });
@@ -37,6 +41,10 @@ describe("classifyAgentRequest — escalates when it matters", () => {
     ["Schedule a sync with everyone on the team next week", "group_coordination"],
     ["No, that's wrong, I meant next Friday", "user_correction"],
     ["galat time daala, phir se karo", "user_correction"],
+    ["Make a slide deck from this week's important emails", "extract_into_file"],
+    ["Create a quiz based on these notes", "extract_into_file"],
+    ["Summarise the form responses and tell me the main themes", "summarise_responses"],
+    ["Make an RSVP form, then post it to my classroom and email the link", "multi_intent"],
   ])("%s", (message, reason) => {
     const result = classifyAgentRequest({ message, historyTokens: 0, toolMemoryCount: 0 });
     expect(result.tier).toBe("smart");
@@ -95,6 +103,11 @@ describe("model resolution", () => {
     expect(resolveTaskModel("daily_brief", 10_000)).toMatchObject({ model: "gpt-6-luna", effort: "low" });
     expect(resolveTaskModel("daily_brief", 50_000)).toMatchObject({ model: "gpt-6.1-sol", effort: "low" });
     expect(resolveTaskModel("inbox_priority", 500_000).model).toBe("gpt-6-luna");
+  });
+
+  it("gives smart-tier chains a bigger step budget", () => {
+    expect(planAgentModel("t1", simple).maxRounds).toBe(8);
+    expect(planAgentModel("t1", hard).maxRounds).toBe(12);
   });
 
   it("only offers mid-run escalation when the run starts on the fast tier", () => {

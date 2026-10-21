@@ -149,7 +149,6 @@ export async function runAgentChat(
   });
 
   const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
-    maxRounds: 6,
     timeoutMs: 120_000,
     ...routing,
   });

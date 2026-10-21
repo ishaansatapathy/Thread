@@ -106,6 +106,9 @@ const INTENTS: Array<{ name: string; pattern: RegExp }> = [
   { name: "drive", pattern: /\b(drive|save (it|this|them|the attachments?)|upload|folder)\b/ },
   { name: "sheet", pattern: /\b(sheet|spreadsheet|excel|table of)\b/ },
   { name: "doc", pattern: /\b(google doc|document|doc\b|notes|write[- ]?up|report)\b/ },
+  { name: "form", pattern: /\b(forms?|survey|quiz|rsvp|sign[- ]?up sheet|questionnaire|poll)\b/ },
+  { name: "slides", pattern: /\b(slides?|deck|presentation|ppt)\b/ },
+  { name: "classroom", pattern: /\b(classroom|coursework|my courses|assignments?|homework|class announcement)\b/ },
   { name: "share", pattern: /\b(share|give access|permission)\b/ },
   { name: "cleanup", pattern: /\b(archive|label|mark (as )?read|trash|delete|cancel|unsubscribe)\b/ },
 ];
@@ -122,7 +125,10 @@ const ANALYSIS = /\b(analy[sz]e|analysis|compare|comparison|trends?|insights?|pr
 const BULK_SCOPE = /\b(all (my |the )?(emails|mails|threads|messages|receipts|invoices)|every (email|mail|thread)|last (month|quarter|year)|this (month|quarter)|past \d+ (days|weeks|months)|everything from)\b/;
 
 /** Building a sheet/doc from data that first has to be found and extracted. */
-const EXTRACT_INTO_FILE = /\b(sheet|spreadsheet|doc|document|notes|report|table)\b[^.?!]*\b(from|based on|using|out of)\b[^.?!]*\b(emails?|mails?|inbox|receipts?|invoices?|transcripts?|meetings?|threads?|attachments?)\b/;
+const EXTRACT_INTO_FILE = /\b(sheet|spreadsheet|doc|document|notes|report|table|deck|slides|presentation|quiz|form)\b[^.?!]*\b(from|based on|using|out of)\b[^.?!]*\b(emails?|mails?|inbox|receipts?|invoices?|transcripts?|meetings?|threads?|attachments?|docs?|notes|responses|submissions)\b/;
+
+/** Synthesising many free-text answers (form responses, submissions) needs the stronger model. */
+const SUMMARISE_RESPONSES = /\b(summari[sz]e|analy[sz]e|themes?|insights?|what did (people|they|students) say)\b[^.?!]*\b(responses|answers|feedback|submissions)\b/;
 
 /** Meeting notes from transcripts are long and need careful extraction. */
 const TRANSCRIPT = /\b(transcripts?|meeting notes|meeting minutes|minutes of the meeting|action items from)\b/;
@@ -168,6 +174,7 @@ export function classifyAgentRequest(input: AgentClassificationInput): { tier: M
   if (HIGH_STAKES.test(text)) return { tier: "smart", reason: "high_stakes_writing" };
   if (TRANSCRIPT.test(text)) return { tier: "smart", reason: "transcript_extraction" };
   if (EXTRACT_INTO_FILE.test(text)) return { tier: "smart", reason: "extract_into_file" };
+  if (SUMMARISE_RESPONSES.test(text)) return { tier: "smart", reason: "summarise_responses" };
   if (ANALYSIS.test(text)) return { tier: "smart", reason: "analysis" };
   if (BULK_SCOPE.test(text) && !BULK_HOUSEKEEPING.test(text)) {
     return { tier: "smart", reason: "bulk_scope" };
@@ -203,6 +210,13 @@ export const AGENT_ESCALATION = {
   afterToolErrors: 2,
 } as const;
 
+/**
+ * Tool-round budget per run. Multi-app chains (read thread → Meet link → invite →
+ * form → announcement → reply) need more steps than a single lookup; the fast
+ * tier gets headroom too because it may escalate mid-run.
+ */
+export const AGENT_MAX_ROUNDS: Record<ModelTier, number> = { fast: 8, smart: 12 };
+
 /** Model + mid-run escalation options for runOpenAiToolLoop, with logging. */
 export function planAgentModel(tenantId: string, input: AgentClassificationInput) {
   const decision = resolveAgentModel(input);
@@ -225,5 +239,5 @@ export function planAgentModel(tenantId: string, input: AgentClassificationInput
         }
       : undefined;
 
-  return { model: decision.model, effort: decision.effort, escalation };
+  return { model: decision.model, effort: decision.effort, escalation, maxRounds: AGENT_MAX_ROUNDS[decision.tier] };
 }

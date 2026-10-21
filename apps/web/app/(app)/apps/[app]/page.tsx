@@ -5,11 +5,14 @@ import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import {
   ArrowUpRight,
+  ClipboardList,
   FileSpreadsheet,
   FileText,
   Folder,
+  GraduationCap,
   HardDrive,
   Loader2,
+  Presentation,
   Search,
   Sparkles,
   Video,
@@ -18,7 +21,9 @@ import {
 import { trpc } from "~/trpc/client";
 import { useWorkspaceConnections, type AppKey } from "~/components/app/thread-workspace-connect";
 
-type AppSlug = "drive" | "docs" | "sheets" | "meet";
+type AppSlug = "drive" | "docs" | "sheets" | "meet" | "forms" | "slides" | "classroom";
+type FileListSlug = "drive" | "docs" | "sheets" | "forms" | "slides";
+const FILE_LIST_SLUGS = new Set<AppSlug>(["drive", "docs", "sheets", "forms", "slides"]);
 
 type AppConfig = {
   name: string;
@@ -79,6 +84,38 @@ const APPS: Record<AppSlug, AppConfig> = {
       { label: "Notes from last meeting", prompt: "Get the transcript of my most recent Google Meet and write meeting notes with action items." },
     ],
   },
+  forms: {
+    name: "Google Forms",
+    status: "googleforms",
+    connectPath: "/api-connect/workspace/googleforms",
+    icon: ClipboardList,
+    blurb: "Build surveys, quizzes and sign-ups, and read back the responses.",
+    actions: [
+      { label: "Event RSVP form", prompt: "Create a Google Form to RSVP for an event, with name, email and a yes/no attending question." },
+      { label: "Feedback survey", prompt: "Create a short feedback survey as a Google Form with a few questions about my product." },
+    ],
+    itemPrompt: (name, url) => `Read the responses to the Google Form "${name}" (${url}) and summarise what people said.`,
+  },
+  slides: {
+    name: "Google Slides",
+    status: "googleslides",
+    connectPath: "/api-connect/workspace/googleslides",
+    icon: Presentation,
+    blurb: "Turn an outline, email thread or notes into a slide deck.",
+    actions: [
+      { label: "Weekly update deck", prompt: "Create a Google Slides presentation summarising my important email threads from this week, one slide per topic." },
+      { label: "Deck from a thread", prompt: "Turn my latest important email thread into a short Google Slides presentation." },
+    ],
+    itemPrompt: (name, url) => `Read the Google Slides presentation "${name}" (${url}) and summarise the key points.`,
+  },
+  classroom: {
+    name: "Google Classroom",
+    status: "googleclassroom",
+    connectPath: "/api-connect/workspace/googleclassroom",
+    icon: GraduationCap,
+    blurb: "See courses, coursework and announcements, and post updates. Posting goes through Queue.",
+    actions: [],
+  },
 };
 
 function agentHref(prompt: string) {
@@ -104,10 +141,12 @@ function fileIcon(mimeType: string | undefined, isFolder: boolean) {
   if (isFolder) return Folder;
   if (mimeType === "application/vnd.google-apps.document") return FileText;
   if (mimeType === "application/vnd.google-apps.spreadsheet") return FileSpreadsheet;
+  if (mimeType === "application/vnd.google-apps.form") return ClipboardList;
+  if (mimeType === "application/vnd.google-apps.presentation") return Presentation;
   return HardDrive;
 }
 
-function FileList({ app, config }: { app: Exclude<AppSlug, "meet">; config: AppConfig }) {
+function FileList({ app, config }: { app: FileListSlug; config: AppConfig }) {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
 
@@ -211,6 +250,47 @@ function MeetingList() {
   );
 }
 
+function CourseList() {
+  const courses = trpc.workspace.listClassroomCourses.useQuery({}, { staleTime: 60_000 });
+
+  return (
+    <section className="thread-appx-panel">
+      <div className="thread-appx-panel-head">
+        <h3>Courses</h3>
+      </div>
+      {courses.isLoading ? (
+        <div className="thread-appx-empty">
+          <Loader2 size={16} className="thread-spin" />
+        </div>
+      ) : courses.isError ? (
+        <div className="thread-appx-empty">{courses.error.message}</div>
+      ) : !courses.data?.courses.length ? (
+        <div className="thread-appx-empty">No active courses found for this account.</div>
+      ) : (
+        <ul className="thread-appx-list">
+          {courses.data.courses.map((course) => (
+            <li key={course.id} className="thread-appx-row">
+              <span className="thread-appx-row-icon">
+                <GraduationCap size={14} />
+              </span>
+              <span className="thread-appx-row-name">{course.name}</span>
+              <span className="thread-appx-row-meta">{course.section ?? ""}</span>
+              <span className="thread-appx-row-actions">
+                <Link href={agentHref(`List the coursework and due dates for my Classroom course "${course.name}" (id ${course.id}).`)} className="thread-appx-chip">
+                  <Sparkles size={12} /> Coursework
+                </Link>
+                <Link href={agentHref(`Post an announcement to my Classroom course "${course.name}" (id ${course.id}): `)} className="thread-appx-chip">
+                  <Sparkles size={12} /> Announce
+                </Link>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function WorkspaceAppPage() {
   const params = useParams<{ app: string }>();
   const slug = params.app as AppSlug;
@@ -255,7 +335,13 @@ export default function WorkspaceAppPage() {
               </Link>
             ))}
           </div>
-          {slug === "meet" ? <MeetingList /> : <FileList app={slug} config={config} />}
+          {slug === "meet" ? (
+            <MeetingList />
+          ) : slug === "classroom" ? (
+            <CourseList />
+          ) : FILE_LIST_SLUGS.has(slug) ? (
+            <FileList app={slug as FileListSlug} config={config} />
+          ) : null}
         </>
       ) : state === "loading" ? null : (
         <div className="thread-appx-panel thread-appx-empty thread-appx-locked">

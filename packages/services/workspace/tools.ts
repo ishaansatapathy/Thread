@@ -1,4 +1,5 @@
 import { fenceEmailData } from "../ai/agent-guard";
+import { humanizeEmailBody } from "../ai/writing-style";
 import type { OpenAiToolDefinition } from "../ai/openai-tools";
 import type { QueueEnqueueOrigin, QueueService } from "../queue";
 import {
@@ -27,6 +28,35 @@ const rowsProp = {
   type: "array",
   description: "Rows of cell values. First row should be the header row when creating a sheet.",
   items: { type: "array", items: { type: "string" } },
+};
+
+const questionsProp = {
+  type: "array",
+  description: "At least one question.",
+  items: {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      type: {
+        type: "string",
+        enum: ["short_answer", "paragraph", "multiple_choice", "checkboxes", "dropdown"],
+        description: "short_answer/paragraph = free text. multiple_choice/dropdown = pick one. checkboxes = pick several.",
+      },
+      options: {
+        type: "array",
+        items: { type: "string" },
+        description: "Required (2+) for multiple_choice, checkboxes, dropdown",
+      },
+      required: { type: "boolean" },
+      points: { type: "number", description: "Quiz only: points for a correct answer" },
+      correctAnswers: {
+        type: "array",
+        items: { type: "string" },
+        description: "Quiz only: the answer key. Must match option text exactly for choice questions.",
+      },
+    },
+    required: ["title", "type"],
+  },
 };
 
 export const WORKSPACE_TOOLS: OpenAiToolDefinition[] = [
@@ -246,6 +276,192 @@ export const WORKSPACE_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "queue_form_create",
+      description:
+        "Queue creating a Google Form for approval. Use for surveys, quizzes, sign-ups, RSVPs or any set of questions to collect answers. Set isQuiz with points/correctAnswers for an auto-graded quiz. The form is published and accepting responses once approved.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          description: { type: "string" },
+          isQuiz: { type: "boolean", description: "Auto-grade answers using each question's points and correctAnswers" },
+          questions: questionsProp,
+          ...folderTargetProps,
+        },
+        required: ["title", "questions"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_form_responses",
+      description: "Read the responses submitted to a Google Form (formId from search_drive or a link).",
+      parameters: {
+        type: "object",
+        properties: { formId: { type: "string" }, maxResponses: { type: "number", description: "1-200", default: 50 } },
+        required: ["formId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "queue_slides_create",
+      description:
+        "Queue creating a Google Slides presentation for approval. Pass an outline: one entry per slide with a title and bullet points.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          outline: {
+            type: "array",
+            description: "One entry per slide, in order.",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                bullets: { type: "array", items: { type: "string" } },
+              },
+              required: ["title"],
+            },
+          },
+          ...folderTargetProps,
+        },
+        required: ["title", "outline"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_presentation",
+      description: "Read the text content of a Google Slides presentation (presentationId from search_drive or a link).",
+      parameters: {
+        type: "object",
+        properties: { presentationId: { type: "string" } },
+        required: ["presentationId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_classroom_courses",
+      description: "List the user's active Google Classroom courses (as teacher or student).",
+      parameters: {
+        type: "object",
+        properties: { maxResults: { type: "number", description: "1-50", default: 20 } },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_classroom_coursework",
+      description: "List assignments/coursework for a Classroom course (courseId from list_classroom_courses).",
+      parameters: {
+        type: "object",
+        properties: { courseId: { type: "string" } },
+        required: ["courseId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_classroom_announcements",
+      description: "List recent announcements posted to a Classroom course (courseId from list_classroom_courses).",
+      parameters: {
+        type: "object",
+        properties: { courseId: { type: "string" } },
+        required: ["courseId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "queue_classroom_announcement",
+      description: "Queue posting an announcement to a Classroom course for approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          courseId: { type: "string" },
+          courseName: { type: "string" },
+          text: { type: "string" },
+        },
+        required: ["courseId", "text"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "queue_form_add_questions",
+      description:
+        "Queue adding questions to the end of an existing Google Form for approval (formId from search_drive or a link). Does not change whether the form accepts responses.",
+      parameters: {
+        type: "object",
+        properties: {
+          formId: { type: "string" },
+          formTitle: { type: "string" },
+          questions: questionsProp,
+        },
+        required: ["formId", "questions"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_classroom_due_work",
+      description:
+        "List coursework due soon across ALL the user's active Classroom courses in one call (plus up to a week overdue), with the user's own submission state when they are a student. Use for 'what's due this week', 'what homework is pending'.",
+      parameters: {
+        type: "object",
+        properties: { withinDays: { type: "number", description: "1-60", default: 7 } },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_classroom_submissions",
+      description:
+        "Teacher view: list every student's submission for one assignment (turned in, missing, late, grade) with names. courseWorkId from list_classroom_coursework.",
+      parameters: {
+        type: "object",
+        properties: { courseId: { type: "string" }, courseWorkId: { type: "string" } },
+        required: ["courseId", "courseWorkId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "queue_classroom_coursework_create",
+      description: "Teacher: queue creating and publishing an assignment in a Classroom course for approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          courseId: { type: "string" },
+          courseName: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+          dueDate: {
+            type: "string",
+            description: "ISO 8601 date-time with the user's UTC offset, e.g. 2026-10-25T23:59:00+05:30. A bare date means 23:59 UTC.",
+          },
+          maxPoints: { type: "number" },
+        },
+        required: ["courseId", "title"],
+      },
+    },
+  },
 ];
 
 export const WORKSPACE_TOOL_NAMES = new Set(WORKSPACE_TOOLS.map((tool) => tool.function.name));
@@ -279,6 +495,22 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(Math.round(n), min), max);
+}
+
+function toQuestions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((raw) => {
+    const q = (raw ?? {}) as Record<string, unknown>;
+    const points = Number(q.points);
+    return {
+      title: str(q.title) ?? "Question",
+      type: str(q.type) ?? "short_answer",
+      options: Array.isArray(q.options) ? q.options.map((o) => String(o).trim()).filter(Boolean) : undefined,
+      required: q.required === true,
+      points: Number.isFinite(points) ? Math.max(0, Math.round(points)) : undefined,
+      correctAnswers: Array.isArray(q.correctAnswers) ? q.correctAnswers.map((a) => String(a).trim()).filter(Boolean) : undefined,
+    };
+  });
 }
 
 function toRows(value: unknown): string[][] | undefined {
@@ -599,6 +831,185 @@ export async function executeWorkspaceTool(
           transcript: fenceEmailData(transcript.text),
         },
       };
+    }
+
+    case "queue_form_create": {
+      const parsed = workspaceActionPayloadSchema.safeParse({
+        action: "forms_create",
+        title: str(args.title) ? cleanName(args.title, "Untitled form") : undefined,
+        description: str(args.description),
+        isQuiz: args.isQuiz === true,
+        questions: toQuestions(args.questions),
+        ...folderTarget(args),
+      });
+      if (!parsed.success) return { result: validationError(parsed.error) };
+      return enqueue(ctx, parsed.data);
+    }
+
+    case "queue_form_add_questions": {
+      const formId = str(args.formId);
+      const parsed = workspaceActionPayloadSchema.safeParse({
+        action: "forms_add_questions",
+        formId: formId ? extractGoogleFileId(formId) : undefined,
+        formTitle: str(args.formTitle) ? cleanName(args.formTitle, "form") : undefined,
+        questions: toQuestions(args.questions),
+      });
+      if (!parsed.success) return { result: validationError(parsed.error) };
+      return enqueue(ctx, parsed.data);
+    }
+
+    case "list_classroom_due_work": {
+      const missing = await missingPlugins(ctx, ["googleclassroom"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const work = await workspace.classroomListDueWork(tenantId, { withinDays: clampNumber(args.withinDays, 7, 1, 60) });
+      return {
+        result: {
+          count: work.length,
+          work: work.map((w) => ({
+            ...w,
+            title: fenceEmailData(w.title),
+            courseName: fenceEmailData(w.courseName),
+            description: w.description ? fenceEmailData(w.description) : undefined,
+          })),
+        },
+        card: {
+          kind: "workspace",
+          title: "Classroom: due soon",
+          detail: `${work.length} item(s)`,
+          lines: work.slice(0, 8).map((w) => `${w.dueDate ?? "no date"} · ${w.courseName} · ${w.title}`),
+        },
+      };
+    }
+
+    case "list_classroom_submissions": {
+      const missing = await missingPlugins(ctx, ["googleclassroom"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const courseId = str(args.courseId);
+      const courseWorkId = str(args.courseWorkId);
+      if (!courseId || !courseWorkId) return { result: { error: "courseId and courseWorkId are required" } };
+      const submissions = await workspace.classroomListSubmissions(tenantId, { courseId, courseWorkId });
+      const turnedIn = submissions.filter((s) => s.state === "TURNED_IN" || s.state === "RETURNED").length;
+      return {
+        result: {
+          total: submissions.length,
+          turnedIn,
+          missing: submissions.length - turnedIn,
+          late: submissions.filter((s) => s.late).length,
+          submissions: submissions.map((s) => ({ ...s, studentName: fenceEmailData(s.studentName) })),
+        },
+      };
+    }
+
+    case "queue_classroom_coursework_create": {
+      const parsed = workspaceActionPayloadSchema.safeParse({
+        action: "classroom_create_coursework",
+        courseId: str(args.courseId),
+        courseName: str(args.courseName),
+        title: str(args.title),
+        description: str(args.description) ? humanizeEmailBody(String(args.description)) : undefined,
+        dueDate: str(args.dueDate),
+        maxPoints: typeof args.maxPoints === "number" ? args.maxPoints : undefined,
+      });
+      if (!parsed.success) return { result: validationError(parsed.error) };
+      return enqueue(ctx, parsed.data);
+    }
+
+    case "get_form_responses": {
+      const missing = await missingPlugins(ctx, ["googleforms"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const formId = str(args.formId);
+      if (!formId) return { result: { error: "formId is required" } };
+      const { responses, truncated } = await workspace.formsGetResponses(tenantId, {
+        formId: extractGoogleFileId(formId),
+        maxResponses: clampNumber(args.maxResponses, 50, 1, 200),
+      });
+      return {
+        result: {
+          count: responses.length,
+          truncated,
+          responses: responses.map((r) => ({
+            responseId: r.responseId,
+            submittedAt: r.submittedAt,
+            answers: r.answers.map((a) => ({ question: fenceEmailData(a.question), answer: fenceEmailData(a.answer) })),
+          })),
+        },
+      };
+    }
+
+    case "queue_slides_create": {
+      const outline = Array.isArray(args.outline)
+        ? args.outline.map((raw) => {
+            const s = (raw ?? {}) as Record<string, unknown>;
+            return {
+              title: str(s.title) ?? "Slide",
+              bullets: Array.isArray(s.bullets) ? s.bullets.map((b) => String(b)) : [],
+            };
+          })
+        : [];
+      const parsed = workspaceActionPayloadSchema.safeParse({
+        action: "slides_create",
+        title: str(args.title) ? cleanName(args.title, "Untitled presentation") : undefined,
+        outline,
+        ...folderTarget(args),
+      });
+      if (!parsed.success) return { result: validationError(parsed.error) };
+      return enqueue(ctx, parsed.data);
+    }
+
+    case "read_presentation": {
+      const missing = await missingPlugins(ctx, ["googleslides"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const presentationId = str(args.presentationId);
+      if (!presentationId) return { result: { error: "presentationId is required" } };
+      const presentation = await workspace.slidesReadText(tenantId, { presentationId: extractGoogleFileId(presentationId) });
+      return { result: { title: presentation.title, text: fenceEmailData(presentation.text) } };
+    }
+
+    case "list_classroom_courses": {
+      const missing = await missingPlugins(ctx, ["googleclassroom"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const courses = await workspace.classroomListCourses(tenantId, { maxResults: clampNumber(args.maxResults, 20, 1, 50) });
+      return { result: { count: courses.length, courses } };
+    }
+
+    case "list_classroom_coursework": {
+      const missing = await missingPlugins(ctx, ["googleclassroom"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const courseId = str(args.courseId);
+      if (!courseId) return { result: { error: "courseId is required" } };
+      const courseWork = await workspace.classroomListCourseWork(tenantId, { courseId });
+      return {
+        result: {
+          count: courseWork.length,
+          courseWork: courseWork.map((w) => ({ ...w, title: fenceEmailData(w.title), description: w.description ? fenceEmailData(w.description) : undefined })),
+        },
+      };
+    }
+
+    case "list_classroom_announcements": {
+      const missing = await missingPlugins(ctx, ["googleclassroom"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const courseId = str(args.courseId);
+      if (!courseId) return { result: { error: "courseId is required" } };
+      const announcements = await workspace.classroomListAnnouncements(tenantId, { courseId });
+      return {
+        result: {
+          count: announcements.length,
+          announcements: announcements.map((a) => ({ ...a, text: fenceEmailData(a.text) })),
+        },
+      };
+    }
+
+    case "queue_classroom_announcement": {
+      const text = str(args.text);
+      const parsed = workspaceActionPayloadSchema.safeParse({
+        action: "classroom_post_announcement",
+        courseId: str(args.courseId),
+        courseName: str(args.courseName),
+        text: text ? humanizeEmailBody(text) : undefined,
+      });
+      if (!parsed.success) return { result: validationError(parsed.error) };
+      return enqueue(ctx, parsed.data);
     }
 
     default:

@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP — 71 domain tools (Gmail, Calendar, Drive, Sheets, Docs, Meet) at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
-  "version": "2.6.0",
+  "description": "Thread MCP — 83 domain tools (Gmail, Calendar, Drive, Sheets, Docs, Meet, Forms, Slides, Classroom) at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
+  "version": "2.8.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -14,7 +14,12 @@
   "corsairOfficialAdapter": {
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp/corsair",
     "package": "@corsair-dev/mcp",
-    "tools": ["corsair_setup", "list_operations", "get_schema", "run_script"],
+    "tools": [
+      "corsair_setup",
+      "list_operations",
+      "get_schema",
+      "run_script"
+    ],
     "note": "Official Corsair MCP — agents discover and call any Gmail/Calendar endpoint dynamically via run_script."
   },
   "auth": {
@@ -305,6 +310,54 @@
     {
       "name": "get_meet_transcript",
       "description": "Get the transcript of a finished Google Meet conference (conferenceRecord like conferenceRecords/abc from list_meet_conferences). Use to extract notes and action items."
+    },
+    {
+      "name": "queue_form_create",
+      "description": "Queue creating a Google Form for approval. Use for surveys, quizzes, sign-ups or RSVPs."
+    },
+    {
+      "name": "get_form_responses",
+      "description": "Read the responses submitted to a Google Form."
+    },
+    {
+      "name": "queue_slides_create",
+      "description": "Queue creating a Google Slides presentation for approval from a title+bullets outline."
+    },
+    {
+      "name": "read_presentation",
+      "description": "Read the text content of a Google Slides presentation."
+    },
+    {
+      "name": "list_classroom_courses",
+      "description": "List the user's active Google Classroom courses."
+    },
+    {
+      "name": "list_classroom_coursework",
+      "description": "List assignments/coursework for a Classroom course."
+    },
+    {
+      "name": "list_classroom_announcements",
+      "description": "List recent announcements posted to a Classroom course."
+    },
+    {
+      "name": "queue_classroom_announcement",
+      "description": "Queue posting an announcement to a Classroom course for approval."
+    },
+    {
+      "name": "queue_form_add_questions",
+      "description": "Queue adding questions to an existing Google Form for approval."
+    },
+    {
+      "name": "list_classroom_due_work",
+      "description": "List coursework due soon across all active Classroom courses, with the user's own submission state."
+    },
+    {
+      "name": "list_classroom_submissions",
+      "description": "Teacher view: who turned in, who is missing and who was late for one assignment."
+    },
+    {
+      "name": "queue_classroom_coursework_create",
+      "description": "Teacher: queue creating an assignment in a Classroom course for approval."
     }
   ],
   "resources": [
@@ -357,7 +410,7 @@
   ],
   "examples": [
     {
-      "description": "Discover all 57 tools",
+      "description": "Discover all tools",
       "request": {
         "jsonrpc": "2.0",
         "id": 1,

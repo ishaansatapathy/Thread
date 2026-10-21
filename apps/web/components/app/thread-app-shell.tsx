@@ -44,6 +44,9 @@ const GOOGLE_APPS: Array<{ label: string; href: string; status: AppKey }> = [
   { label: "Docs", href: "/apps/docs", status: "googledocs" },
   { label: "Sheets", href: "/apps/sheets", status: "googlesheets" },
   { label: "Meet", href: "/apps/meet", status: "googlemeet" },
+  { label: "Forms", href: "/apps/forms", status: "googleforms" },
+  { label: "Slides", href: "/apps/slides", status: "googleslides" },
+  { label: "Classroom", href: "/apps/classroom", status: "googleclassroom" },
 ];
 
 const APPS_OPEN_KEY = "thread.nav.appsOpen";
@@ -138,6 +141,9 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/apps/docs": { title: "Docs", sub: "Documents the agent can read and write" },
   "/apps/sheets": { title: "Sheets", sub: "Spreadsheets from your data" },
   "/apps/meet": { title: "Meet", sub: "Meetings, links and transcripts" },
+  "/apps/forms": { title: "Forms", sub: "Surveys, quizzes and sign-ups" },
+  "/apps/slides": { title: "Slides", sub: "Presentations from an outline" },
+  "/apps/classroom": { title: "Classroom", sub: "Courses, coursework and announcements" },
 };
 
 export function ThreadAppShell({ children }: { children: ReactNode }) {

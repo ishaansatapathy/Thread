@@ -6,12 +6,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Calendar,
   ChevronDown,
+  ClipboardList,
   FileSpreadsheet,
   FileText,
+  GraduationCap,
   HardDrive,
   LayoutGrid,
   Loader2,
   Mail,
+  Presentation,
   Settings2,
   Video,
 } from "lucide-react";
@@ -19,7 +22,16 @@ import { toast } from "sonner";
 
 import { trpc } from "~/trpc/client";
 
-export type AppKey ="gmail" | "googlecalendar" | "googledrive" | "googlesheets" | "googledocs" | "googlemeet";
+export type AppKey =
+  | "gmail"
+  | "googlecalendar"
+  | "googledrive"
+  | "googlesheets"
+  | "googledocs"
+  | "googlemeet"
+  | "googleforms"
+  | "googleslides"
+  | "googleclassroom";
 type ConnectionState = "connected" | "missing_credentials" | "not_connected" | "not_configured" | "loading";
 
 type AppRow = {
@@ -39,6 +51,9 @@ export const WORKSPACE_APPS: AppRow[] = [
   { key: "googledocs", label: "Docs", hint: "Included with Drive", icon: FileText, connectPath: "/api-connect/workspace/googledrive", via: "googledrive" },
   { key: "googlesheets", label: "Sheets", hint: "Turn data into sheets", icon: FileSpreadsheet, connectPath: "/api-connect/workspace/googlesheets" },
   { key: "googlemeet", label: "Meet", hint: "Links and transcripts", icon: Video, connectPath: "/api-connect/workspace/googlemeet" },
+  { key: "googleforms", label: "Forms", hint: "Surveys, quizzes, sign-ups", icon: ClipboardList, connectPath: "/api-connect/workspace/googleforms" },
+  { key: "googleslides", label: "Slides", hint: "Presentations from an outline", icon: Presentation, connectPath: "/api-connect/workspace/googleslides" },
+  { key: "googleclassroom", label: "Classroom", hint: "Courses, coursework, announcements", icon: GraduationCap, connectPath: "/api-connect/workspace/googleclassroom" },
 ];
 
 const LABELS: Record<string, string> = Object.fromEntries(WORKSPACE_APPS.map((a) => [a.key, a.label]));
@@ -55,6 +70,9 @@ export function useWorkspaceConnections() {
     googlesheets: workspace.isLoading ? "loading" : (workspace.data?.googlesheets ?? "not_configured"),
     googledocs: workspace.isLoading ? "loading" : (workspace.data?.googledrive ?? "not_configured"),
     googlemeet: workspace.isLoading ? "loading" : (workspace.data?.googlemeet ?? "not_configured"),
+    googleforms: workspace.isLoading ? "loading" : (workspace.data?.googleforms ?? "not_configured"),
+    googleslides: workspace.isLoading ? "loading" : (workspace.data?.googleslides ?? "not_configured"),
+    googleclassroom: workspace.isLoading ? "loading" : (workspace.data?.googleclassroom ?? "not_configured"),
   };
   return { states, isLoading: gmail.isLoading || calendar.isLoading };
 }
@@ -125,7 +143,7 @@ function useWorkspaceCallbackToast() {
 
   useEffect(() => {
     const plugin = searchParams.get("plugin");
-    if (!plugin || !["googledrive", "googlesheets", "googlemeet"].includes(plugin)) return;
+    if (!plugin || !["googledrive", "googlesheets", "googlemeet", "googleforms", "googleslides", "googleclassroom"].includes(plugin)) return;
     const label = LABELS[plugin];
     if (searchParams.get("workspace") === "connected") {
       toast.success(`${label} connected`);

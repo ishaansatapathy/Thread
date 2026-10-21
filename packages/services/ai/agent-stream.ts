@@ -119,7 +119,6 @@ export async function runAgentChatStream(
   });
 
   const { content } = await runOpenAiToolLoop(messages, AGENT_TOOLS, executeTool, {
-    maxRounds: 6,
     timeoutMs: 120_000,
     onToken: onTokenDelta,
     signal: opts?.signal,

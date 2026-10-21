@@ -7,7 +7,10 @@ export type CorsairConnectionProvider =
   | "googlecalendar"
   | "googledrive"
   | "googlesheets"
-  | "googlemeet";
+  | "googlemeet"
+  | "googleforms"
+  | "googleslides"
+  | "googleclassroom";
 
 const INTEGRATION_NAME_CANDIDATES: Record<CorsairConnectionProvider, string[]> = {
   gmail: ["gmail", "@corsair-dev/gmail"],
@@ -15,6 +18,9 @@ const INTEGRATION_NAME_CANDIDATES: Record<CorsairConnectionProvider, string[]> =
   googledrive: ["googledrive", "@corsair-dev/googledrive"],
   googlesheets: ["googlesheets", "@corsair-dev/googlesheets"],
   googlemeet: ["googlemeet", "@corsair-dev/googlemeet"],
+  googleforms: ["googleforms"],
+  googleslides: ["googleslides"],
+  googleclassroom: ["googleclassroom"],
 };
 
 /**
