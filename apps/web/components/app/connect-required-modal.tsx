@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
-import { ArrowRight, Calendar, LogIn, Mail, UserPlus, X } from "lucide-react";
+import { ArrowRight, Calendar, Mail, X } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
-import { useDemoMode } from "~/hooks/use-demo-mode";
 import {
   getQueueIntegrationRequirement,
   integrationRequirementFromError,
@@ -30,34 +29,14 @@ const COPY: Record<
   },
 };
 
-const DEMO_COPY: Record<
-  IntegrationRequirement,
-  { title: string; body: string; primaryLabel: string; icon: typeof Mail }
-> = {
-  gmail: {
-    title: "Sign in to send for real",
-    body: "This email stays in Queue on the shared demo account — nothing sends here. Sign in with your own account to connect Gmail and deliver messages.",
-    primaryLabel: "Sign in to use Thread",
-    icon: Mail,
-  },
-  calendar: {
-    title: "Sign in to apply calendar actions",
-    body: "This action stays in Queue on the shared demo account. Sign in with your own account to connect Google Calendar and approve sends for real.",
-    primaryLabel: "Sign in to use Thread",
-    icon: Calendar,
-  },
-};
-
 export function ConnectRequiredModal({
   requirement,
-  isDemoUser,
   onClose,
 }: {
   requirement: IntegrationRequirement;
-  isDemoUser?: boolean;
   onClose: () => void;
 }) {
-  const copy = isDemoUser ? DEMO_COPY[requirement] : COPY[requirement];
+  const copy = COPY[requirement];
   const Icon = copy.icon;
 
   return (
@@ -77,43 +56,17 @@ export function ConnectRequiredModal({
         </div>
         <h2 className="thread-demo-expired-title">{copy.title}</h2>
         <p className="thread-demo-expired-body">{copy.body}</p>
-        <p className="thread-connect-gate-note">
-          {isDemoUser
-            ? "Nothing was sent. Don't connect Gmail on demo@thread.dev — it replaces sample inbox data."
-            : "Nothing was sent. Your queued item is unchanged."}
-        </p>
+        <p className="thread-connect-gate-note">Nothing was sent. Your queued item is unchanged.</p>
         <div className="thread-demo-expired-ctas">
-          {isDemoUser ? (
-            <>
-              <Link
-                href="/sign-in"
-                className="thread-demo-expired-btn thread-demo-expired-btn--primary"
-                onClick={onClose}
-              >
-                <LogIn size={14} />
-                {copy.primaryLabel}
-                <ArrowRight size={14} />
-              </Link>
-              <Link
-                href="/sign-in"
-                className="thread-demo-expired-btn thread-demo-expired-btn--ghost"
-                onClick={onClose}
-              >
-                <UserPlus size={14} />
-                Create account
-              </Link>
-            </>
-          ) : (
-            <Link
-              href="/settings"
-              className="thread-demo-expired-btn thread-demo-expired-btn--primary"
-              onClick={onClose}
-            >
-              {requirement === "gmail" ? <Mail size={14} /> : <Calendar size={14} />}
-              {copy.primaryLabel}
-              <ArrowRight size={14} />
-            </Link>
-          )}
+          <Link
+            href="/settings"
+            className="thread-demo-expired-btn thread-demo-expired-btn--primary"
+            onClick={onClose}
+          >
+            {requirement === "gmail" ? <Mail size={14} /> : <Calendar size={14} />}
+            {copy.primaryLabel}
+            <ArrowRight size={14} />
+          </Link>
           <button
             type="button"
             className="thread-demo-expired-btn thread-demo-expired-btn--ghost"
@@ -131,8 +84,7 @@ export function ConnectRequiredModal({
 }
 
 /** Block queue approve when Gmail/Calendar is required but not connected. */
-export function useQueueIntegrationGate(email: string | null | undefined) {
-  const demo = useDemoMode(email);
+export function useQueueIntegrationGate(_email?: string | null) {
   const [requirement, setRequirement] = useState<IntegrationRequirement | null>(null);
 
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
@@ -140,11 +92,10 @@ export function useQueueIntegrationGate(email: string | null | undefined) {
 
   const connections = useMemo(
     () => ({
-      isDemoUser: demo.isDemo,
       gmailConnected: inboxStatus.data?.gmail === "connected",
       calendarConnected: calendarStatus.data?.googlecalendar === "connected",
     }),
-    [demo.isDemo, inboxStatus.data?.gmail, calendarStatus.data?.googlecalendar],
+    [inboxStatus.data?.gmail, calendarStatus.data?.googlecalendar],
   );
 
   const checkBeforeApprove = useCallback(
@@ -166,11 +117,7 @@ export function useQueueIntegrationGate(email: string | null | undefined) {
   }, []);
 
   const modal = requirement ? (
-    <ConnectRequiredModal
-      requirement={requirement}
-      isDemoUser={demo.isDemo}
-      onClose={() => setRequirement(null)}
-    />
+    <ConnectRequiredModal requirement={requirement} onClose={() => setRequirement(null)} />
   ) : null;
 
   return {

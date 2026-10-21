@@ -32,9 +32,6 @@ import {
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
 import { PriorityBadge } from "~/components/app/priority-badge";
 import { formatPrioritySummary } from "~/lib/priority-display";
-import { DEMO_AI_HIGHLIGHTS } from "~/lib/demo-fixtures";
-import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
-import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 import { SenderAvatar } from "~/components/app/sender-avatar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -442,13 +439,7 @@ export default function InboxPage() {
   const aiReady = aiStatus.data?.openai === true;
 
   const isConnected = statusQuery.data?.gmail === "connected";
-  const { isDemo: isDemoUser, tryFeature: tryMailDemo, modal: mailDemoModal, featureState: mailDemoState } =
-    useDemoAiGuard(userEmail, "mail");
-  const [demoSummarizeEnabled, setDemoSummarizeEnabled] = useState(false);
-  const demoCacheQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 50 }, { staleTime: 120_000 });
-  const hasDemoFixtures =
-    isDemoLoginEnabled() && !isConnected && (demoCacheQuery.data?.threads.length ?? 0) > 0;
-  const canBrowseInbox = isConnected || hasDemoFixtures;
+  const canBrowseInbox = isConnected;
 
   const approveQueueItem = trpc.queue.approve.useMutation({
     onSuccess: async () => {
@@ -653,13 +644,11 @@ export default function InboxPage() {
   );
   const threads = dbSearchMode && view === "inbox" ? (dbSearch.data?.threads ?? []) : inbox.threads;
 
-  const displayThreads = hasDemoFixtures ? (demoCacheQuery.data?.threads ?? []) : threads;
-
   const drafts = useDrafts(isConnected && view === "drafts");
 
   const selectedQuery = trpc.inbox.getThread.useQuery(
     { threadId: selectedId ?? "" },
-    { enabled: Boolean(selectedId) && (isConnected || hasDemoFixtures) },
+    { enabled: Boolean(selectedId) && isConnected },
   );
 
   // Detect meeting invites in the selected thread and search for the matching
@@ -815,7 +804,7 @@ export default function InboxPage() {
   const smartRepliesQuery = trpc.ai.smartReplies.useQuery(
     { threadId: selectedId ?? "" },
     {
-      enabled: Boolean(selectedId) && aiReady && (isConnected || demoSummarizeEnabled),
+      enabled: Boolean(selectedId) && aiReady && isConnected,
       staleTime: 2 * 60_000,
     },
   );
@@ -823,13 +812,13 @@ export default function InboxPage() {
   const summarizeQuery = trpc.ai.summarizeThread.useQuery(
     { threadId: selectedId ?? "" },
     {
-      enabled: Boolean(selectedId) && aiReady && (isConnected || demoSummarizeEnabled),
+      enabled: Boolean(selectedId) && aiReady && isConnected,
       staleTime: 5 * 60_000,
     },
   );
 
   const visibleThreads = useMemo(() => {
-    const source = hasDemoFixtures ? displayThreads : threads;
+    const source = threads;
     if (view !== "priority") return source;
 
     const rankedIds = priorityAnalysis?.rankedIds;
@@ -841,7 +830,7 @@ export default function InboxPage() {
       return item?.urgency !== "noise";
     });
     return sortThreadsByRank(filtered, rankedIds);
-  }, [threads, displayThreads, hasDemoFixtures, view, priorityAnalysis, priorityByThreadId]);
+  }, [threads, view, priorityAnalysis, priorityByThreadId]);
 
   const priorityVisibleCount = useMemo(() => {
     if (!priorityAnalysis) return 0;
@@ -962,7 +951,6 @@ export default function InboxPage() {
   const handleViewChange = (nextView: InboxView) => {
     setView(nextView);
     if (nextView !== "priority") return;
-    if (hasDemoFixtures && !isConnected) return;
     if (!aiReady) {
       toast.message("Add OPENAI_API_KEY to enable AI priority ranking.");
       return;
@@ -1105,10 +1093,6 @@ export default function InboxPage() {
       return next;
     });
   };
-
-  useEffect(() => {
-    setDemoSummarizeEnabled(false);
-  }, [selectedId]);
 
   const connectHref = `/api-connect/gmail?state=${encodeURIComponent("/inbox")}`;
   const queueCount = pendingCount.data?.count ?? 0;
@@ -1337,17 +1321,6 @@ export default function InboxPage() {
           </div>
         ) : null}
 
-        {hasDemoFixtures ? (
-          <div className="thread-demo-inbox-strip" style={{ margin: "10px 12px 0" }}>
-            <Sparkles size={13} />
-            <span>Demo inbox — {demoCacheQuery.data?.threads.length ?? 0} sample threads</span>
-            <span className="thread-demo-inbox-strip-sep">·</span>
-            <Link href="/brief" className="thread-demo-inbox-strip-link">Brief</Link>
-            <Link href="/agent" className="thread-demo-inbox-strip-link">Agent</Link>
-            <Link href="/queue" className="thread-demo-inbox-strip-link">Queue</Link>
-          </div>
-        ) : null}
-
         {banner ? (
           <div
             className="thread-inbox-banner"
@@ -1373,7 +1346,7 @@ export default function InboxPage() {
                 No threads yet
               </p>
               <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
-                Connect Gmail via Corsair to sync your inbox here, or use demo login for sample threads.
+                Connect Gmail via Corsair to sync your inbox here.
               </p>
               <a
                 href={connectHref}
@@ -1482,24 +1455,6 @@ export default function InboxPage() {
               ))}
               </>
             )
-          ) : view === "priority" && hasDemoFixtures && !isConnected ? (
-            <div className="thread-empty-inbox" style={{ marginTop: 8 }}>
-              <Sparkles size={20} style={{ opacity: 0.35 }} />
-              <p style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "var(--thread-muted)" }}>
-                Priority needs Gmail
-              </p>
-              <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
-                AI priority ranking isn&apos;t part of the demo walkthrough. Your {demoCacheQuery.data?.threads.length ?? 0} sample threads are on the Inbox tab.
-              </p>
-              <button
-                type="button"
-                className="thread-btn-accent"
-                style={{ marginTop: 14, fontSize: 12, padding: "8px 14px" }}
-                onClick={() => setView("inbox")}
-              >
-                Go to Inbox
-              </button>
-            </div>
           ) : view === "priority" && !priorityReady && isConnected && aiReady ? (
             <SkeletonList count={8} />
           ) : inbox.isLoading ? (
@@ -1519,9 +1474,7 @@ export default function InboxPage() {
                   ? "No matches"
                   : view === "priority"
                     ? "Nothing urgent right now"
-                    : hasDemoFixtures
-                      ? "No threads here"
-                      : "Inbox is empty"}
+                    : "Inbox is empty"}
               </p>
               {appliedQuery ? (
                 <p style={{ marginTop: 6, fontSize: 12, color: "var(--thread-dim)" }}>
@@ -1530,10 +1483,6 @@ export default function InboxPage() {
               ) : view === "priority" ? (
                 <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
                   Switch to Inbox to browse all mail.
-                </p>
-              ) : hasDemoFixtures ? (
-                <p style={{ marginTop: 6, fontSize: 12, lineHeight: 1.55, color: "var(--thread-dim)" }}>
-                  {demoCacheQuery.data?.threads.length ?? 0} sample threads are on the Inbox tab.
                 </p>
               ) : null}
             </div>
@@ -1752,7 +1701,7 @@ export default function InboxPage() {
       />
 
       <div className="thread-inbox-reading">
-        {!isConnected && !hasDemoFixtures ? (
+        {!isConnected ? (
           <div className="thread-app-empty">
             <div className="thread-app-empty-icon">
               <Mail size={24} />
@@ -2279,23 +2228,7 @@ export default function InboxPage() {
               {/* AI Thread Summary */}
               {aiReady && selectedId ? (
                 <div className="thread-smart-reply-wrap thread-ai-panel">
-                  {!isConnected && hasDemoFixtures && !demoSummarizeEnabled ? (
-                    <button
-                      type="button"
-                      className="thread-btn-ghost"
-                      style={{ fontSize: 12 }}
-                      disabled={isDemoUser && mailDemoState.isExhausted}
-                      onClick={() => {
-                        if (isDemoUser && !tryMailDemo()) return;
-                        setDemoSummarizeEnabled(true);
-                      }}
-                    >
-                      <Sparkles size={12} />
-                      {isDemoUser && mailDemoState.isExhausted
-                        ? "Inbox AI limit reached"
-                        : `Summarize with AI (${mailDemoState.remaining}/${mailDemoState.limit} left)`}
-                    </button>
-                  ) : summarizeQuery.isLoading ? (
+                  {summarizeQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
                       <Sparkles size={11} style={{ color: "var(--thread-accent)" }} className="thread-spin" />
                       <span>Summarizing thread…</span>
@@ -2333,7 +2266,7 @@ export default function InboxPage() {
                 </div>
               ) : null}
               {/* Smart Reply suggestions */}
-              {aiReady && selectedId && (isConnected || demoSummarizeEnabled) ? (
+              {aiReady && selectedId && isConnected ? (
                 <div className="thread-smart-reply-wrap thread-ai-panel">
                   {smartRepliesQuery.isLoading ? (
                     <div className="thread-smart-reply-loading">
@@ -2723,7 +2656,6 @@ export default function InboxPage() {
           </div>
         </div>
       ) : null}
-      {mailDemoModal}
     </div>
   );
 }

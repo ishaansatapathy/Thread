@@ -30,8 +30,6 @@ import {
   getDismissedBriefThreadIds,
   pruneBriefDismissals,
 } from "~/lib/brief-dismissals";
-import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
-import { isDemoLoginEnabled } from "~/lib/demo-config";
 
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
@@ -486,14 +484,12 @@ export default function BriefPage() {
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   const utils = trpc.useUtils();
   const meQuery = trpc.auth.me.useQuery({});
-  const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(meQuery.data?.email, "mail");
   const briefQuery = trpc.ai.dailyBrief.useQuery(
     { timeZone },
     { staleTime: 60_000, refetchOnMount: "always", refetchOnWindowFocus: true, retry: 1 },
   );
 
   const handleForceRefresh = async () => {
-    if (isDemoUser && !tryFeature()) return;
     setIsForceRefreshing(true);
     try {
       // Pass refresh:true to bypass the 5-min server-side cache and re-fetch
@@ -508,10 +504,8 @@ export default function BriefPage() {
   };
 
   const inboxStatus = trpc.inbox.connectionStatus.useQuery({});
-  const cachedThreadsQuery = trpc.inbox.listCachedThreads.useQuery({ limit: 1 }, { staleTime: 120_000 });
   const connected = inboxStatus.data?.gmail === "connected";
-  const hasDemoData = isDemoLoginEnabled() && (cachedThreadsQuery.data?.threads.length ?? 0) > 0;
-  const canShowBrief = connected || hasDemoData || Boolean(briefQuery.data);
+  const canShowBrief = connected || Boolean(briefQuery.data);
 
   const brief = briefQuery.data;
   const loading = briefQuery.isLoading || inboxStatus.isLoading;
@@ -571,7 +565,6 @@ export default function BriefPage() {
 
   return (
     <div className="thread-app-page">
-      {demoModal}
       <div className="thread-brief-page">
         <header className="thread-brief-header">
           <div className="thread-brief-header-main">
@@ -613,15 +606,6 @@ export default function BriefPage() {
             Refresh
           </button>
         </header>
-
-        {!connected && hasDemoData ? (
-          <div className="thread-demo-inbox-strip">
-            <Sparkles size={13} />
-            <span>Demo brief — built from a sample inbox</span>
-            <span className="thread-demo-inbox-strip-sep">·</span>
-            <Link href="/agent" className="thread-demo-inbox-strip-link">Open Agent</Link>
-          </div>
-        ) : null}
 
         {loading ? (
           <SkeletonList count={5} />

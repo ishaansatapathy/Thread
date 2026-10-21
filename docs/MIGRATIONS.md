@@ -6,7 +6,6 @@ Thread uses **Drizzle Kit** for schema changes.
 
 ```bash
 pnpm db:migrate   # runs drizzle-kit migrate (packages/database/drizzle/*.sql)
-pnpm db:seed      # optional demo data
 ```
 
 Migration files live in `packages/database/drizzle/` and are tracked in `packages/database/drizzle/meta/_journal.json`.

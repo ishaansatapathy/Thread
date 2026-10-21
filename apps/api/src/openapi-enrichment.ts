@@ -358,16 +358,6 @@ export function enrichThreadOpenApi(
 
   addJsonRequestExample(
     document,
-    "/authentication/sign-in",
-    "post",
-    "demoSignIn",
-    "Demo sign-in",
-    { email: "demo@thread.dev", password: "DemoPass123!" },
-    "Requires DEMO_LOGIN_ENABLED and seeded demo user.",
-  );
-
-  addJsonRequestExample(
-    document,
     "/queue/enqueue/email",
     "post",
     "queueThankYou",
@@ -619,7 +609,7 @@ export function enrichThreadOpenApi(
     "Sign in (curl)",
     `curl -X POST '${baseUrl}/api/authentication/sign-in' \\
   -H 'Content-Type: application/json' \\
-  -d '{"email":"demo@thread.dev","password":"DemoPass123!","turnstileToken":""}' \\
+  -d '{"email":"you@example.com","password":"your-password","turnstileToken":""}' \\
   -c cookies.txt`,
   );
 

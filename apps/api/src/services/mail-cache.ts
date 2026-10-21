@@ -171,7 +171,7 @@ export const mailCache = {
       .map(rowToThread);
   },
 
-  /** Returns a single cached thread as a full InboxThread (demo / offline mode). */
+  /** Returns a single cached thread as a full InboxThread (offline fallback). */
   async getThread(userId: string, threadId: string): Promise<InboxThread | null> {
     const map = await this.getHistoryMap(userId, [threadId]);
     const row = map.get(threadId);

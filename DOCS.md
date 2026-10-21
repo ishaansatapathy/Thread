@@ -10,7 +10,7 @@
 | Thread MCP | `POST https://thread-api.vercel.app/mcp` |
 | Official Corsair MCP | `POST https://thread-api.vercel.app/mcp/corsair` |
 
-Related: [`README.md`](README.md) · [`DEMO.md`](DEMO.md) · [`JUDGE_WALKTHROUGH.md`](JUDGE_WALKTHROUGH.md) · [`mcp-server.json`](mcp-server.json)
+Related: [`README.md`](README.md) · [`mcp-server.json`](mcp-server.json)
 
 ---
 
@@ -30,7 +30,7 @@ Next.js (web)  ──tRPC/REST──►  Express API  ──Corsair SDK──►
 | Frontend | Next.js 16, React Query, tRPC client |
 | API | Express, tRPC v11, trpc-to-openapi → Scalar |
 | Integration | Corsair SDK — OAuth, encrypted tokens, permissions |
-| AI | OpenAI gpt-4o-mini |
+| AI | OpenAI Responses API, smart routing (gpt-6-luna fast tier, gpt-6.1-sol smart tier) |
 | MCP | MCP 2024-11-05 — 57 domain tools + `@corsair-dev/mcp` |
 
 ---
@@ -264,5 +264,3 @@ pnpm dev
 | Request examples | Queue, auth, agent, calendar, inbox |
 | curl samples | Sign-in, threads, queue, MCP |
 | MCP manifest | `mcp-server.json` v2.5.0 + tool appendix in Scalar intro |
-| Demo script | `DEMO.md` |
-| Walkthrough | `JUDGE_WALKTHROUGH.md` |

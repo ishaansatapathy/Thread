@@ -17,15 +17,12 @@ export type IntegrationRequirement = "gmail" | "calendar";
 export function getQueueIntegrationRequirement(
   kind: string,
   opts: {
-    isDemoUser: boolean;
     gmailConnected: boolean;
     calendarConnected: boolean;
   },
 ): IntegrationRequirement | null {
   if (GMAIL_QUEUE_KINDS.has(kind)) {
     if (opts.gmailConnected) return null;
-    // Demo queue still simulates email send on the server when Gmail is off.
-    if (opts.isDemoUser) return null;
     return "gmail";
   }
 

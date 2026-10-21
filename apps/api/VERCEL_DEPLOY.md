@@ -23,14 +23,6 @@ Optional but recommended:
 | `CORSAIR_WEBHOOK_SECRET` | Gmail/Calendar webhooks |
 | `CORSAIR_GMAIL_TOPIC_ID` | Gmail Pub/Sub push |
 | `GOOGLE_OAUTH_CLIENT_ID` / `SECRET` | Corsair OAuth |
-| `DEMO_LOGIN_ENABLED` | `true` | Required on **API and web** for `/api-auth/demo` |
-| `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` | `demo@thread.dev` / `DemoPass123!` | Must match `pnpm db:seed` output |
-
-Run seed once against prod DB:
-
-```bash
-DATABASE_URL="postgresql://..." pnpm db:seed
-```
 
 `PUBLIC_OPENAPI_DOCS` defaults to **true** on `*.vercel.app` — `/docs` is public.
 
@@ -72,9 +64,8 @@ Set on the **web** Vercel project:
 
 ```
 API_INTERNAL_URL=https://thread-api-smoky.vercel.app
-DEMO_LOGIN_ENABLED=true
 JWT_SECRET=<same as API>
 JWT_REFRESH_SECRET=<same as API>
 ```
 
-`API_INTERNAL_URL` must point to the **working** API project (not a broken deployment). Demo login calls `/api/authentication/demo-sign-in` on that host.
+`API_INTERNAL_URL` must point to the **working** API project (not a broken deployment).

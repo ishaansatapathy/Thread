@@ -6,6 +6,7 @@
     "DATABASE_URL_UNPOOLED",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    "OPENAI_MODEL_SMART",
     "THREAD_ALLOW_DIRECT_SEND",
     "JWT_SECRET",
     "JWT_REFRESH_SECRET",
@@ -17,15 +18,10 @@
     "EMAIL_FROM",
     "EMAIL_SENDER_NAME",
     "EMAIL_PROVIDER",
-    "SEED_USER_EMAIL",
-    "SEED_DEMO_PASSWORD",
     "VITEST",
     "OPENAPI_DOCS_SECRET",
     "PUBLIC_OPENAPI_DOCS",
     "PORT",
-    "DEMO_LOGIN_ENABLED",
-    "DEMO_USER_EMAIL",
-    "DEMO_USER_PASSWORD",
     "GOOGLE_OAUTH_CLIENT_ID",
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "GOOGLE_OAUTH_REDIRECT_URI",
@@ -64,7 +60,6 @@
     "db:generate": {},
     "db:migrate": {},
     "db:check": {},
-    "db:seed": {},
     "test": {
       "dependsOn": ["^test"]
     }

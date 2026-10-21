@@ -27,7 +27,6 @@ import { ThreadGmailConnectMenuItem } from "./thread-gmail-connect";
 import { ThreadWorkspaceConnect, useWorkspaceConnections, type AppKey } from "./thread-workspace-connect";
 import { useThreadUser, initials } from "./use-thread-user";
 import { useSyncEvents } from "~/hooks/use-sync-events";
-import { DemoBar } from "./demo-bar";
 import { ColumnResizer } from "./column-resizer";
 
 const NAV_TOP = [
@@ -375,7 +374,6 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <DemoBar email={user.email} />
         <main className="thread-app-content">{children}</main>
       </div>
 

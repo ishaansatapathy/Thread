@@ -184,19 +184,6 @@ function userFacingApproveError(error: unknown): string {
   return "Could not complete this action. Check your connections and try again.";
 }
 
-function getDemoUserEmail(): string {
-  return (process.env.DEMO_USER_EMAIL ?? process.env.SEED_USER_EMAIL ?? "demo@thread.dev").trim().toLowerCase();
-}
-
-async function isDemoUserId(userId: string): Promise<boolean> {
-  const [user] = await db
-    .select({ email: usersTable.email })
-    .from(usersTable)
-    .where(eq(usersTable.id, userId))
-    .limit(1);
-  return user?.email?.trim().toLowerCase() === getDemoUserEmail();
-}
-
 type ApprovalPrefs = {
   autoApproveEmail: boolean;
   autoApproveAgentEmail: boolean;
@@ -941,21 +928,12 @@ export class ThreadQueueService implements QueueService {
   ): Promise<Record<string, unknown> | undefined> {
     const inbox = getInboxService();
     const calendar = getCalendarService();
-    const demoUser = await isDemoUserId(userId);
 
     switch (kind) {
       case "email_send": {
         const email = parseEmailQueuePayload(payload);
         const status = await inbox.getConnectionStatus(userId);
         if (status.gmail !== "connected") {
-          if (demoUser) {
-            logger.info("Demo queue approve: simulated email send (Gmail not connected)", {
-              userId,
-              to: email.to,
-              subject: email.subject,
-            });
-            return;
-          }
           throw serviceError(
             "PRECONDITION_FAILED",
             "Connect Gmail in Settings to send this email.",
@@ -968,14 +946,6 @@ export class ThreadQueueService implements QueueService {
         const email = parseEmailQueuePayload(payload);
         const status = await inbox.getConnectionStatus(userId);
         if (status.gmail !== "connected") {
-          if (demoUser) {
-            logger.info("Demo queue approve: simulated draft save (Gmail not connected)", {
-              userId,
-              to: email.to,
-              subject: email.subject,
-            });
-            return;
-          }
           throw serviceError(
             "PRECONDITION_FAILED",
             "Connect Gmail in Settings to save this draft.",
@@ -1012,13 +982,6 @@ export class ThreadQueueService implements QueueService {
         }
         const calStatus = await calendar.getConnectionStatus(userId);
         if (calStatus.googlecalendar !== "connected") {
-          if (demoUser) {
-            logger.info("Demo queue approve: simulated calendar create (Calendar not connected)", {
-              userId,
-              summary: event.summary,
-            });
-            return;
-          }
           throw serviceError(
             "PRECONDITION_FAILED",
             "Connect Google Calendar in Settings to create this event.",

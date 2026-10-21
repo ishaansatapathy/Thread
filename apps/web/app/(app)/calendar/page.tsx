@@ -22,13 +22,6 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
-import { parseQuickAddText } from "~/lib/parse-quick-add-client";
-import {
-  demoEventMatchesDelete,
-  isQuickDeleteIntent,
-  parseQuickDeleteText,
-} from "~/lib/parse-quick-delete-client";
-import { useDemoAiGuard } from "~/components/app/demo-limit-modal";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { QueryErrorState } from "~/components/app/query-error-state";
@@ -59,89 +52,6 @@ import {
   viewPeriodLabel,
   weekStripStartFor,
 } from "~/lib/calendar-view";
-
-/** Rich client-side demo events — no DB, no API. */
-function makeDemoEvents(): CalendarEventItem[] {
-  const today = new Date();
-  today.setSeconds(0, 0);
-
-  const ev1Start = new Date(today);
-  ev1Start.setHours(10, 0, 0, 0);
-  const ev1End = new Date(ev1Start);
-  ev1End.setHours(10, 30, 0, 0);
-
-  const ev2Start = new Date(today);
-  ev2Start.setHours(11, 0, 0, 0);
-  const ev2End = new Date(ev2Start);
-  ev2End.setHours(12, 0, 0, 0);
-
-  const ev3Start = new Date(today);
-  ev3Start.setHours(15, 0, 0, 0);
-  const ev3End = new Date(ev3Start);
-  ev3End.setHours(16, 0, 0, 0);
-
-  const ev4Start = new Date(today);
-  ev4Start.setDate(today.getDate() + 1);
-  ev4Start.setHours(14, 0, 0, 0);
-  const ev4End = new Date(ev4Start);
-  ev4End.setMinutes(30);
-
-  const ev5Start = new Date(today);
-  ev5Start.setDate(today.getDate() + 1);
-  ev5Start.setHours(16, 0, 0, 0);
-  const ev5End = new Date(ev5Start);
-  ev5End.setHours(17, 0, 0, 0);
-
-  return [
-    {
-      id: "demo-cal-1",
-      summary: "Daily Brief standup",
-      start: ev1Start.toISOString(),
-      end: ev1End.toISOString(),
-      location: "Virtual · meet.google.com/thread-demo",
-      attendees: [
-        { email: "demo@thread.dev", displayName: "You", responseStatus: "accepted", organizer: true },
-      ],
-    },
-    {
-      id: "demo-cal-2",
-      summary: "Corsair Hackathon Demo",
-      start: ev2Start.toISOString(),
-      end: ev2End.toISOString(),
-      location: "Virtual · meet.google.com/demo",
-      attendees: [
-        { email: "judge@corsair.dev", displayName: "Judge", responseStatus: "accepted" },
-        { email: "demo@thread.dev", displayName: "Thread Demo", responseStatus: "accepted", organizer: true },
-      ],
-    },
-    {
-      id: "demo-cal-3",
-      summary: "Focus block — deep work",
-      start: ev3Start.toISOString(),
-      end: ev3End.toISOString(),
-      attendees: [],
-    },
-    {
-      id: "demo-cal-4",
-      summary: "Team sync — product review",
-      start: ev4Start.toISOString(),
-      end: ev4End.toISOString(),
-      attendees: [
-        { email: "team@example.com", displayName: "Team", responseStatus: "needsAction" },
-      ],
-    },
-    {
-      id: "demo-cal-5",
-      summary: "Investor update prep",
-      start: ev5Start.toISOString(),
-      end: ev5End.toISOString(),
-      location: "Conference room B",
-      attendees: [
-        { email: "founder@startup.io", displayName: "Alex", responseStatus: "accepted" },
-      ],
-    },
-  ];
-}
 
 function recurrenceToRrule(rule: string, custom?: string): string[] | undefined {
   if (rule === "custom") {
@@ -344,21 +254,6 @@ export default function CalendarPage() {
   const isConnected = statusQuery.data?.googlecalendar === "connected";
   const connectHref = `/api-connect/calendar?state=${encodeURIComponent("/calendar")}`;
 
-  const { isDemo: isDemoUser, tryFeature, modal: demoModal } = useDemoAiGuard(userEmail, "calendar");
-  const demoEvents = useMemo(() => (isDemoUser && !isConnected ? makeDemoEvents() : []), [isDemoUser, isConnected]);
-
-  const [customDemoEvents, setCustomDemoEvents] = useState<CalendarEventItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("thread_demo_custom_events");
-    return saved ? JSON.parse(saved) : makeDemoEvents();
-  });
-
-  useEffect(() => {
-    if (isDemoUser && typeof window !== "undefined") {
-      localStorage.setItem("thread_demo_custom_events", JSON.stringify(customDemoEvents));
-    }
-  }, [customDemoEvents, isDemoUser]);
-
   const eventsQuery = trpc.calendar.listEvents.useQuery(eventQuery, {
     enabled: isConnected && (!dbSearchMode || !eventSearchInput.trim()),
     refetchOnMount: "always",
@@ -375,10 +270,9 @@ export default function CalendarPage() {
   );
 
   const calendarEvents = useMemo(() => {
-    if (isDemoUser && !isConnected) return customDemoEvents;
     if (dbSearchMode && dbSearchTerm) return dbEventsQuery.data?.events ?? [];
     return eventsQuery.data?.events ?? [];
-  }, [isDemoUser, isConnected, customDemoEvents, dbSearchMode, dbSearchTerm, dbEventsQuery.data?.events, eventsQuery.data?.events]);
+  }, [dbSearchMode, dbSearchTerm, dbEventsQuery.data?.events, eventsQuery.data?.events]);
 
   const eventsLoading =
     dbSearchMode && dbSearchTerm ? dbEventsQuery.isLoading : eventsQuery.isLoading;
@@ -752,7 +646,7 @@ export default function CalendarPage() {
 
   return (
     <div>
-      {!isConnected && !isDemoUser ? (
+      {!isConnected ? (
         <div className="thread-app-banner">
           <div className="thread-app-banner-icon">
             <CalIcon size={18} />
@@ -767,29 +661,11 @@ export default function CalendarPage() {
         </div>
       ) : (
         <>
-          {isDemoUser && !isConnected && (
-            <div className="thread-app-banner" style={{ margin: "0 0 16px 0", padding: "10px 14px", border: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
-              <div className="thread-app-banner-icon" style={{ padding: 4, width: 26, height: 26, minWidth: 26, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <CalIcon size={14} />
-              </div>
-              <div className="thread-app-banner-text" style={{ flex: 1 }}>
-                <h4 style={{ fontSize: 13, margin: 0 }}>Demo calendar — AI quick-add</h4>
-                <p style={{ fontSize: 11.5, margin: "2px 0 0", opacity: 0.8 }}>5 sample events · 3 AI quick-adds in demo · connect for live sync</p>
-              </div>
-              <a href={connectHref} className="thread-btn-accent" style={{ fontSize: 11, padding: "4px 10px", height: "auto", display: "inline-flex", alignItems: "center" }}>
-                Connect Calendar
-              </a>
-            </div>
-          )}
           <div className="thread-cal-toolbar">
             <div>
-              <h3 className="thread-cal-toolbar-title">
-                {isDemoUser && !isConnected ? "Demo calendar preview" : "Your schedule"}
-              </h3>
+              <h3 className="thread-cal-toolbar-title">Your schedule</h3>
               <p className="thread-cal-toolbar-copy">
-                {isDemoUser && !isConnected
-                  ? "5 sample events · 3 demo calendar AI actions · connect Calendar for live sync"
-                  : "Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish."}
+                Live events from Google Calendar. Dashed blocks are queued — approve in Queue to publish.
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -799,50 +675,6 @@ export default function CalendarPage() {
                   e.preventDefault();
                   const text = quickAddText.trim();
                   if (!text) return;
-
-                  if (isDemoUser && !isConnected) {
-                    if (!tryFeature()) return;
-
-                    if (isQuickDeleteIntent(text)) {
-                      try {
-                        const parsed = parseQuickDeleteText(text);
-                        setCustomDemoEvents((prev) =>
-                          prev.filter(
-                            (event) =>
-                              !demoEventMatchesDelete(
-                                event.summary ?? "",
-                                event.start ?? "",
-                                parsed,
-                              ),
-                          ),
-                        );
-                        setQuickAddText("");
-                        toast.success("Matching events removed from preview");
-                      } catch {
-                        toast.error("Could not parse delete prompt.");
-                      }
-                      return;
-                    }
-
-                    try {
-                      const parsed = parseQuickAddText(text);
-                      const newEvent: CalendarEventItem = {
-                        id: `demo-cal-custom-${Date.now()}`,
-                        summary: parsed.summary,
-                        start: parsed.startDateTime,
-                        end: parsed.endDateTime,
-                        allDay: parsed.allDay,
-                        location: parsed.allDay ? "All day" : "Virtual",
-                        attendees: [],
-                      };
-                      setCustomDemoEvents((prev) => [...prev, newEvent]);
-                      setQuickAddText("");
-                      toast.success(`Event "${parsed.summary}" added to preview`);
-                    } catch (err) {
-                      toast.error("Failed to parse prompt. Try 'Lunch tomorrow at noon'");
-                    }
-                    return;
-                  }
 
                   quickAddEvent.mutate({ text });
                 }}
@@ -857,7 +689,7 @@ export default function CalendarPage() {
                     type="text"
                     value={quickAddText}
                     onChange={(e) => setQuickAddText(e.target.value)}
-                    placeholder="Add: Lunch tomorrow · Delete: remove meeting with manu on 27 june"
+                    placeholder="Lunch tomorrow at noon"
                     style={{
                       border: "none", outline: "none", background: "transparent",
                       color: "var(--thread-text)", fontSize: 12, width: 240,
@@ -1045,7 +877,7 @@ export default function CalendarPage() {
                   </div>
                 </button>
                 <div className="thread-cal-body">
-                  {!isConnected && !isDemoUser ? (
+                  {!isConnected ? (
                     <div className="thread-cal-empty-note">Connect Calendar to sync</div>
                   ) : dayEvents.length === 0 ? (
                     viewMode === "day" ? (
@@ -1138,28 +970,6 @@ export default function CalendarPage() {
                     startDateTime = when.startDateTime;
                     endDateTime = when.endDateTime;
                     timeZone = when.timeZone;
-                  }
-
-                  if (isDemoUser && !isConnected) {
-                    if (!tryFeature()) return;
-
-                    const newEvent: CalendarEventItem = {
-                      id: `demo-cal-custom-${Date.now()}`,
-                      summary,
-                      start: startDateTime,
-                      end: endDateTime,
-                      allDay: isAllDay,
-                      location: attendee.trim() ? `Meeting with ${attendee.trim()}` : "Virtual",
-                      attendees: attendee.trim()
-                        ? [{ email: attendee.trim(), displayName: attendee.trim().split("@")[0] || "Guest", responseStatus: "needsAction" }]
-                        : [],
-                    };
-                    setCustomDemoEvents((prev) => [...prev, newEvent]);
-                    setShowCreate(false);
-                    setSummary("");
-                    setAttendee("");
-                    toast.success(`Event "${summary}" added to preview`);
-                    return;
                   }
 
                   queueInvite.mutate({
@@ -1514,25 +1324,6 @@ export default function CalendarPage() {
                             border: isCurrent ? "1px solid var(--thread-accent-bright, #60a5fa)" : undefined,
                           }}
                           onClick={() => {
-                            if (isDemoUser && !isConnected) {
-                              setCustomDemoEvents((prev) =>
-                                prev.map((e) => {
-                                  if (e.id !== selectedEvent.id) return e;
-                                  const nextAttendees = (e.attendees || []).map((a) => {
-                                    const isUser = userEmail ? a.email?.toLowerCase() === userEmail : !a.organizer;
-                                    if (isUser) {
-                                      return { ...a, responseStatus: resp };
-                                    }
-                                    return a;
-                                  });
-                                  const updatedEvent = { ...e, attendees: nextAttendees };
-                                  setSelectedEvent(updatedEvent);
-                                  return updatedEvent;
-                                })
-                              );
-                              toast.success("RSVP updated");
-                              return;
-                            }
                             respondToEvent.mutate({ eventId: selectedEvent.id, response: resp });
                           }}
                         >
@@ -1609,19 +1400,6 @@ export default function CalendarPage() {
                           rescheduleStart || isoToLocalDateTimeInput(selectedEvent.start),
                           rescheduleEnd || isoToLocalDateTimeInput(selectedEvent.end),
                         );
-                    if (isDemoUser && !isConnected) {
-                      setCustomDemoEvents((prev) =>
-                        prev.map((e) =>
-                          e.id === selectedEvent.id
-                            ? { ...e, start: when.startDateTime, end: when.endDateTime }
-                            : e
-                        )
-                      );
-                      setSelectedEvent(null);
-                      toast.success("Event rescheduled in preview");
-                      return;
-                    }
-
                     queueArchive.mutate({
                       archive: {
                         ...eventToArchivePayload(selectedEvent, { editScope: recurringEditScope }),
@@ -1746,13 +1524,6 @@ export default function CalendarPage() {
                 className="thread-btn-accent thread-cal-event-delete-confirm"
                 disabled={queueDelete.isPending}
                 onClick={() => {
-                  if (isDemoUser && !isConnected) {
-                    setCustomDemoEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
-                    setSelectedEvent(null);
-                    setShowDeleteConfirm(false);
-                    toast.success("Event deleted from preview");
-                    return;
-                  }
                   queueDelete.mutate({
                     delete: eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
                     title: `Delete: ${selectedEvent.summary}`,
@@ -1807,13 +1578,6 @@ export default function CalendarPage() {
                 className="thread-btn-accent"
                 disabled={queueDelete.isPending}
                 onClick={() => {
-                  if (isDemoUser && !isConnected) {
-                    setCustomDemoEvents((prev) => prev.filter((e) => e.id !== selectedEvent.id));
-                    setSelectedEvent(null);
-                    setShowCancelConfirm(false);
-                    toast.success("Event cancelled and removed from preview");
-                    return;
-                  }
                   queueDelete.mutate({
                     delete: {
                       ...eventToDeletePayload(selectedEvent, { editScope: recurringEditScope }),
@@ -1911,8 +1675,6 @@ export default function CalendarPage() {
           </div>
         </div>
       ) : null}
-
-      {demoModal}
     </div>
   );
 }

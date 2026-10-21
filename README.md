@@ -1,8 +1,6 @@
 # Thread — AI Chief of Staff for Gmail + Google Calendar
 
-> **Judge / Evaluator?** → Start with **[DEMO.md](./DEMO.md)** for a 3-minute walkthrough, 5 live curl examples, the full Corsair integration map, and the scoring checklist.
-
-A full-stack productivity application built **entirely on the [Corsair SDK](https://corsair.dev)** that brings Gmail and Google Calendar into a focused, AI-driven, human-in-the-loop workflow. Built for the Corsair Hackathon.
+A full-stack productivity application built **entirely on the [Corsair SDK](https://corsair.dev)** that brings Gmail and Google Calendar into a focused, AI-driven, human-in-the-loop workflow.
 
 ## Demo & pitch deck (X / Twitter)
 
@@ -160,8 +158,10 @@ CORSAIR_GMAIL_REDIRECT_URI=http://localhost:3000/api-connect/gmail/callback
 APP_URL=http://localhost:3000
 
 # OpenAI (optional — enables Agent + Priority inbox ranking)
+# Smart routing: fast tier for everyday work, smart tier only for hard requests.
 # OPENAI_API_KEY=sk-proj-...
-# OPENAI_MODEL=gpt-4o-mini
+# OPENAI_MODEL=gpt-6-luna         # fast tier (default)
+# OPENAI_MODEL_SMART=gpt-6.1-sol  # smart tier (default), or "off"
 
 # App URLs
 CLIENT_URL=http://localhost:3000
@@ -348,7 +348,6 @@ Available at `http://localhost:8000/docs` — **Scalar** UI with full Corsair in
 | Scalar UI | `{BASE_URL}/docs` |
 | OpenAPI JSON | `{BASE_URL}/openapi.json` |
 | Full technical guide | `DOCS.md` |
-| Judge walkthrough | `JUDGE_WALKTHROUGH.md` |
 
 Production: set `PUBLIC_OPENAPI_DOCS=false` and `OPENAPI_DOCS_SECRET`, or pass `?key=<secret>` / `Authorization: Bearer <secret>`.
 
@@ -400,44 +399,9 @@ When rescheduling or deleting a recurring event, choose **This event only**, **A
 
 ---
 
-## Demo
+## Sign in
 
-### Quick demo login
-
-The app ships with a one-click demo login that bypasses the sign-up + email verification flow.
-
-**Step 1 — seed the demo user** (once, after migrations):
-
-```bash
-pnpm db:seed
-```
-
-This creates (or refreshes) the demo user — **password is re-synced from `SEED_DEMO_PASSWORD` on every seed**:
-
-| Field | Value |
-|-------|-------|
-| Email | `demo@thread.dev` (or `SEED_USER_EMAIL`) |
-| Password | `DemoPass123!` (or `SEED_DEMO_PASSWORD`) |
-
-**Step 2 — enable demo login** in `.env` (recommended for production demo/judging):
-
-```env
-DEMO_LOGIN_ENABLED=true
-DEMO_USER_EMAIL=demo@thread.dev
-DEMO_USER_PASSWORD=DemoPass123!
-```
-
-**Step 3 — open the demo URL**:
-
-```
-http://localhost:3000/api-auth/demo?next=/inbox
-```
-
-This signs in automatically and redirects to the inbox. No email verification required.
-
-### Manual sign-in
-
-Alternatively, sign up normally at `http://localhost:3000/sign-up` with any email, verify it, then sign in.
+Sign up at `http://localhost:3000/sign-up` with your email, verify it, then sign in — or continue with Google.
 
 ### Connecting Gmail + Calendar
 
@@ -473,7 +437,6 @@ Deploy `apps/api` using `railway.toml`. Required env:
 | `CORSAIR_GMAIL_TOPIC_ID` | `projects/…/topics/gmail-push` | Enables live inbox sync |
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET` | GCP console | Same app as Corsair plugins |
 | `OPENAI_API_KEY` | `sk-…` | Agent + priority ranking |
-| `DEMO_LOGIN_ENABLED` | `false` | Disable in public prod unless judging |
 
 After deploy: `GET https://api.yourdomain.com/ready` should return `ready: true`.
 
