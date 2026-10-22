@@ -14,6 +14,7 @@ export type AgentSessionToolMemoryEntry = {
   threadId?: string;
   eventId?: string;
   query?: string;
+  refs?: Array<{ name: string; url?: string; id?: string }>;
 };
 
 export const agentChatSessionsTable = pgTable("agent_chat_sessions", {

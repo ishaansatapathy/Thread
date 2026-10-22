@@ -70,6 +70,72 @@ describe("agent-tool-memory", () => {
     expect(text).toContain("Payroll");
   });
 
+  it("keeps Drive file names and links so 'send me the link' works next turn", () => {
+    const entry = summarizeToolResult(
+      "search_drive",
+      JSON.stringify({
+        count: 1,
+        files: [
+          {
+            id: "1AbCdEfGhIjK",
+            name: "[EMAIL_DATA_START]\nSoftware Dev Intern Assignment\n[EMAIL_DATA_END]",
+            url: "https://docs.google.com/document/d/1AbCdEfGhIjK/edit",
+          },
+        ],
+      }),
+      {},
+    );
+    expect(entry?.refs).toEqual([
+      {
+        name: "Software Dev Intern Assignment",
+        url: "https://docs.google.com/document/d/1AbCdEfGhIjK/edit",
+        id: "1AbCdEfGhIjK",
+      },
+    ]);
+
+    const prompt = formatToolMemoryForPrompt([entry!]);
+    expect(prompt).toContain("Software Dev Intern Assignment — https://docs.google.com/document/d/1AbCdEfGhIjK/edit");
+    expect(prompt).toContain("[EMAIL_DATA_START]");
+  });
+
+  it("builds a link from the id arg when a read tool returns no url", () => {
+    const entry = summarizeToolResult("read_presentation", JSON.stringify({ title: "Q3 deck", text: "…" }), {
+      presentationId: "1PresIdAbcdef",
+    });
+    expect(entry?.refs?.[0]).toEqual({
+      name: "Q3 deck",
+      url: "https://docs.google.com/presentation/d/1PresIdAbcdef/edit",
+      id: "1PresIdAbcdef",
+    });
+  });
+
+  it("remembers result links returned after approving a queued form", () => {
+    const entry = summarizeToolResult(
+      "approve_queue_item",
+      JSON.stringify({
+        status: "approved",
+        result: {
+          url: "https://docs.google.com/forms/d/F1/edit",
+          label: "Open RSVP",
+          links: [{ label: "Link to share with responders", url: "https://docs.google.com/forms/d/e/1FAIp/viewform" }],
+        },
+      }),
+      {},
+    );
+    expect(entry?.refs?.map((r) => r.url)).toEqual([
+      "https://docs.google.com/forms/d/F1/edit",
+      "https://docs.google.com/forms/d/e/1FAIp/viewform",
+    ]);
+  });
+
+  it("lists the newest refs first in the prompt", () => {
+    const prompt = formatToolMemoryForPrompt([
+      { at: "1", tool: "search_drive", summary: "old", refs: [{ name: "Old file", url: "https://x.test/old" }] },
+      { at: "2", tool: "search_drive", summary: "new", refs: [{ name: "New file", url: "https://x.test/new" }] },
+    ]);
+    expect(prompt.indexOf("New file")).toBeLessThan(prompt.indexOf("Old file"));
+  });
+
   it("mergeToolMemory combines batches", () => {
     const merged = mergeToolMemory(
       [{ at: "1", tool: "a", summary: "one" }],

@@ -34,6 +34,10 @@ const toolMemoryEntrySchema = z.object({
   threadId: z.string().optional(),
   eventId: z.string().optional(),
   query: z.string().optional(),
+  refs: z
+    .array(z.object({ name: z.string().max(200), url: z.string().max(500).optional(), id: z.string().max(200).optional() }))
+    .max(8)
+    .optional(),
 });
 
 const sessionFocusSchema = z.object({
