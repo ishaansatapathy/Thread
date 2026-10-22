@@ -45,10 +45,16 @@ import { ensureCorsairTenant } from "./corsair-tenant";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const STATUS_CACHE_TTL_MS = 60_000;
+/** Right after OAuth completes, a transient verify failure shouldn't hide "connected" for a full minute. */
+const UNVERIFIED_STATUS_CACHE_TTL_MS = 5_000;
 const UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_AGENT_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 const statusCache = new Map<string, { status: WorkspaceConnectionStatus; expiresAt: number }>();
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function invalidateWorkspaceConnectionCache(tenantId: string) {
   statusCache.delete(tenantId);
@@ -370,43 +376,59 @@ function formatClassroomDate(date?: { year?: number; month?: number; day?: numbe
   return `${iso}T${String(time.hours).padStart(2, "0")}:${String(time.minutes ?? 0).padStart(2, "0")}:00Z`;
 }
 
-async function verifyPlugin(tenantId: string, name: WorkspacePlugin): Promise<boolean> {
-  try {
-    switch (name) {
-      case "googledrive":
-        await call(tenantId, name, "files", "list", { pageSize: 1, q: "trashed=false" });
-        return true;
-      case "googlesheets":
-        await googleFetch(tenantId, name, "https://sheets.googleapis.com/v4/spreadsheets/thread-connection-check");
-        return true;
-      case "googlemeet":
-        await call(tenantId, name, "conferenceRecords", "list", { pageSize: 1 });
-        return true;
-      case "googleforms":
-        await googleFetch(tenantId, name, "https://forms.googleapis.com/v1/forms/thread-connection-check");
-        return true;
-      case "googleslides":
-        await googleFetch(tenantId, name, "https://slides.googleapis.com/v1/presentations/thread-connection-check");
-        return true;
-      case "googleclassroom":
-        await googleFetch(tenantId, name, "https://classroom.googleapis.com/v1/courses?pageSize=1");
-        return true;
-    }
-  } catch (error) {
-    // A 404/400 for the probe id proves the token works. A disabled Cloud API is a
-    // server setup problem, not a missing user connection — actions report it clearly.
-    const status = error instanceof GoogleApiError ? error.status : undefined;
-    if (status === 404 || status === 400) return true;
-    if (status === 403 && error instanceof Error && /has not been used|is disabled|accessNotConfigured/i.test(error.message)) {
-      return true;
-    }
-    logger.warn("workspace.connection_verify_failed", {
-      tenantId,
-      plugin: name,
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return false;
+async function probePlugin(tenantId: string, name: WorkspacePlugin): Promise<void> {
+  switch (name) {
+    case "googledrive":
+      await call(tenantId, name, "files", "list", { pageSize: 1, q: "trashed=false" });
+      return;
+    case "googlesheets":
+      await googleFetch(tenantId, name, "https://sheets.googleapis.com/v4/spreadsheets/thread-connection-check");
+      return;
+    case "googlemeet":
+      await call(tenantId, name, "conferenceRecords", "list", { pageSize: 1 });
+      return;
+    case "googleforms":
+      await googleFetch(tenantId, name, "https://forms.googleapis.com/v1/forms/thread-connection-check");
+      return;
+    case "googleslides":
+      await googleFetch(tenantId, name, "https://slides.googleapis.com/v1/presentations/thread-connection-check");
+      return;
+    case "googleclassroom":
+      await googleFetch(tenantId, name, "https://classroom.googleapis.com/v1/courses?pageSize=1");
+      return;
   }
+}
+
+/**
+ * Right after OAuth completes, the freshly-stored token can briefly fail a live probe
+ * (token-store write still propagating) — one retry avoids flashing "not connected".
+ */
+async function verifyPlugin(tenantId: string, name: WorkspacePlugin): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await probePlugin(tenantId, name);
+      return true;
+    } catch (error) {
+      // A 404/400 for the probe id proves the token works. A disabled Cloud API is a
+      // server setup problem, not a missing user connection — actions report it clearly.
+      const status = error instanceof GoogleApiError ? error.status : undefined;
+      if (status === 404 || status === 400) return true;
+      if (status === 403 && error instanceof Error && /has not been used|is disabled|accessNotConfigured/i.test(error.message)) {
+        return true;
+      }
+      if (attempt === 0) {
+        await sleep(600);
+        continue;
+      }
+      logger.warn("workspace.connection_verify_failed", {
+        tenantId,
+        plugin: name,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+  return false;
 }
 
 export class CorsairWorkspaceService implements WorkspaceService {
@@ -427,15 +449,21 @@ export class CorsairWorkspaceService implements WorkspaceService {
     try {
       await ensureCorsairTenant(tenantId);
       const raw = (await getCorsair().manage.connectionStatus.get({ tenantId })) as Record<string, string | undefined>;
+      let unverified = false;
       const entries = await Promise.all(
         WORKSPACE_PLUGINS.map(async (name): Promise<[WorkspacePlugin, WorkspaceConnectionState]> => {
           const state = (raw[name] ?? "not_connected") as WorkspaceConnectionState;
           if (state !== "connected") return [name, state];
-          return [name, (await verifyPlugin(tenantId, name)) ? "connected" : "not_connected"];
+          const verified = await verifyPlugin(tenantId, name);
+          if (!verified) unverified = true;
+          return [name, verified ? "connected" : "not_connected"];
         }),
       );
       const status = Object.fromEntries(entries) as WorkspaceConnectionStatus;
-      statusCache.set(tenantId, { status, expiresAt: Date.now() + STATUS_CACHE_TTL_MS });
+      // Corsair says connected but the live probe failed (e.g. a token just written by
+      // OAuth is still propagating) — recheck soon instead of hiding "connected" for a minute.
+      const ttl = unverified ? UNVERIFIED_STATUS_CACHE_TTL_MS : STATUS_CACHE_TTL_MS;
+      statusCache.set(tenantId, { status, expiresAt: Date.now() + ttl });
       return status;
     } catch (error) {
       logger.warn("workspace.connection_status_failed", {
