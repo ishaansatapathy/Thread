@@ -117,15 +117,38 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const URL_RE = /(https?:\/\/[^\s<>()[\]{}]+[^\s<>()[\]{}.,;:!?'"])/g;
+
+/** Turns bare URLs in plain text into clickable links, e.g. Drive/Forms/Slides links the agent returns. */
+function linkifyText(text: string, keyPrefix: string) {
+  const parts = text.split(URL_RE);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={`${keyPrefix}-${i}`}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="thread-agent-msg-link"
+      >
+        {part}
+      </a>
+    ) : (
+      <span key={`${keyPrefix}-${i}`}>{part}</span>
+    ),
+  );
+}
+
 /** Shows "[Attached file: …]" notes the agent reads as compact file chips. */
 function renderMessageContent(content: string) {
   const lines = content.split("\n");
   const files = lines.map((line) => ATTACHMENT_LINE.exec(line.trim())?.[1]).filter(Boolean) as string[];
-  if (files.length === 0) return content;
+  if (files.length === 0) return linkifyText(content, "msg");
   const text = lines.filter((line) => !ATTACHMENT_LINE.test(line.trim())).join("\n").trim();
   return (
     <>
-      {text}
+      {linkifyText(text, "msg")}
       <span className="thread-agent-msg-files">
         {files.map((name, i) => (
           <span key={`${name}-${i}`} className="thread-agent-file" data-status="ready">

@@ -3579,6 +3579,17 @@ button.thread-unsub-btn:disabled {
   gap: 6px;
 }
 
+.thread-agent-msg-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.thread-agent-msg-link:hover {
+  color: #93c5fd;
+}
+
 .thread-agent-files {
   padding: 0 2px 8px;
 }
