@@ -46,6 +46,17 @@ export type DriveFile = {
 
 export type SpreadsheetRef = { spreadsheetId: string; title?: string; url: string };
 export type DocumentRef = { documentId: string; title?: string; url: string };
+export type DriveFileText = {
+  id: string;
+  name: string;
+  mimeType?: string;
+  url: string;
+  modifiedTime?: string;
+  text: string;
+  truncated: boolean;
+  /** Set when the file type can't be read as text (images, videos, Office files…). */
+  unreadable?: string;
+};
 export type MeetSpace = { meetingUri: string; meetingCode?: string; name?: string };
 export type MeetConference = {
   name: string;
@@ -153,6 +164,8 @@ export interface WorkspaceService {
     tenantId: string,
     input: { documentId: string; maxChars?: number },
   ): Promise<{ title?: string; text: string; truncated: boolean }>;
+  /** Text of any Drive file: Google Docs/Sheets/Slides via export, PDFs and plain-text files via download. */
+  driveReadFileText(tenantId: string, input: { fileId: string; maxChars?: number }): Promise<DriveFileText>;
 
   meetCreateSpace(tenantId: string): Promise<MeetSpace>;
   meetListConferences(tenantId: string, opts: { maxResults?: number }): Promise<MeetConference[]>;

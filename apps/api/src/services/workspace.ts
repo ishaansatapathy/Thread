@@ -6,6 +6,8 @@ import { getGoogleOAuthConfig } from "@repo/services/env";
 import { ServiceError, serviceError } from "@repo/services/errors";
 import {
   WORKSPACE_PLUGINS,
+  driveFileUrl,
+  type DriveFileText,
   type ClassroomAnnouncement,
   type ClassroomCourse,
   type ClassroomCourseWork,
@@ -149,12 +151,12 @@ class GoogleApiError extends Error {
  * Direct Google REST call authorised with the Corsair-managed OAuth token. Used where
  * the pinned Corsair plugins cannot do the job (binary uploads, multi-row writes).
  */
-async function googleFetch<T>(
+async function authorizedFetch(
   tenantId: string,
   name: WorkspacePlugin,
   url: string,
   init: RequestInit = {},
-): Promise<{ data: T; headers: Headers }> {
+): Promise<Response> {
   let token = await getAccessToken(tenantId, name);
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await fetch(url, {
@@ -176,11 +178,21 @@ async function googleFetch<T>(
       }
       throw new GoogleApiError(message, res.status);
     }
-    const contentType = res.headers.get("content-type") ?? "";
-    const data = (contentType.includes("application/json") ? await res.json() : await res.text()) as T;
-    return { data, headers: res.headers };
+    return res;
   }
   throw new GoogleApiError("Google authorization failed", 401);
+}
+
+async function googleFetch<T>(
+  tenantId: string,
+  name: WorkspacePlugin,
+  url: string,
+  init: RequestInit = {},
+): Promise<{ data: T; headers: Headers }> {
+  const res = await authorizedFetch(tenantId, name, url, init);
+  const contentType = res.headers.get("content-type") ?? "";
+  const data = (contentType.includes("application/json") ? await res.json() : await res.text()) as T;
+  return { data, headers: res.headers };
 }
 
 function userFacingGoogleError(error: unknown, action: string): never {
@@ -231,6 +243,21 @@ function mapDriveFile(file: RawDriveFile): DriveFile | null {
 }
 
 const DRIVE_FIELDS = "id,name,mimeType,webViewLink,modifiedTime,size,parents";
+
+/** Drive's export endpoint caps at 10 MB; these formats keep Google files readable as plain text. */
+const GOOGLE_TEXT_EXPORTS: Record<string, string> = {
+  "application/vnd.google-apps.document": "text/plain",
+  "application/vnd.google-apps.spreadsheet": "text/csv",
+  "application/vnd.google-apps.presentation": "text/plain",
+};
+const MAX_READ_BYTES = 15 * 1024 * 1024;
+
+function isTextMime(mime: string) {
+  return (
+    mime.startsWith("text/") ||
+    ["application/json", "application/xml", "application/x-yaml", "application/csv", "application/rtf"].includes(mime)
+  );
+}
 
 type DocsElement = {
   paragraph?: { elements?: Array<{ textRun?: { content?: string } }> };
@@ -837,6 +864,68 @@ export class CorsairWorkspaceService implements WorkspaceService {
       return { title: data.title, text: text.slice(0, max), truncated: text.length > max };
     } catch (error) {
       userFacingGoogleError(error, "Reading the Google Doc");
+    }
+  }
+
+  async driveReadFileText(tenantId: string, input: { fileId: string; maxChars?: number }): Promise<DriveFileText> {
+    const max = input.maxChars ?? 20_000;
+    const id = encodeURIComponent(input.fileId);
+    try {
+      const { data: raw } = await googleFetch<RawDriveFile>(
+        tenantId,
+        "googledrive",
+        `https://www.googleapis.com/drive/v3/files/${id}?fields=${DRIVE_FIELDS}&supportsAllDrives=true`,
+      );
+      const file = mapDriveFile(raw);
+      if (!file) throw serviceError("NOT_FOUND", "Drive did not return that file");
+      const base = {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        url: driveFileUrl(file),
+        modifiedTime: file.modifiedTime,
+      };
+      const done = (text: string): DriveFileText => {
+        const clean = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+        return { ...base, text: clean.slice(0, max), truncated: clean.length > max };
+      };
+      const unreadable = (reason: string): DriveFileText => ({ ...base, text: "", truncated: false, unreadable: reason });
+
+      const mime = file.mimeType ?? "";
+      const exportAs = GOOGLE_TEXT_EXPORTS[mime];
+      if (exportAs) {
+        const res = await authorizedFetch(
+          tenantId,
+          "googledrive",
+          `https://www.googleapis.com/drive/v3/files/${id}/export?mimeType=${encodeURIComponent(exportAs)}`,
+        );
+        return done(await res.text());
+      }
+      if (file.isFolder) return unreadable("This is a folder. Use search_drive with its folderId to list what's inside.");
+      if (mime.startsWith("application/vnd.google-apps.")) return unreadable("This Google file type has no text export.");
+      if (file.size && file.size > MAX_READ_BYTES) {
+        return unreadable(`The file is ${Math.round(file.size / 1024 / 1024)} MB — too large to read here.`);
+      }
+
+      const isPdf = mime === "application/pdf";
+      if (!isPdf && !isTextMime(mime)) {
+        return unreadable(`Files of type ${mime || "unknown"} can't be read as text. Open it from the link instead.`);
+      }
+      const res = await authorizedFetch(
+        tenantId,
+        "googledrive",
+        `https://www.googleapis.com/drive/v3/files/${id}?alt=media&supportsAllDrives=true`,
+      );
+      if (!isPdf) return done(await res.text());
+
+      const { extractText, getDocumentProxy } = await import("unpdf");
+      const pdf = await getDocumentProxy(new Uint8Array(await res.arrayBuffer()));
+      const { text } = await extractText(pdf, { mergePages: true });
+      const pdfText = Array.isArray(text) ? text.join("\n\n") : text;
+      if (!pdfText.trim()) return unreadable("This PDF has no text layer (it's probably a scan).");
+      return done(pdfText);
+    } catch (error) {
+      userFacingGoogleError(error, "Reading the Drive file");
     }
   }
 

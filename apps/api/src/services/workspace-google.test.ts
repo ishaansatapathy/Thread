@@ -31,7 +31,9 @@ beforeEach(() => {
       body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : undefined,
     };
     calls.push(call);
-    return new Response(JSON.stringify(respond(call) ?? {}), { status: 200, headers: { "content-type": "application/json" } });
+    const body = respond(call) ?? {};
+    if (typeof body === "string") return new Response(body, { status: 200, headers: { "content-type": "text/plain" } });
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   });
 });
 
@@ -108,6 +110,32 @@ describe("formsCreate", () => {
       questions: [{ title: "Q", type: "short_answer" }],
     });
     expect(form.published).toBe(false);
+  });
+});
+
+describe("driveReadFileText", () => {
+  it("exports Google Sheets as CSV through Drive instead of downloading", async () => {
+    respond = (call) => {
+      if (call.url.includes("/export?")) return "a,b\n1,2";
+      return { id: "S1", name: "Budget", mimeType: "application/vnd.google-apps.spreadsheet", webViewLink: "https://docs.google.com/spreadsheets/d/S1/edit" };
+    };
+    const file = await new CorsairWorkspaceService().driveReadFileText("u1", { fileId: "S1" });
+    expect(calls[1]!.url).toContain("/files/S1/export?mimeType=text%2Fcsv");
+    expect(file).toMatchObject({ name: "Budget", url: "https://docs.google.com/spreadsheets/d/S1/edit", text: "a,b\n1,2" });
+  });
+
+  it("refuses binary files it can't read instead of returning garbage", async () => {
+    respond = () => ({ id: "I1", name: "photo.png", mimeType: "image/png" });
+    const file = await new CorsairWorkspaceService().driveReadFileText("u1", { fileId: "I1" });
+    expect(file.unreadable).toMatch(/image\/png/);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("refuses files over the size cap before downloading", async () => {
+    respond = () => ({ id: "P1", name: "big.pdf", mimeType: "application/pdf", size: String(40 * 1024 * 1024) });
+    const file = await new CorsairWorkspaceService().driveReadFileText("u1", { fileId: "P1" });
+    expect(file.unreadable).toMatch(/too large/);
+    expect(calls).toHaveLength(1);
   });
 });
 

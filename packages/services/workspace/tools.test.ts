@@ -41,6 +41,11 @@ function fakes(status: WorkspaceConnectionStatus = allConnected) {
       truncated: false,
     })),
     slidesReadText: vi.fn(async () => ({ title: "Deck", text: "Slide 1:\nHello" })),
+    driveReadFileText: vi.fn(async (_t: string, input: { fileId: string }) =>
+      input.fileId === "1ScanPdfAbcdef"
+        ? { id: input.fileId, name: "scan.pdf", url: "u", text: "", truncated: false, unreadable: "no text layer" }
+        : { id: input.fileId, name: "Resume.pdf", mimeType: "application/pdf", url: "https://drive.google.com/file/d/x/view", text: "Ishaan — engineer", truncated: false },
+    ),
     classroomListCourses: vi.fn(async () => [{ id: "c1", name: "Algebra" }]),
     classroomListCourseWork: vi.fn(async () => [{ id: "w1", title: "Homework 1" }]),
     classroomListAnnouncements: vi.fn(async () => [{ id: "a1", text: "Class moved to room 2" }]),
@@ -208,6 +213,29 @@ describe("executeWorkspaceTool", () => {
     const { ctx } = fakes();
     const out = await executeWorkspaceTool("read_presentation", { presentationId: "p1" }, ctx);
     expect((out?.result as { text: string }).text).toContain("[EMAIL_DATA_START]");
+  });
+
+  it("reads any Drive file from a pasted share link and fences its text", async () => {
+    const { ctx, workspace } = fakes();
+    const out = await executeWorkspaceTool(
+      "read_drive_file",
+      { fileId: "https://drive.google.com/file/d/1OFCNDMqn9ERvrq/view?usp=drivesdk" },
+      ctx,
+    );
+    expect(workspace.driveReadFileText).toHaveBeenCalledWith("u1", { fileId: "1OFCNDMqn9ERvrq", maxChars: 20_000 });
+    expect(out?.result).toMatchObject({ url: "https://drive.google.com/file/d/x/view" });
+    expect((out?.result as { text: string }).text).toContain("[EMAIL_DATA_START]");
+  });
+
+  it("passes through why a file can't be read instead of returning empty text", async () => {
+    const { ctx } = fakes();
+    const out = await executeWorkspaceTool("read_drive_file", { fileId: "1ScanPdfAbcdef" }, ctx);
+    expect(out?.result).toMatchObject({ unreadable: "no text layer" });
+    expect(out?.result).not.toHaveProperty("text");
+  });
+
+  it("accepts open?id= style Drive links", () => {
+    expect(extractGoogleFileId("https://drive.google.com/open?id=1AbCdEfGhIjKl")).toBe("1AbCdEfGhIjKl");
   });
 
   it("lists classroom courses, coursework and announcements", async () => {

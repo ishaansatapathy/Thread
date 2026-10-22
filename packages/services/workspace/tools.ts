@@ -246,6 +246,21 @@ export const WORKSPACE_TOOLS: OpenAiToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "read_drive_file",
+      description:
+        "Read the contents of ANY Drive file by id or link — PDFs, text/CSV/JSON files, Google Docs, Sheets (as CSV) and Slides. Use this whenever the user asks what a file says, to summarise it, or about a Drive link they pasted. Returns name, link and text.",
+      parameters: {
+        type: "object",
+        properties: {
+          fileId: { type: "string", description: "Drive file id, or any drive.google.com / docs.google.com link" },
+        },
+        required: ["fileId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_meet_link",
       description:
         "Create a new Google Meet link right away (nothing is sent to anyone). To invite people, put the link in queue_calendar_invite or queue_email.",
@@ -539,8 +554,8 @@ function folderTarget(args: Record<string, unknown>) {
 
 /** Accept bare ids or full Google URLs for sheets/docs. */
 export function extractGoogleFileId(value: string): string {
-  const match = value.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
-  return match?.[1] ?? value;
+  const match = value.match(/\/d\/([a-zA-Z0-9_-]{10,})/) ?? value.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  return match?.[1] ?? value.trim();
 }
 
 function notConnected(plugins: WorkspacePlugin[]) {
@@ -780,6 +795,26 @@ export async function executeWorkspaceTool(
         maxChars: 20_000,
       });
       return { result: { title: doc.title, truncated: doc.truncated, text: fenceEmailData(doc.text) } };
+    }
+
+    case "read_drive_file": {
+      const missing = await missingPlugins(ctx, ["googledrive"]);
+      if (missing.length > 0) return { result: notConnected(missing) };
+      const fileId = str(args.fileId);
+      if (!fileId) return { result: { error: "fileId is required" } };
+      const file = await workspace.driveReadFileText(tenantId, { fileId: extractGoogleFileId(fileId), maxChars: 20_000 });
+      return {
+        result: {
+          id: file.id,
+          name: fenceEmailData(file.name),
+          mimeType: file.mimeType,
+          url: file.url,
+          modifiedTime: file.modifiedTime,
+          truncated: file.truncated,
+          ...(file.unreadable ? { unreadable: file.unreadable } : { text: fenceEmailData(file.text) }),
+        },
+        card: { kind: "workspace", title: `Read: ${file.name}`, detail: file.unreadable ?? `${file.text.length} characters` },
+      };
     }
 
     case "create_meet_link": {
