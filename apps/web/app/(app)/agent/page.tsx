@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, ty
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   Bot,
   Calendar,
   CheckCircle2,
@@ -17,6 +18,7 @@ import {
   Minimize2,
   Paperclip,
   PenLine,
+  Plus,
   Search,
   Sparkles,
   ListChecks,
@@ -29,7 +31,8 @@ import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
 import { AgentMentionInput } from "~/components/app/agent-mention-input";
 import { ColumnResizer } from "~/components/app/column-resizer";
-import { AgentContextPicker } from "~/components/app/agent-context-picker";
+import { AgentContextPicker, type AttachedFile } from "~/components/app/agent-context-picker";
+import { AgentMarkdown } from "~/components/app/agent-markdown";
 import { AgentFocusChip, type AgentFocusState } from "~/components/app/agent-focus-chip";
 import { AgentSessionSidebar } from "~/components/app/agent-session-sidebar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -101,6 +104,16 @@ const SUGGESTIONS = [
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const ATTACHMENT_LINE = /^\[Attached file: (.+) \(uploadId: [0-9a-f-]{36}\)\]$/;
+
+const FULLSCREEN_KEY = "thread.agent.fullscreen";
+
+const FILE_APP_LABELS: Record<AttachedFile["app"], string> = {
+  drive: "Drive file",
+  docs: "Google Doc",
+  sheets: "Google Sheet",
+  forms: "Google Form",
+  slides: "Google Slides deck",
+};
 
 type PendingFile = {
   localId: string;
@@ -452,7 +465,18 @@ function AgentPageContent() {
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [focus, setFocus] = useState<AgentFocusState>({});
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const plusRef = useRef<HTMLDivElement>(null);
+  // Full-page chat (ChatGPT/Claude style) is the default; users can opt back into the app shell.
+  const [fullscreen, setFullscreen] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(FULLSCREEN_KEY) === "false") setFullscreen(false);
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const dragDepth = useRef(0);
@@ -876,14 +900,132 @@ function AgentPageContent() {
     await persistFocus(next);
   };
 
+  const handleAttachFile = (file: AttachedFile) => {
+    const label = FILE_APP_LABELS[file.app];
+    setInput((prev) => (prev ? `${prev.trimEnd()} ` : "") + `Using the ${label} "${file.name}" (${file.url}), `);
+  };
+
+  const toggleFullscreen = () => {
+    setFullscreen((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(FULLSCREEN_KEY, String(next));
+      } catch {
+        /* storage blocked */
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
-    if (!fullscreen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFullscreen(false);
+    if (!plusOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (plusRef.current && !plusRef.current.contains(e.target as Node)) setPlusOpen(false);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [fullscreen]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPlusOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [plusOpen]);
+
+  const modeLabel = approvalSettingsReady
+    ? agentAutoApprove
+      ? "Auto-approve on"
+      : "Queue first"
+    : ready
+      ? "Smart routing"
+      : "OpenAI required";
+
+  const composerChips =
+    focus.threadId || focus.eventId || files.length > 0 ? (
+      <div className="thread-agent-composer-chips">
+        <AgentFocusChip focus={focus} onClear={() => void handleClearFocus()} disabled={isPending} />
+        {files.map((f) => (
+          <span key={f.localId} className="thread-agent-file" data-status={f.status} title={f.error ?? f.name}>
+            {f.status === "uploading" ? <Loader2 size={11} className="thread-spin" /> : <FileUp size={11} />}
+            <span className="thread-agent-file-name">{f.name}</span>
+            <span className="thread-agent-file-size">{f.status === "error" ? "failed" : formatBytes(f.size)}</span>
+            <button
+              type="button"
+              aria-label={`Remove ${f.name}`}
+              onClick={() => setFiles((prev) => prev.filter((x) => x.localId !== f.localId))}
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+      </div>
+    ) : null;
+
+  const composerTools = (
+    <>
+      <div className="thread-agent-plus" ref={plusRef}>
+        <button
+          type="button"
+          className="thread-agent-plus-btn"
+          onClick={() => setPlusOpen((v) => !v)}
+          disabled={isPending}
+          aria-label="Add context or files"
+          aria-expanded={plusOpen}
+          title="Add context or files"
+        >
+          <Plus size={17} />
+        </button>
+        {plusOpen ? (
+          <div className="thread-agent-plus-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setPlusOpen(false);
+                setPickerOpen(true);
+              }}
+            >
+              <Paperclip size={14} />
+              <span>
+                <strong>Attach from Google</strong>
+                <small>Mail, Calendar, Drive, Docs, Sheets, Forms, Slides</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setPlusOpen(false);
+                fileInputRef.current?.click();
+              }}
+            >
+              <Upload size={14} />
+              <span>
+                <strong>Upload files</strong>
+                <small>Up to 4 MB each, or drag them in</small>
+              </span>
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <span className="thread-agent-mode" data-on={agentAutoApprove ? "true" : undefined}>
+        {modeLabel}
+      </span>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          if (e.target.files) addFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+    </>
+  );
+
+  const showEmpty = messages.length === 0 && !status.isLoading && linkParamsReady && !preparingDeepLink;
 
   return (
     <div className="thread-app-page">
@@ -905,7 +1047,7 @@ function AgentPageContent() {
           label="Resize chat list"
         />
 
-        <div className="thread-agent-page">
+        <div className="thread-agent-page" data-has-actions={lastActions.length > 0 ? "true" : undefined}>
           <ColumnResizer
             cssVar="--agent-actions-w"
             storageKey="thread.layout.agent-actions"
@@ -932,194 +1074,137 @@ function AgentPageContent() {
               </div>
             ) : null}
             <div className="thread-agent-pane-head">
+              {fullscreen ? (
+                <Link href="/brief" className="thread-agent-home" title="Back to Thread">
+                  <ArrowLeft size={14} />
+                </Link>
+              ) : null}
               <Bot size={14} style={{ opacity: 0.7 }} />
               Thread Agent
-              <span className="thread-mono-tag" style={{ marginLeft: "auto" }}>
-                {approvalSettingsReady
-                  ? agentAutoApprove
-                    ? "Auto-approve · agent"
-                    : "Queue first · agent"
-                  : ready
-                    ? status.data?.model ?? "Smart routing"
-                    : "OpenAI required"}
-              </span>
+              <span style={{ marginLeft: "auto" }} />
               {isPending ? (
-                <button
-                  type="button"
-                  className="thread-btn-ghost"
-                  style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6 }}
-                  onClick={stopStream}
-                  title="Stop current request"
-                >
-                  <Square size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+                <button type="button" className="thread-agent-head-btn" onClick={stopStream} title="Stop current request">
+                  <Square size={11} />
                   Stop
                 </button>
               ) : null}
               <button
                 type="button"
+                className="thread-agent-head-btn"
+                onClick={() => void handleNewChat()}
+                disabled={isPending || createSession.isPending}
+                title="New chat"
+              >
+                <PenLine size={12} />
+                New chat
+              </button>
+              <button
+                type="button"
                 className="thread-agent-fullscreen-btn"
-                onClick={() => setFullscreen((v) => !v)}
+                onClick={toggleFullscreen}
                 aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-                title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+                title={fullscreen ? "Show the Thread sidebar" : "Full screen"}
               >
                 {fullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
             </div>
 
-            <div className="thread-agent-feed" ref={feedRef}>
-              {status.isError ? (
-                <QueryErrorState
-                  title="Agent unavailable"
-                  message={status.error?.message ?? "Could not reach the agent service"}
-                  onRetry={() => void status.refetch()}
-                />
-              ) : null}
-              {sessionsQuery.isError ? (
-                <QueryErrorState
-                  title="Sessions unavailable"
-                  message={sessionsQuery.error?.message ?? "Could not load chat sessions"}
-                  onRetry={() => void sessionsQuery.refetch()}
-                />
-              ) : null}
-              {(status.isLoading || !linkParamsReady) && messages.length === 0 && !preparingDeepLink ? (
-                <SkeletonList count={3} />
-              ) : null}
-              {preparingDeepLink ? (
-                <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
-                  <Loader2 size={13} className="thread-spin" />
-                  <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>
-                    Preparing reply from Brief…
-                  </span>
-                </div>
-              ) : null}
-              {messages.length === 0 && !status.isLoading && linkParamsReady && !preparingDeepLink ? (
-                <div
-                  className="thread-rotator-bubble"
-                  data-approval={approvalSettingsReady ? (agentAutoApprove ? "on" : "off") : undefined}
-                  style={{ fontSize: 13, maxWidth: "100%" }}
-                >
-                  <Bot size={13} style={{ opacity: 0.6, flexShrink: 0 }} />
-                  <span>{agentWelcomeCopy({ agentAutoApprove, calendarAutoApprove, settingsReady: approvalSettingsReady })}</span>
-                </div>
-              ) : null}
+            <div className="thread-agent-feed" ref={feedRef} data-empty={showEmpty ? "true" : undefined}>
+              <div className="thread-chat-column">
+                {status.isError ? (
+                  <QueryErrorState
+                    title="Agent unavailable"
+                    message={status.error?.message ?? "Could not reach the agent service"}
+                    onRetry={() => void status.refetch()}
+                  />
+                ) : null}
+                {sessionsQuery.isError ? (
+                  <QueryErrorState
+                    title="Sessions unavailable"
+                    message={sessionsQuery.error?.message ?? "Could not load chat sessions"}
+                    onRetry={() => void sessionsQuery.refetch()}
+                  />
+                ) : null}
+                {(status.isLoading || !linkParamsReady) && messages.length === 0 && !preparingDeepLink ? (
+                  <SkeletonList count={3} />
+                ) : null}
+                {preparingDeepLink ? (
+                  <div className="thread-chat-row" data-role="assistant">
+                    <span className="thread-chat-avatar">
+                      <Loader2 size={13} className="thread-spin" />
+                    </span>
+                    <div className="thread-chat-status">Preparing reply from Brief…</div>
+                  </div>
+                ) : null}
 
-              {messages.map((msg, i) => (
-                <div
-                  key={`${msg.role}-${i}`}
-                  className="thread-rotator-bubble thread-agent-msg"
-                  data-user={msg.role === "user" ? "true" : undefined}
-                  style={{
-                    alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                    maxWidth: "88%",
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {msg.role === "assistant" ? <Bot size={13} style={{ opacity: 0.55, flexShrink: 0 }} /> : null}
-                  <span style={{ whiteSpace: "pre-wrap" }}>
-                    {typeof msg.content === "string"
-                      ? renderMessageContent(msg.content)
-                      : JSON.stringify(msg.content)}
-                  </span>
-                </div>
-              ))}
+                {showEmpty ? (
+                  <div className="thread-chat-hero">
+                    <span className="thread-chat-hero-mark">
+                      <Bot size={20} />
+                    </span>
+                    <h2>What should we get done?</h2>
+                    <p>
+                      {agentWelcomeCopy({ agentAutoApprove, calendarAutoApprove, settingsReady: approvalSettingsReady })}
+                    </p>
+                    <div className="thread-agent-suggest">
+                      {SUGGESTIONS.map((s) => (
+                        <button key={s.label} type="button" onClick={() => send(s.prompt)} disabled={!ready}>
+                          <s.icon size={13} />
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
-              {isPending ? (
-                <div className="thread-rotator-bubble thread-agent-msg" style={{ fontSize: 13 }}>
-                  <Loader2 size={13} className="thread-spin" />
-                  <span style={{ color: "var(--thread-muted)", fontStyle: "italic" }}>
-                    {streamStatus ?? "Thinking…"}
-                  </span>
-                  <button
-                    type="button"
-                    className="thread-btn-ghost"
-                    style={{ fontSize: 11, padding: "4px 10px", marginLeft: "auto" }}
-                    onClick={stopStream}
-                  >
-                    Stop
-                  </button>
-                </div>
-              ) : null}
+                {messages.map((msg, i) =>
+                  msg.role === "user" ? (
+                    <div key={`user-${i}`} className="thread-chat-row" data-role="user">
+                      <div className="thread-chat-user">
+                        {typeof msg.content === "string" ? renderMessageContent(msg.content) : JSON.stringify(msg.content)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={`assistant-${i}`} className="thread-chat-row" data-role="assistant">
+                      <span className="thread-chat-avatar">
+                        <Bot size={14} />
+                      </span>
+                      <div className="thread-chat-assistant">
+                        <AgentMarkdown text={typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)} />
+                      </div>
+                    </div>
+                  ),
+                )}
 
-              {!isPending && messages.length === 0 ? (
-                <div className="thread-agent-suggest">
-                  {SUGGESTIONS.map((s) => (
-                    <button key={s.label} type="button" onClick={() => send(s.prompt)} disabled={!ready}>
-                      <s.icon size={13} />
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+                {isPending && messages.at(-1)?.role !== "assistant" ? (
+                  <div className="thread-chat-row" data-role="assistant">
+                    <span className="thread-chat-avatar">
+                      <Loader2 size={13} className="thread-spin" />
+                    </span>
+                    <div className="thread-chat-status">{streamStatus ?? "Thinking…"}</div>
+                  </div>
+                ) : isPending && streamStatus ? (
+                  <div className="thread-chat-row" data-role="assistant">
+                    <span className="thread-chat-avatar" aria-hidden />
+                    <div className="thread-chat-status">{streamStatus}</div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <form
+              className="thread-chat-form"
               onSubmit={(e) => {
                 e.preventDefault();
                 send(input);
               }}
             >
-              <div className="thread-agent-composer-wrap">
-                <div className="thread-agent-focus-row">
-                  <AgentFocusChip focus={focus} onClear={() => void handleClearFocus()} disabled={isPending} />
-                  <button
-                    type="button"
-                    className="thread-agent-attach-btn"
-                    onClick={() => setPickerOpen((v) => !v)}
-                    disabled={isPending}
-                  >
-                    <Paperclip size={12} />
-                    Attach
-                  </button>
-                  <button
-                    type="button"
-                    className="thread-agent-attach-btn"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isPending}
-                    title="Upload files (or drag them into the chat)"
-                  >
-                    <Upload size={12} />
-                    Upload file
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    hidden
-                    onChange={(e) => {
-                      if (e.target.files) addFiles(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                </div>
-                {files.length > 0 ? (
-                  <div className="thread-agent-files">
-                    {files.map((f) => (
-                      <span key={f.localId} className="thread-agent-file" data-status={f.status} title={f.error ?? f.name}>
-                        {f.status === "uploading" ? (
-                          <Loader2 size={11} className="thread-spin" />
-                        ) : (
-                          <FileUp size={11} />
-                        )}
-                        <span className="thread-agent-file-name">{f.name}</span>
-                        <span className="thread-agent-file-size">
-                          {f.status === "error" ? "failed" : formatBytes(f.size)}
-                        </span>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${f.name}`}
-                          onClick={() => setFiles((prev) => prev.filter((x) => x.localId !== f.localId))}
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
+              <div className="thread-chat-column">
                 <AgentContextPicker
                   open={pickerOpen}
                   onClose={() => setPickerOpen(false)}
                   onSelect={(next) => void handleAttachFocus(next)}
+                  onSelectFile={handleAttachFile}
                   disabled={isPending}
                 />
                 <AgentMentionInput
@@ -1127,12 +1212,17 @@ function AgentPageContent() {
                   onChange={setInput}
                   onSubmit={() => send(input)}
                   disabled={isPending}
+                  header={composerChips}
+                  toolbar={composerTools}
                   placeholder={
-                    ready
-                      ? "Ask Thread Agent… type @ to mention someone"
-                      : "Type @ to pick a sender · set OPENAI_API_KEY to chat"
+                    ready ? "Message Thread Agent… type @ to mention someone" : "Set OPENAI_API_KEY to chat"
                   }
                 />
+                <p className="thread-chat-footnote">
+                  {agentAutoApprove
+                    ? "Auto-approve is on for agent emails. Workspace changes still wait in Queue."
+                    : "Nothing is sent, saved or posted until you approve it in Queue."}
+                </p>
               </div>
             </form>
           </div>

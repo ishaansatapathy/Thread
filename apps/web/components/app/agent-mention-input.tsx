@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, SendHorizonal, UserRound } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowUp, Loader2, UserRound } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import type { RouterOutputs } from "@repo/trpc/client";
@@ -26,7 +26,13 @@ type AgentMentionInputProps = {
   onSubmit: () => void;
   disabled?: boolean;
   placeholder?: string;
+  /** Rendered at the bottom-left of the composer (attach / upload controls). */
+  toolbar?: ReactNode;
+  /** Rendered above the text box (focus chips, attached files). */
+  header?: ReactNode;
 };
+
+const MAX_TEXTAREA_PX = 220;
 
 export function AgentMentionInput({
   value,
@@ -34,8 +40,17 @@ export function AgentMentionInput({
   onSubmit,
   disabled,
   placeholder,
+  toolbar,
+  header,
 }: AgentMentionInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_PX)}px`;
+  }, [value]);
   const [cursor, setCursor] = useState(0);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -146,7 +161,7 @@ export function AgentMentionInput({
     });
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showSuggestions && suggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -171,7 +186,7 @@ export function AgentMentionInput({
       }
     }
 
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSubmit();
     }
@@ -224,8 +239,10 @@ export function AgentMentionInput({
       ) : null}
 
       <div className="thread-agent-composer">
-        <input
+        {header}
+        <textarea
           ref={inputRef}
+          rows={1}
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
@@ -239,15 +256,18 @@ export function AgentMentionInput({
           aria-label="Agent message"
           autoComplete="off"
         />
-        <button
-          type="button"
-          className="thread-agent-send"
-          disabled={disabled || !value.trim()}
-          aria-label="Send"
-          onClick={onSubmit}
-        >
-          <SendHorizonal size={16} />
-        </button>
+        <div className="thread-agent-composer-bar">
+          <div className="thread-agent-composer-tools">{toolbar}</div>
+          <button
+            type="button"
+            className="thread-agent-send"
+            disabled={disabled || !value.trim()}
+            aria-label="Send"
+            onClick={onSubmit}
+          >
+            <ArrowUp size={17} />
+          </button>
+        </div>
       </div>
     </div>
   );
