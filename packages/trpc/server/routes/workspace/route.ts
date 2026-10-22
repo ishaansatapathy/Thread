@@ -66,6 +66,7 @@ export const workspaceRouter = router({
       z.object({
         app: z.enum(["drive", "docs", "sheets", "forms", "slides"]),
         query: z.string().trim().max(200).optional(),
+        folderId: z.string().trim().min(1).optional(),
       }),
     )
     .output(
@@ -97,6 +98,7 @@ export const workspaceRouter = router({
                   : undefined;
         const files = await getWorkspaceService().driveListFiles(ctx.user.id, {
           query: input.query || undefined,
+          folderId: input.query ? undefined : input.folderId,
           mimeType,
           maxResults: 30,
         });

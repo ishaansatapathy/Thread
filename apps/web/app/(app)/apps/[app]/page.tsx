@@ -146,26 +146,58 @@ function fileIcon(mimeType: string | undefined, isFolder: boolean) {
   return HardDrive;
 }
 
+type FolderCrumb = { id: string; name: string };
+
 function FileList({ app, config }: { app: FileListSlug; config: AppConfig }) {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const [folderStack, setFolderStack] = useState<FolderCrumb[]>([]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setQuery(input.trim()), 300);
     return () => window.clearTimeout(id);
   }, [input]);
 
-  const files = trpc.workspace.listFiles.useQuery({ app, query: query || undefined }, { staleTime: 30_000 });
+  const activeFolder = folderStack[folderStack.length - 1];
+  const files = trpc.workspace.listFiles.useQuery(
+    { app, query: query || undefined, folderId: activeFolder?.id },
+    { staleTime: 30_000 },
+  );
+
+  // Folders first, newest within each group — matches how Drive itself sorts a listing.
+  const sorted = [...(files.data?.files ?? [])].sort((a, b) => Number(b.isFolder) - Number(a.isFolder));
+
+  const openFolder = (folder: { id: string; name: string }) => {
+    setInput("");
+    setFolderStack((prev) => [...prev, { id: folder.id, name: folder.name }]);
+  };
 
   return (
     <section className="thread-appx-panel">
       <div className="thread-appx-panel-head">
-        <h3>{query ? "Results" : "Recent"}</h3>
+        <h3>{query ? "Results" : activeFolder ? activeFolder.name : "Recent"}</h3>
         <label className="thread-appx-search">
           <Search size={13} />
           <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Search by name" />
         </label>
       </div>
+
+      {!query && folderStack.length > 0 ? (
+        <div className="thread-appx-breadcrumb">
+          <button type="button" onClick={() => setFolderStack([])}>
+            <Folder size={12} />
+            Home
+          </button>
+          {folderStack.map((crumb, i) => (
+            <span key={crumb.id}>
+              <span className="thread-appx-breadcrumb-sep">/</span>
+              <button type="button" onClick={() => setFolderStack((prev) => prev.slice(0, i + 1))}>
+                {crumb.name}
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {files.isLoading ? (
         <div className="thread-appx-empty">
@@ -173,18 +205,31 @@ function FileList({ app, config }: { app: FileListSlug; config: AppConfig }) {
         </div>
       ) : files.isError ? (
         <div className="thread-appx-empty">{files.error.message}</div>
-      ) : !files.data?.files.length ? (
-        <div className="thread-appx-empty">{query ? `Nothing matches "${query}".` : "No files yet."}</div>
+      ) : sorted.length === 0 ? (
+        <div className="thread-appx-empty">
+          {query ? `Nothing matches "${query}".` : activeFolder ? "This folder is empty." : "No files yet."}
+        </div>
       ) : (
         <ul className="thread-appx-list">
-          {files.data.files.map((file) => {
+          {sorted.map((file) => {
             const Icon = fileIcon(file.mimeType, file.isFolder);
             return (
               <li key={file.id} className="thread-appx-row">
-                <span className="thread-appx-row-icon">
-                  <Icon size={14} />
-                </span>
-                <span className="thread-appx-row-name">{file.name}</span>
+                {file.isFolder ? (
+                  <button type="button" className="thread-appx-row-open" onClick={() => openFolder(file)}>
+                    <span className="thread-appx-row-icon">
+                      <Icon size={14} />
+                    </span>
+                    <span className="thread-appx-row-name">{file.name}</span>
+                  </button>
+                ) : (
+                  <>
+                    <span className="thread-appx-row-icon">
+                      <Icon size={14} />
+                    </span>
+                    <span className="thread-appx-row-name">{file.name}</span>
+                  </>
+                )}
                 <span className="thread-appx-row-meta">{formatWhen(file.modifiedTime)}</span>
                 <span className="thread-appx-row-actions">
                   {config.itemPrompt && !file.isFolder ? (

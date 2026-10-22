@@ -919,6 +919,50 @@
   color: var(--thread-muted);
 }
 
+/* A folder row's icon+name are wrapped in a button so they stay clickable while still
+   participating in .thread-appx-row's own grid columns (icon / name / meta / actions). */
+.thread-appx-row-open {
+  display: contents;
+  cursor: pointer;
+}
+
+.thread-appx-row-open .thread-appx-row-name {
+  cursor: pointer;
+}
+
+.thread-appx-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 14px 0;
+  font-family: var(--thread-mono);
+  font-size: 11px;
+}
+
+.thread-appx-breadcrumb button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--thread-dim);
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.thread-appx-breadcrumb button:hover {
+  color: var(--thread-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.thread-appx-breadcrumb-sep {
+  color: var(--thread-dim);
+  opacity: 0.5;
+  margin: 0 1px;
+}
+
 .thread-appx-row-name {
   font-size: 13px;
   color: var(--thread-text);
