@@ -1,7 +1,7 @@
 // Thread web apps this extension may connect to. Keep in sync with manifest.json
 // (host_permissions + externally_connectable) when adding a domain.
 export const THREAD_ORIGINS = [
-  { label: "Thread", origin: "https://thread-web.vercel.app" },
+  { label: "Thread", origin: "https://thread.ishaandev.co.in" },
   { label: "Local dev (localhost:3000)", origin: "http://localhost:3000" },
 ];
 
