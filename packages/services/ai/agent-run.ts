@@ -5,6 +5,7 @@ import type { ApprovalDefaults } from "../settings";
 import { buildFocusSystemAppendix, type AgentFocus } from "./agent-focus";
 import type { AgentHistoryMessage } from "./agent";
 import { buildSystemPromptFor } from "./agent-internals";
+import { buildPageContextAppendix, type AgentPageContext } from "./agent-page-context";
 import { detectTopicShift } from "./agent-topic-shift";
 import { formatToolMemoryForPrompt, type AgentToolMemoryEntry } from "./agent-tool-memory";
 
@@ -16,6 +17,8 @@ export type AgentRunInput = {
   toolMemory?: AgentToolMemoryEntry[];
   /** Set when the user is talking to the agent from inside a Thread meeting room. */
   meetingId?: string;
+  /** Text the user picked on a web page through Captain Thread (browser extension). */
+  pageContext?: AgentPageContext;
 };
 
 async function buildMeetingAppendix(tenantId: string, meetingId: string | undefined): Promise<string> {
@@ -59,7 +62,11 @@ export async function prepareAgentRun(
   ]);
   const toolMemoryAppendix = formatToolMemoryForPrompt(input.toolMemory ?? []);
   const systemPrompt =
-    buildSystemPromptFor(input.userEmail, approvalDefaults) + toolMemoryAppendix + focusAppendix + meetingAppendix;
+    buildSystemPromptFor(input.userEmail, approvalDefaults) +
+    toolMemoryAppendix +
+    focusAppendix +
+    meetingAppendix +
+    buildPageContextAppendix(input.pageContext);
 
   return {
     effectiveFocus,

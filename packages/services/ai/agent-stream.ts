@@ -30,6 +30,7 @@ import { createToolMemoryTracker, prepareAgentRun } from "./agent-run";
 import { summarizeToolResult } from "./agent-tool-memory";
 import type { AgentToolMemoryEntry } from "./agent-tool-memory";
 import type { AgentFocus } from "./agent-focus";
+import type { AgentPageContext } from "./agent-page-context";
 
 export async function runAgentChatStream(
   tenantId: string,
@@ -40,6 +41,7 @@ export async function runAgentChatStream(
     focus?: AgentFocus;
     toolMemory?: AgentToolMemoryEntry[];
     meetingId?: string;
+    pageContext?: AgentPageContext;
   },
   onToolCall: (toolName: string) => void,
   onTokenDelta?: (delta: string) => void,
