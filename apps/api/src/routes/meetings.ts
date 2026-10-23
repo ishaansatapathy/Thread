@@ -25,7 +25,13 @@ import {
   listMeetings,
   MAX_CHUNK_AUDIO_BYTES,
   MAX_MEETING_AUDIO_BYTES,
+  refreshMeetingNotes,
 } from "../services/meetings";
+
+/** "https://meet.google.com/abc-defg-hij?authuser=0" → "abc-defg-hij" */
+function meetCodeOf(url: string): string | null {
+  return url.match(/meet\.google\.com\/([a-z]{3,4}-[a-z]{4}-[a-z]{3,4})/i)?.[1]?.toLowerCase() ?? null;
+}
 
 const authService = new AuthService();
 
@@ -99,11 +105,26 @@ meetingsRouter.get("/", async (req, res) => {
   const user = await authService.resolveSession(req, res);
   if (!user) return res.status(401).json({ error: "Authentication required" });
 
+  // ?meetUrl=https://meet.google.com/abc-defg-hij → only the room(s) for that call (newest first).
+  const meetCode = typeof req.query.meetUrl === "string" ? meetCodeOf(req.query.meetUrl) : null;
+
   try {
-    const meetings = await listMeetings(user.id);
-    return res.json({ meetings });
+    const meetings = await listMeetings(user.id, meetCode ? 100 : 30);
+    return res.json({ meetings: meetCode ? meetings.filter((m) => m.meetUrl && meetCodeOf(m.meetUrl) === meetCode) : meetings });
   } catch (error) {
     return sendServiceError(res, error, "Could not list meetings.");
+  }
+});
+
+meetingsRouter.post("/:id/refresh-notes", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+
+  try {
+    return res.json(await refreshMeetingNotes(user.id, req.params.id));
+  } catch (error) {
+    return sendServiceError(res, error, "Could not update the notes.");
   }
 });
 

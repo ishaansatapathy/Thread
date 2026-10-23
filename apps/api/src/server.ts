@@ -33,6 +33,7 @@ import { agentStreamRouter } from "./routes/agent-stream";
 import { agentUploadsRouter } from "./routes/agent-uploads";
 import { meetingsRouter } from "./routes/meetings";
 import { speechRouter } from "./routes/speech";
+import { extensionRouter } from "./routes/extension";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
 import { enrichThreadOpenApi, type OpenApiDocumentWithPaths } from "./openapi-enrichment";
@@ -75,6 +76,10 @@ function requireTrustedOrigin(req: Request, res: Response, next: NextFunction) {
   const origin = normalizeOrigin(req.headers.origin);
   const referer = normalizeOrigin(req.headers.referer);
   const observed = origin ?? referer;
+
+  // Bearer-only requests (the browser extension) carry no ambient credentials, so there is
+  // nothing for a cross-site request to ride on — CSRF/origin checks don't apply.
+  if (!hasCookieAuth && /^Bearer\s+\S+$/.test(String(req.headers.authorization ?? ""))) return next();
 
   if (observed && !trustedOrigins().has(observed)) {
     return res.status(403).json({ error: "Untrusted request origin" });
@@ -342,6 +347,7 @@ app.use("/agent/stream", agentStreamRouter);
 app.use("/agent/uploads", agentUploadsRouter);
 app.use("/meetings", meetingsRouter);
 app.use("/speech", speechRouter);
+app.use("/extension", extensionRouter);
 app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);
 
