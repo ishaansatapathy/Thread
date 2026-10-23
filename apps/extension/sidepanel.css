@@ -542,6 +542,21 @@ button:disabled {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.msg pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  white-space: pre;
+}
+
+.msg pre code {
+  padding: 0;
+  background: none;
+}
+
 .action-card {
   display: flex;
   flex-direction: column;

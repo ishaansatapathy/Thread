@@ -83,14 +83,23 @@ export const api = {
   },
 
   /**
-   * Streams one agent turn scoped to a meeting. Calls onToken / onStatus as SSE events
-   * arrive and resolves with { reply, actions, toolMemory }.
+   * Streams one agent turn, scoped to a meeting (meetingId) or to text picked on a web page
+   * (pageContext, from Captain Thread). Calls onToken / onStatus as SSE events arrive and
+   * resolves with { reply, actions, toolMemory }.
    */
-  async agent({ message, history, toolMemory, meetingId, email }, { onToken, onStatus, signal }) {
+  async agent({ message, history, toolMemory, meetingId, pageContext, email }, { onToken, onStatus, signal }) {
     const res = await request("/agent/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history, toolMemory, focusCleared: true, focusMeetingId: meetingId, userEmail: email ?? undefined }),
+      body: JSON.stringify({
+        message,
+        history,
+        toolMemory,
+        focusCleared: true,
+        focusMeetingId: meetingId,
+        pageContext,
+        userEmail: email ?? undefined,
+      }),
       signal,
     });
     if (!res.ok || !res.body) {

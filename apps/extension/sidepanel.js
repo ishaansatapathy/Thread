@@ -47,6 +47,7 @@ const state = {
   ask: { messages: [], pending: false, status: null, actions: [], toolMemory: [], abort: null, draft: "" },
   recent: null,
   gnaniReady: true,
+  captain: null, // Captain Thread settings from the service worker
 };
 
 // ── tiny DOM helper (text is always set via textContent) ─────────────────────
@@ -173,6 +174,47 @@ async function refreshMeeting() {
   } catch (error) {
     if (error instanceof AuthError) onAuthLost(error);
   }
+}
+
+async function loadCaptain() {
+  const res = await chrome.runtime.sendMessage({ type: "captain:init" }).catch(() => null);
+  if (res?.ok) state.captain = res.settings;
+}
+
+async function setCaptain(patch) {
+  const res = await chrome.runtime.sendMessage({ type: "captain:set", ...patch }).catch(() => null);
+  if (res?.ok) state.captain = res.settings;
+  render();
+}
+
+function captainCard() {
+  const c = state.captain;
+  if (!c) return null;
+  let host = null;
+  try {
+    host = state.tab?.url?.startsWith("http") ? new URL(state.tab.url).hostname : null;
+  } catch {}
+  const toggle = (label, checked, onchange) =>
+    el("label", { class: "check" }, el("input", { type: "checkbox", checked, onchange: (e) => onchange(e.target.checked) }), label);
+  return el(
+    "div",
+    { class: "card" },
+    el("h2", {}, "Captain Thread"),
+    el("p", { class: "muted" }, "Got a doubt on any site? Select the text and tap Ask Captain — or press Alt+Shift+C and draw around anything."),
+    toggle("Floating Captain on pages", c.dock, (on) => setCaptain({ dock: on })),
+    toggle("Ask bar when I select text", c.selection, (on) => setCaptain({ selection: on })),
+    host && c.offSites.includes(host)
+      ? el("button", { class: "link", type: "button", onclick: () => setCaptain({ siteOff: false, host }) }, `Turn Captain back on for ${host}`)
+      : null,
+    c.offSites.length
+      ? el(
+          "p",
+          { class: "hint" },
+          `Off on ${c.offSites.length} site${c.offSites.length === 1 ? "" : "s"}. `,
+          el("button", { class: "link", type: "button", onclick: () => setCaptain({ resetSites: true }) }, "Turn on everywhere"),
+        )
+      : null,
+  );
 }
 
 async function loadRecent() {
@@ -507,6 +549,7 @@ function idleView() {
       el("button", { class: "primary block", type: "button", onclick: () => chrome.tabs.create({ url: "https://meet.google.com/new" }) }, "Start a new Meet"),
       el("p", { class: "hint" }, "Already in a call? Switch to its tab — this panel follows you."),
     ),
+    captainCard(),
     recent && recent.length
       ? el(
           "div",
@@ -853,7 +896,7 @@ async function boot() {
   const stored = await chrome.storage.local.get(["language", "includeMic"]);
   if (stored.language) state.language = stored.language;
   if (typeof stored.includeMic === "boolean") state.includeMic = stored.includeMic;
-  await loadAuth();
+  await Promise.all([loadAuth(), loadCaptain()]);
   state.meetCode = null; // force a reload for the current tab
   await refreshActiveTab();
 }

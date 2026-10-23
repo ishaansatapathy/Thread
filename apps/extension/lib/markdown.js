@@ -1,5 +1,6 @@
 // Tiny, safe markdown for agent replies: everything is HTML-escaped first, then only
-// bold, inline code, http(s) links, bullet/numbered lists and paragraphs are turned back on.
+// bold, inline code, fenced code blocks, http(s) links, bullet/numbered lists and paragraphs
+// are turned back on.
 
 function escapeHtml(text) {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -23,7 +24,22 @@ export function renderMarkdown(source) {
     items = [];
   };
 
+  let code = null; // lines of an open ``` block (an unclosed one still renders while streaming)
   for (const raw of escapeHtml(source ?? "").split("\n")) {
+    if (/^\s*```/.test(raw)) {
+      if (code) {
+        html.push(`<pre><code>${code.join("\n")}</code></pre>`);
+        code = null;
+      } else {
+        flush();
+        code = [];
+      }
+      continue;
+    }
+    if (code) {
+      code.push(raw);
+      continue;
+    }
     const line = raw.trimEnd();
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
     const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
@@ -40,5 +56,6 @@ export function renderMarkdown(source) {
     html.push(heading ? `<p><strong>${inline(heading[1])}</strong></p>` : `<p>${inline(line)}</p>`);
   }
   flush();
+  if (code) html.push(`<pre><code>${code.join("\n")}</code></pre>`);
   return html.join("");
 }

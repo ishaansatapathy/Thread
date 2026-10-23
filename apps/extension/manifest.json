@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Thread — Meeting copilot",
+  "name": "Thread — Captain Thread & Meet copilot",
   "short_name": "Thread",
-  "version": "0.1.0",
-  "description": "Live multilingual transcript (Gnani), running notes and the Thread agent — right inside Google Meet.",
+  "version": "0.2.0",
+  "description": "Captain Thread solves your doubts on any site — select text or draw around anything. Plus live Gnani transcripts, notes and the Thread agent inside Google Meet.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv9u/TwPgE6QomIQKtPjC6ax3BuPerwM5rBRF5jUK5AD2ltMNX7prdlCrsi3Bw80JefSKqu0nVJBGMAieGISmM8ugeC0BZznrX9C82ozHKx5bspe3bjbGpi6lma0aSDTtIAL8ytKCJmtFAkl7lIGFL5mokOStNQ1PkFNSt1k/hkwhXXrLtFf1X/TXxO8OSM2HlvAoTGh9EAmuOINJCrj/l+GPMXA0lZ3FM1YyyxoAGodzl8/5CAjSZjZabyRd12qxjsg6GDKq41Dr9z1bS7rc/3T0ZeAi52quVpq8wq/d+FnShGzP0mfDy81aPOHMCJwveElA2fGqyY5mkmhKfsu7ewIDAQAB",
   "minimum_chrome_version": "116",
   "icons": {
@@ -26,11 +26,27 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "captain/captain-art.js",
+        "captain/captain.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
   "permissions": [
     "sidePanel",
     "tabCapture",
     "activeTab",
-    "storage"
+    "storage",
+    "contextMenus",
+    "scripting"
   ],
   "host_permissions": [
     "https://meet.google.com/*",
@@ -53,6 +69,12 @@
         "default": "Alt+Shift+T"
       },
       "description": "Open Thread on this tab"
+    },
+    "captain-area": {
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "Captain Thread: draw around something to ask about it"
     }
   }
 }

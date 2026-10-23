@@ -1,9 +1,30 @@
+import {
+  handleCaptainMenuClick,
+  handleCaptainMessage,
+  handleCaptainPort,
+  registerCaptainMenus,
+  sendToCaptain,
+} from "./captain/captain-background.js";
 import { isAllowedOrigin, meetCodeFromUrl } from "./config.js";
+
+// The auth token lives in storage.local; keep it out of reach of content scripts.
+chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }).catch(() => {});
 
 // Clicking the toolbar icon opens the Thread side panel (and grants tab capture for that tab).
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  registerCaptainMenus();
+});
+
+// Captain Thread: settings + "ask" streaming for the in-page assistant.
+chrome.runtime.onMessage.addListener(handleCaptainMessage);
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "captain") handleCaptainPort(port);
+});
+chrome.contextMenus.onClicked.addListener(handleCaptainMenuClick);
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === "captain-area" && tab?.id) sendToCaptain(tab.id, { type: "captain:area" });
 });
 
 // The Thread web app hands us a token from its "Connect extension" page. The base URL is
@@ -28,7 +49,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       name: typeof message.name === "string" ? message.name : null,
       expiresAt: typeof message.expiresAt === "string" ? message.expiresAt : null,
     };
-    chrome.storage.local.set({ auth }).then(() => sendResponse({ ok: true }));
+    chrome.storage.local.set({ auth, lastBaseUrl: sender.origin }).then(() => sendResponse({ ok: true }));
     return true;
   }
   sendResponse({ ok: false, error: "Unknown message" });
