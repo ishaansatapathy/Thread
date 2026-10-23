@@ -260,7 +260,11 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  const meta = PAGE_META[pathname ?? "/inbox"] ?? { title: "Thread", sub: "" };
+  const meta =
+    PAGE_META[pathname ?? "/inbox"] ??
+    (pathname?.startsWith("/meet/")
+      ? { title: "Meeting room", sub: "Live transcript by Gnani · ask Thread anything" }
+      : { title: "Thread", sub: "" });
 
   return (
     <div className="thread-page thread-app">

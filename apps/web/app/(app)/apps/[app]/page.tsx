@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import {
   ArrowUpRight,
   ClipboardList,
+  Clock3,
   FileSpreadsheet,
   FileText,
   Folder,
+  FolderTree,
   GraduationCap,
   HardDrive,
   Loader2,
@@ -19,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
+import { MeetHub } from "~/components/app/meet-hub";
 import { useWorkspaceConnections, type AppKey } from "~/components/app/thread-workspace-connect";
 
 type AppSlug = "drive" | "docs" | "sheets" | "meet" | "forms" | "slides" | "classroom";
@@ -78,7 +81,7 @@ const APPS: Record<AppSlug, AppConfig> = {
     status: "googlemeet",
     connectPath: "/api-connect/workspace/googlemeet",
     icon: Video,
-    blurb: "Create meeting links and turn transcripts into notes. Transcripts need transcription turned on in Meet.",
+    blurb: "Start or join a Meet and Thread listens in — live multilingual transcript by Gnani, running notes, and an agent you can talk to mid-call.",
     actions: [
       { label: "New meeting link", prompt: "Create a Google Meet link for me." },
       { label: "Notes from last meeting", prompt: "Get the transcript of my most recent Google Meet and write meeting notes with action items." },
@@ -256,7 +259,7 @@ function MeetingList() {
   return (
     <section className="thread-appx-panel">
       <div className="thread-appx-panel-head">
-        <h3>Past meetings</h3>
+        <h3>Google Meet history</h3>
       </div>
       {meetings.isLoading ? (
         <div className="thread-appx-empty">
@@ -370,7 +373,17 @@ export default function WorkspaceAppPage() {
         )}
       </header>
 
-      {connected ? (
+      {slug === "meet" ? (
+        state === "loading" ? null : (
+          <>
+            <MeetHub
+              meetConnected={connected}
+              connectHref={`${config.connectPath}?state=${encodeURIComponent(`/apps/${slug}`)}`}
+            />
+            {connected ? <MeetingList /> : null}
+          </>
+        )
+      ) : connected ? (
         <>
           <div className="thread-appx-actions">
             {config.actions.map((a) => (
@@ -380,9 +393,7 @@ export default function WorkspaceAppPage() {
               </Link>
             ))}
           </div>
-          {slug === "meet" ? (
-            <MeetingList />
-          ) : slug === "classroom" ? (
+          {slug === "classroom" ? (
             <CourseList />
           ) : FILE_LIST_SLUGS.has(slug) ? (
             <FileList app={slug as FileListSlug} config={config} />
