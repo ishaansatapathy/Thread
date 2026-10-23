@@ -11,6 +11,7 @@ import { isEmailConfigured } from "@repo/services/env";
 import { registerInboxService } from "@repo/services/inbox";
 import { registerQueueService } from "@repo/services/queue";
 import { registerSettingsService } from "@repo/services/settings";
+import { registerMeetingService } from "@repo/services/meetings";
 import { registerWorkspaceService } from "@repo/services/workspace";
 
 import { bootstrapCorsair } from "./corsair-bootstrap";
@@ -19,6 +20,7 @@ import { CorsairCalendarService } from "./services/calendar";
 import { DbContactsService } from "./services/contacts";
 import { CorsairInboxService } from "./services/inbox";
 import { ThreadQueueService } from "./services/queue";
+import { GnaniMeetingService } from "./services/meetings";
 import { DbSettingsService } from "./services/settings";
 import { CorsairWorkspaceService } from "./services/workspace";
 
@@ -76,6 +78,8 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
     });
   }
 
+  registerMeetingService(new GnaniMeetingService());
+
   try {
     registerContactsService(new DbContactsService());
   } catch (err) {
@@ -106,6 +110,15 @@ export async function runApiBootstrap(opts: ApiBootstrapOptions = {}): Promise<v
       startIntegrationRenewalJob();
     } catch (err) {
       logger.warn("Integration renewal job skipped", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    try {
+      const { startMeetingTranscriptionJob } = await import("./jobs/meeting-transcription");
+      startMeetingTranscriptionJob();
+    } catch (err) {
+      logger.warn("Meeting transcription job skipped", {
         message: err instanceof Error ? err.message : String(err),
       });
     }

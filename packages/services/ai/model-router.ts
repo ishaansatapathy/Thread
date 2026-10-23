@@ -36,7 +36,8 @@ export type AiTask =
   | "missed_followups"
   | "meeting_slots"
   | "meeting_prep"
-  | "daily_brief";
+  | "daily_brief"
+  | "summarize_meeting";
 
 /** Above this many input characters a one-shot task is escalated (≈ tokens × 4). */
 const TASK_ESCALATION_CHARS: Record<AiTask, number> = {
@@ -49,6 +50,8 @@ const TASK_ESCALATION_CHARS: Record<AiTask, number> = {
   meeting_slots: Number.POSITIVE_INFINITY,
   meeting_prep: 30_000,
   daily_brief: 30_000,
+  // A 60-90 min meeting transcript runs ~50-80k chars — escalate past one hour of talk.
+  summarize_meeting: 70_000,
 };
 
 /**
@@ -66,6 +69,7 @@ const TASK_EFFORT: Record<AiTask, ReasoningEffort> = {
   meeting_slots: "low",
   meeting_prep: "low",
   daily_brief: "low",
+  summarize_meeting: "none",
 };
 
 function decide(tier: ModelTier, effort: { fast: ReasoningEffort; smart: ReasoningEffort }, reason: string): ModelDecision {
