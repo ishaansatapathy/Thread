@@ -3676,6 +3676,33 @@ button.thread-unsub-btn:disabled {
   overflow-wrap: anywhere;
 }
 
+.thread-speak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.thread-speak-btn:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.thread-speak-btn[aria-pressed="true"] {
+  color: var(--app-blue-soft, #93b4ff);
+  border-color: rgba(59, 108, 246, 0.4);
+  background: rgba(59, 108, 246, 0.12);
+}
+
 .thread-chat-status {
   padding-top: 5px;
   font-size: 13.5px;

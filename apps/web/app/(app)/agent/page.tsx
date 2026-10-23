@@ -33,6 +33,7 @@ import { AgentMentionInput } from "~/components/app/agent-mention-input";
 import { ColumnResizer } from "~/components/app/column-resizer";
 import { AgentContextPicker, type AttachedFile } from "~/components/app/agent-context-picker";
 import { AgentMarkdown } from "~/components/app/agent-markdown";
+import { SpeakButton } from "~/components/app/speak-button";
 import { VoiceInputButton } from "~/components/app/voice-input-button";
 import { AgentFocusChip, type AgentFocusState } from "~/components/app/agent-focus-chip";
 import { AgentSessionSidebar } from "~/components/app/agent-session-sidebar";
@@ -1177,6 +1178,9 @@ function AgentPageContent() {
                       </span>
                       <div className="thread-chat-assistant">
                         <AgentMarkdown text={typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)} />
+                        {typeof msg.content === "string" && msg.content.trim() && !(isPending && i === messages.length - 1) ? (
+                          <SpeakButton text={msg.content} />
+                        ) : null}
                       </div>
                     </div>
                   ),
