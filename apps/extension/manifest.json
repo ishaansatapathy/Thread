@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "Thread — Meeting copilot",
+  "short_name": "Thread",
+  "version": "0.1.0",
+  "description": "Live multilingual transcript (Gnani), running notes and the Thread agent — right inside Google Meet.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv9u/TwPgE6QomIQKtPjC6ax3BuPerwM5rBRF5jUK5AD2ltMNX7prdlCrsi3Bw80JefSKqu0nVJBGMAieGISmM8ugeC0BZznrX9C82ozHKx5bspe3bjbGpi6lma0aSDTtIAL8ytKCJmtFAkl7lIGFL5mokOStNQ1PkFNSt1k/hkwhXXrLtFf1X/TXxO8OSM2HlvAoTGh9EAmuOINJCrj/l+GPMXA0lZ3FM1YyyxoAGodzl8/5CAjSZjZabyRd12qxjsg6GDKq41Dr9z1bS7rc/3T0ZeAi52quVpq8wq/d+FnShGzP0mfDy81aPOHMCJwveElA2fGqyY5mkmhKfsu7ewIDAQAB",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Open Thread",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "sidePanel",
+    "tabCapture",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "http://localhost:3000/*",
+    "https://thread-web.vercel.app/*",
+    "https://ishaandev.co.in/*",
+    "https://*.ishaandev.co.in/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:3000/*",
+      "https://thread-web.vercel.app/*",
+      "https://ishaandev.co.in/*",
+      "https://*.ishaandev.co.in/*"
+    ]
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+T"
+      },
+      "description": "Open Thread on this tab"
+    }
+  }
+}

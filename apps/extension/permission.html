@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Thread · Microphone access</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body class="permission">
+    <main>
+      <img src="icons/icon128.png" alt="" width="56" height="56" />
+      <h1>Let Thread hear your mic</h1>
+      <p>
+        Chrome can't ask for the microphone from the side panel, so it asks here once. Thread only listens while you
+        have a transcript running or hold the mic button.
+      </p>
+      <button id="allow" class="primary" type="button">Allow microphone</button>
+      <p id="result" class="muted"></p>
+    </main>
+    <script type="module" src="permission.js"></script>
+  </body>
+</html>
