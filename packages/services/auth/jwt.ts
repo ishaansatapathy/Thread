@@ -79,6 +79,39 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.JWT_SECRET, { algorithms: [...JWT_ALGORITHMS] }) as AccessTokenPayload;
 }
 
+export type ExtensionTokenPayload = {
+  userId: string;
+  type: "extension";
+  tokenVersion: string;
+};
+
+export const EXTENSION_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/** Separate secret so an extension token can never be replayed as a session cookie (or vice versa). */
+const extensionSecret = () => `${env.JWT_SECRET}:thread-extension`;
+
+/** Bearer token for the Thread browser extension; revoked with the user's other sessions via tokenVersion. */
+export function issueExtensionToken(user: Pick<AuthTokenUser, "id" | "tokenVersion">) {
+  const token = jwt.sign(
+    { userId: user.id, type: "extension", tokenVersion: user.tokenVersion } satisfies ExtensionTokenPayload,
+    extensionSecret(),
+    { expiresIn: EXTENSION_TOKEN_TTL_SECONDS, algorithm: "HS256" },
+  );
+  return { token, expiresAt: new Date(Date.now() + EXTENSION_TOKEN_TTL_SECONDS * 1000).toISOString() };
+}
+
+export function verifyExtensionToken(token: string): ExtensionTokenPayload {
+  const decoded = jwt.verify(token, extensionSecret(), { algorithms: [...JWT_ALGORITHMS] }) as ExtensionTokenPayload;
+  if (decoded.type !== "extension") throw new Error("Invalid token type");
+  return decoded;
+}
+
+export function readBearerToken(header: string | string[] | undefined): string | null {
+  const value = Array.isArray(header) ? header[0] : header;
+  const match = value?.match(/^Bearer\s+([A-Za-z0-9._-]+)$/);
+  return match?.[1] ?? null;
+}
+
 export function verifyRefreshToken(token: string): RefreshTokenPayload {
   const decoded = jwt.verify(token, refreshSecret(), {
     algorithms: [...JWT_ALGORITHMS],

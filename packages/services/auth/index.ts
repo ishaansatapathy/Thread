@@ -23,7 +23,10 @@ import type {
 import {
   clearAuthCookies,
   issueAuthCookies,
+  issueExtensionToken,
+  readBearerToken,
   verifyAccessToken,
+  verifyExtensionToken,
   verifyRefreshToken,
 } from "./jwt";
 import { hashPassword, verifyPassword } from "./password";
@@ -178,6 +181,13 @@ class AuthService {
     return toPublicUser(user);
   }
 
+  /** Issues a 30-day bearer token for the Thread browser extension (caller must already be signed in). */
+  public async createExtensionToken(userId: string) {
+    const user = await this.findUserById(userId);
+    if (!user || !user.emailVerified) throw new AuthError("UNAUTHORIZED", "Sign in again to connect the extension.");
+    return issueExtensionToken({ id: user.id, tokenVersion: user.tokenVersion ?? "0" });
+  }
+
   public async resolveSession(req: Request, res?: Response): Promise<AuthUser | null> {
     const accessToken = req.cookies?.jwt as string | undefined;
     const refreshToken = req.cookies?.jwt_refresh as string | undefined;
@@ -189,6 +199,19 @@ class AuthService {
       }
       return user ? toPublicUser(user) : null;
     };
+
+    // The browser extension can't carry cookies; it sends its own bearer token instead.
+    const bearer = !accessToken && !refreshToken ? readBearerToken(req.headers.authorization) : null;
+    if (bearer) {
+      try {
+        const decoded = verifyExtensionToken(bearer);
+        const user = await this.findUserById(decoded.userId);
+        if (!user || !this.isRefreshTokenCurrent(user, decoded.tokenVersion) || !user.emailVerified) return null;
+        return toPublicUser(user);
+      } catch {
+        return null;
+      }
+    }
 
     if (accessToken) {
       try {
