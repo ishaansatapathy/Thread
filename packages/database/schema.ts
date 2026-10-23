@@ -9,4 +9,5 @@ export * from "./models/brief-cache";
 export * from "./models/gmail-state";
 export * from "./models/calendar-state";
 export * from "./models/agent-upload";
+export * from "./models/meeting-recording";
 export * from "./relations";

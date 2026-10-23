@@ -45,6 +45,28 @@ CREATE TABLE IF NOT EXISTS agent_uploads (
   created_at timestamp DEFAULT now() NOT NULL
 );
 CREATE INDEX IF NOT EXISTS agent_uploads_user_created_idx ON agent_uploads (user_id, created_at);
+
+-- Meeting recordings submitted for Gnani transcription + AI notes.
+CREATE TABLE IF NOT EXISTS meeting_recordings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title varchar(200),
+  status varchar(20) DEFAULT 'pending' NOT NULL,
+  language_code varchar(20) DEFAULT 'auto',
+  gnani_job_id varchar(120),
+  transcript text,
+  segments_json jsonb,
+  notes_json jsonb,
+  error_message text,
+  created_at timestamp DEFAULT now() NOT NULL,
+  updated_at timestamp DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS meeting_recordings_user_created_idx ON meeting_recordings (user_id, created_at);
+CREATE INDEX IF NOT EXISTS meeting_recordings_status_idx ON meeting_recordings (status);
+ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS mode varchar(20) DEFAULT 'upload' NOT NULL;
+ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS meet_url varchar(500);
+ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS summarized_count integer DEFAULT 0 NOT NULL;
+ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS ended_at timestamp;
 `;
 
 export async function runMigrations() {
