@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: thread-api
+    runtime: node
+    plan: free
+    # NODE_ENV=production skips devDependencies (tsup), so force dev install for the build step.
+    buildCommand: NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @repo/api run build
+    startCommand: node apps/api/dist/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
