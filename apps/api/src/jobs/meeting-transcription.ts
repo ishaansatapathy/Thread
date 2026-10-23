@@ -15,7 +15,10 @@ const LEADER_LOCK_NAME = "meeting-transcription-poll";
 
 export function startMeetingTranscriptionJob() {
   if (process.env.VITEST === "true") return;
-  if (!isGnaniConfigured()) return;
+  if (!isGnaniConfigured()) {
+    logger.warn("meeting-transcription: GNANI_API_KEY is not set — live transcription and recording uploads are disabled");
+    return;
+  }
 
   const tick = () => {
     void (async () => {
