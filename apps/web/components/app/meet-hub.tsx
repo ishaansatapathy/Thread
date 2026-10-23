@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowRight, Link2, Loader2, Mic, Sparkles, Upload, Users, Video } from "lucide-react";
+import { ArrowRight, Link2, Loader2, Mic, Puzzle, Sparkles, Upload, Users, Video } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
 import { useVoiceLanguage, voiceLanguageLabel } from "~/lib/voice/languages";
@@ -85,6 +85,15 @@ export function MeetHub({ meetConnected, connectHref }: { meetConnected: boolean
       {!transcriptionReady ? (
         <div className="thread-room-banner">Live transcription needs GNANI_API_KEY on the server — rooms still work for notes and the agent.</div>
       ) : null}
+
+      <Link href="/connect-extension" className="thread-meethub-ext">
+        <Puzzle size={18} />
+        <span>
+          <strong>Use Thread inside Google Meet.</strong> The Chrome extension puts captions, notes and the agent in a side
+          panel next to your call — no tab switching, no screen-share prompt.
+        </span>
+        <ArrowRight size={15} />
+      </Link>
 
       <div className="thread-meethub-start">
         <input

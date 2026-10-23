@@ -1294,6 +1294,96 @@ a.thread-appx-row-open {
   }
 }
 
+/* ── Chrome extension connect page ── */
+.thread-ext-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+}
+
+.thread-ext-body h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.thread-ext-body p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--thread-muted);
+}
+
+.thread-ext-body kbd,
+.thread-ext-body code,
+.thread-ext-code code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  font-family: var(--thread-mono);
+  font-size: 12px;
+}
+
+.thread-ext-ok {
+  color: #6ee7b7;
+}
+
+.thread-ext-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--thread-muted);
+}
+
+.thread-ext-code {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--thread-line);
+  font-size: 13px;
+  color: var(--thread-muted);
+}
+
+.thread-ext-code p {
+  margin: 0;
+}
+
+.thread-ext-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.thread-meethub-ext {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(59, 108, 246, 0.35);
+  background: rgba(59, 108, 246, 0.08);
+  font-size: 13px;
+  color: var(--thread-muted);
+  text-decoration: none;
+}
+
+.thread-meethub-ext strong {
+  color: var(--thread-text);
+}
+
+.thread-meethub-ext span {
+  flex: 1;
+}
+
+.thread-meethub-ext:hover {
+  border-color: rgba(109, 147, 255, 0.6);
+}
+
 /* ── Drive: Recent / Folders views, folder tiles, hover preview ── */
 .thread-appx-viewtabs {
   display: inline-flex;
