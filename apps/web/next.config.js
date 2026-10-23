@@ -35,6 +35,14 @@ const nextConfig = {
         destination: `${apiInternalUrl}/agent/uploads`,
       },
       {
+        source: "/api-meetings/:path*",
+        destination: `${apiInternalUrl}/meetings/:path*`,
+      },
+      {
+        source: "/api-speech/:path*",
+        destination: `${apiInternalUrl}/speech/:path*`,
+      },
+      {
         source: "/mcp",
         destination: `${apiInternalUrl}/mcp`,
       },

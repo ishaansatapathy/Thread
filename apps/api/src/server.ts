@@ -31,6 +31,8 @@ import { corsairManagementRouter } from "./routes/corsair-management";
 import { corsairPermissionsRouter } from "./routes/corsair-permissions";
 import { agentStreamRouter } from "./routes/agent-stream";
 import { agentUploadsRouter } from "./routes/agent-uploads";
+import { meetingsRouter } from "./routes/meetings";
+import { speechRouter } from "./routes/speech";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
 import { enrichThreadOpenApi, type OpenApiDocumentWithPaths } from "./openapi-enrichment";
@@ -338,6 +340,8 @@ app.use("/corsair/permissions", corsairPermissionsRouter);
 app.use("/api/corsair", corsairManagementRouter);
 app.use("/agent/stream", agentStreamRouter);
 app.use("/agent/uploads", agentUploadsRouter);
+app.use("/meetings", meetingsRouter);
+app.use("/speech", speechRouter);
 app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);
 

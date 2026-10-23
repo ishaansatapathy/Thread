@@ -12,6 +12,7 @@ import { settingsRouter } from "./routes/settings/route";
 import { observabilityRouter } from "./routes/observability/route";
 import { briefRouter } from "./routes/brief/route";
 import { workspaceRouter } from "./routes/workspace/route";
+import { meetingsRouter } from "./routes/meetings/route";
 
 export const serverRouter = router({
   health: healthRouter,
@@ -26,6 +27,7 @@ export const serverRouter = router({
   observability: observabilityRouter,
   brief: briefRouter,
   workspace: workspaceRouter,
+  meetings: meetingsRouter,
 });
 
 export const openApiRouter = serverRouter;
