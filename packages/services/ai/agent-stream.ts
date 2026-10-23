@@ -39,6 +39,7 @@ export async function runAgentChatStream(
     userEmail?: string;
     focus?: AgentFocus;
     toolMemory?: AgentToolMemoryEntry[];
+    meetingId?: string;
   },
   onToolCall: (toolName: string) => void,
   onTokenDelta?: (delta: string) => void,

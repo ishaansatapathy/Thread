@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { registerMeetingService, type MeetingService } from "../meetings";
 import type { QueueItem, QueueService } from "../queue";
 import type { WorkspaceConnectionStatus, WorkspaceService } from "./index";
 import { executeWorkspaceTool, extractGoogleFileId } from "./tools";
@@ -341,6 +342,58 @@ describe("executeWorkspaceTool", () => {
     const out = await executeWorkspaceTool("queue_classroom_announcement", { courseId: "c1", courseName: "Algebra", text: "Quiz moved" }, ctx);
     expect(out?.card).toMatchObject({ kind: "workspace_queued", disposition: "queued" });
     expect(enqueued[0]?.payload).toMatchObject({ action: "classroom_post_announcement", courseId: "c1", text: "Quiz moved" });
+  });
+});
+
+describe("meeting tools", () => {
+  const meeting = {
+    id: "m1",
+    title: "Pricing review",
+    mode: "live" as const,
+    status: "ready" as const,
+    meetUrl: "https://meet.google.com/abc-defg-hij",
+    languageCode: "en-IN",
+    segmentCount: 3,
+    durationSeconds: 125,
+    summary: "Price stays at 499.",
+    createdAt: "2026-10-23T10:00:00.000Z",
+    endedAt: "2026-10-23T10:02:05.000Z",
+    segments: [
+      { speakerId: "meeting", startTime: 3, endTime: 6, text: "What about the budget for Q3?" },
+      { speakerId: "you", startTime: 70, endTime: 74, text: "Budget is approved at 20 lakh." },
+      { speakerId: "meeting", startTime: 80, endTime: 82, text: "Great, ship Friday." },
+    ],
+    notes: { summary: "Price stays at 499.", keyPoints: [], decisions: ["Ship Friday"], actionItems: [] },
+    summarizedCount: 3,
+    errorMessage: null,
+  };
+
+  const service = {
+    isTranscriptionConfigured: () => true,
+    list: vi.fn(async () => [meeting]),
+    get: vi.fn(async () => meeting),
+  } as unknown as MeetingService;
+
+  it("lists meetings with fenced titles and a room link", async () => {
+    registerMeetingService(service);
+    const { ctx } = fakes();
+    const out = await executeWorkspaceTool("list_meetings", {}, ctx);
+    const result = out?.result as { count: number; meetings: Array<{ title: string; minutes: number; url: string }> };
+    expect(result.count).toBe(1);
+    expect(result.meetings[0]?.title).toContain("[EMAIL_DATA_START]");
+    expect(result.meetings[0]).toMatchObject({ minutes: 2, url: "/meet/m1" });
+  });
+
+  it("finds what was said about a topic, with speaker and timestamp", async () => {
+    registerMeetingService(service);
+    const { ctx } = fakes();
+    const out = await executeWorkspaceTool("get_meeting", { query: "budget" }, ctx);
+    const result = out?.result as { matchCount: number; matches: string };
+    expect(service.list).toHaveBeenCalled(); // no meetingId → most recent meeting
+    expect(result.matchCount).toBe(2);
+    expect(result.matches).toContain("[1:10] You: Budget is approved at 20 lakh.");
+    expect(result.matches).not.toContain("ship Friday");
+    expect(out?.card).toMatchObject({ kind: "workspace", href: "/meet/m1" });
   });
 });
 

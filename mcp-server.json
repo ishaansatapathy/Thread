@@ -1,8 +1,8 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/mcp-server.json",
   "name": "thread-mcp",
-  "description": "Thread MCP — 84 domain tools (Gmail, Calendar, Drive, Sheets, Docs, Meet, Forms, Slides, Classroom) at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
-  "version": "2.9.0",
+  "description": "Thread MCP — 86 domain tools (Gmail, Calendar, Drive, Sheets, Docs, Meet, Forms, Slides, Classroom, Gnani meeting transcripts) at /mcp plus official Corsair adapter at /mcp/corsair (list_operations, get_schema, run_script). Corsair Permissions, webhookHooks, API hooks, and DB search included.",
+  "version": "2.10.0",
   "transport": {
     "type": "http",
     "endpoint": "${THREAD_API_URL:-http://localhost:8000}/mcp",
@@ -298,6 +298,14 @@
     {
       "name": "read_doc",
       "description": "Read the plain text of a Google Doc (documentId from search_drive or a link)."
+    },
+    {
+      "name": "list_meetings",
+      "description": "List the user's Thread meetings (live-captured or uploaded recordings transcribed by Gnani), newest first, with status and a one-line summary."
+    },
+    {
+      "name": "get_meeting",
+      "description": "Get a Thread meeting's notes (summary, key points, decisions, action items), or transcript lines about a topic via query."
     },
     {
       "name": "read_drive_file",

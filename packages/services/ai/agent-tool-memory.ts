@@ -44,6 +44,8 @@ const MEMORY_TOOLS = new Set([
   "list_classroom_announcements",
   "list_classroom_submissions",
   "approve_queue_item",
+  "list_meetings",
+  "get_meeting",
 ]);
 
 /** Arg names that hold a Google file id or URL, mapped to the URL shape that opens it. */

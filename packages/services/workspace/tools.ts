@@ -1,6 +1,7 @@
 import { fenceEmailData } from "../ai/agent-guard";
 import { humanizeEmailBody } from "../ai/writing-style";
 import type { OpenAiToolDefinition } from "../ai/openai-tools";
+import { getMeetingService, hasMeetingService } from "../meetings";
 import type { QueueEnqueueOrigin, QueueService } from "../queue";
 import {
   WORKSPACE_PLUGIN_LABELS,
@@ -477,7 +478,45 @@ export const WORKSPACE_TOOLS: OpenAiToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_meetings",
+      description:
+        "List the user's Thread meetings (live-captured or uploaded recordings transcribed by Gnani), newest first, with status and a one-line summary.",
+      parameters: {
+        type: "object",
+        properties: { maxResults: { type: "number", description: "1-50", default: 10 } },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_meeting",
+      description:
+        "Get a Thread meeting's notes (summary, key points, decisions, action items). Pass query to pull the transcript lines about a topic or person ('what did they say about the budget'). Omit meetingId for the most recent meeting.",
+      parameters: {
+        type: "object",
+        properties: {
+          meetingId: { type: "string" },
+          query: { type: "string", description: "Words to find in the transcript" },
+          includeTranscript: { type: "boolean", description: "Return the full transcript (long meetings are truncated)" },
+        },
+      },
+    },
+  },
 ];
+
+const MEETING_LINE_LIMIT = 40;
+const MEETING_TRANSCRIPT_MAX_CHARS = 12_000;
+
+function meetingSpeaker(id: string) {
+  if (id === "you") return "You";
+  if (id === "meeting") return "Meeting";
+  if (id === "room") return "Room";
+  return `Speaker ${id}`;
+}
 
 export const WORKSPACE_TOOL_NAMES = new Set(WORKSPACE_TOOLS.map((tool) => tool.function.name));
 
@@ -1045,6 +1084,71 @@ export async function executeWorkspaceTool(
       });
       if (!parsed.success) return { result: validationError(parsed.error) };
       return enqueue(ctx, parsed.data);
+    }
+
+    case "list_meetings": {
+      if (!hasMeetingService()) return { result: { error: "Meetings are not available on this server." } };
+      const meetings = await getMeetingService().list(tenantId, { limit: clampNumber(args.maxResults, 10, 1, 50) });
+      return {
+        result: {
+          count: meetings.length,
+          meetings: meetings.map((m) => ({
+            id: m.id,
+            title: m.title ? fenceEmailData(m.title) : "Untitled meeting",
+            status: m.status,
+            mode: m.mode,
+            minutes: Math.round(m.durationSeconds / 60),
+            createdAt: m.createdAt,
+            summary: m.summary ? fenceEmailData(m.summary) : undefined,
+            url: `/meet/${m.id}`,
+          })),
+        },
+      };
+    }
+
+    case "get_meeting": {
+      if (!hasMeetingService()) return { result: { error: "Meetings are not available on this server." } };
+      const service = getMeetingService();
+      let meetingId = str(args.meetingId);
+      if (!meetingId) {
+        const [latest] = await service.list(tenantId, { limit: 1 });
+        if (!latest) return { result: { error: "The user has no Thread meetings yet." } };
+        meetingId = latest.id;
+      }
+      const meeting = await service.get(tenantId, meetingId);
+      const query = str(args.query)?.toLowerCase();
+      const terms = query ? query.split(/\s+/).filter((t) => t.length > 2) : [];
+      const lines = meeting.segments.map((s) => {
+        const at = `${Math.floor(s.startTime / 60)}:${String(Math.floor(s.startTime % 60)).padStart(2, "0")}`;
+        return `[${at}] ${meetingSpeaker(s.speakerId)}: ${s.text}`;
+      });
+      const matches = terms.length
+        ? lines.filter((line) => terms.some((t) => line.toLowerCase().includes(t))).slice(0, MEETING_LINE_LIMIT)
+        : [];
+      let transcript = args.includeTranscript === true ? lines.join("\n") : undefined;
+      if (transcript && transcript.length > MEETING_TRANSCRIPT_MAX_CHARS) {
+        transcript = `${transcript.slice(0, MEETING_TRANSCRIPT_MAX_CHARS)}\n…(truncated — ask with a query for a specific part)`;
+      }
+      const title = meeting.title ?? "Untitled meeting";
+      return {
+        result: {
+          id: meeting.id,
+          title: fenceEmailData(title),
+          status: meeting.status,
+          minutes: Math.round(meeting.durationSeconds / 60),
+          meetUrl: meeting.meetUrl ?? undefined,
+          url: `/meet/${meeting.id}`,
+          notes: meeting.notes ? fenceEmailData(JSON.stringify(meeting.notes)) : null,
+          ...(terms.length ? { query, matchCount: matches.length, matches: fenceEmailData(matches.join("\n")) } : {}),
+          ...(transcript ? { transcript: fenceEmailData(transcript) } : {}),
+        },
+        card: {
+          kind: "workspace",
+          title: `Meeting: ${title}`,
+          detail: meeting.notes?.summary ? meeting.notes.summary.slice(0, 140) : `${meeting.status} · ${meeting.segments.length} lines`,
+          href: `/meet/${meeting.id}`,
+        },
+      };
     }
 
     default:

@@ -33,6 +33,7 @@ import { AgentMentionInput } from "~/components/app/agent-mention-input";
 import { ColumnResizer } from "~/components/app/column-resizer";
 import { AgentContextPicker, type AttachedFile } from "~/components/app/agent-context-picker";
 import { AgentMarkdown } from "~/components/app/agent-markdown";
+import { VoiceInputButton } from "~/components/app/voice-input-button";
 import { AgentFocusChip, type AgentFocusState } from "~/components/app/agent-focus-chip";
 import { AgentSessionSidebar } from "~/components/app/agent-session-sidebar";
 import { SkeletonList } from "~/components/app/skeleton-list";
@@ -1009,6 +1010,11 @@ function AgentPageContent() {
           </div>
         ) : null}
       </div>
+      <VoiceInputButton
+        hotkey
+        disabled={isPending}
+        onText={(text) => setInput((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))}
+      />
       <span className="thread-agent-mode" data-on={agentAutoApprove ? "true" : undefined}>
         {modeLabel}
       </span>

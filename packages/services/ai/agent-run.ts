@@ -1,3 +1,6 @@
+import { logger } from "@repo/logger";
+
+import { getMeetingService, hasMeetingService } from "../meetings";
 import type { ApprovalDefaults } from "../settings";
 import { buildFocusSystemAppendix, type AgentFocus } from "./agent-focus";
 import type { AgentHistoryMessage } from "./agent";
@@ -11,7 +14,22 @@ export type AgentRunInput = {
   userEmail?: string;
   focus?: AgentFocus;
   toolMemory?: AgentToolMemoryEntry[];
+  /** Set when the user is talking to the agent from inside a Thread meeting room. */
+  meetingId?: string;
 };
+
+async function buildMeetingAppendix(tenantId: string, meetingId: string | undefined): Promise<string> {
+  if (!meetingId || !hasMeetingService()) return "";
+  try {
+    return await getMeetingService().agentContext(tenantId, meetingId);
+  } catch (error) {
+    logger.warn("agent.meeting_context_failed", {
+      meetingId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return "";
+  }
+}
 
 export type PreparedAgentRun = {
   effectiveFocus: AgentFocus | undefined;
@@ -35,10 +53,13 @@ export async function prepareAgentRun(
       ? (input.history ?? []).slice(-4)
       : (input.history ?? []).slice(-12);
 
-  const focusAppendix = await buildFocusSystemAppendix(tenantId, effectiveFocus, input.userEmail);
+  const [focusAppendix, meetingAppendix] = await Promise.all([
+    buildFocusSystemAppendix(tenantId, effectiveFocus, input.userEmail),
+    buildMeetingAppendix(tenantId, input.meetingId),
+  ]);
   const toolMemoryAppendix = formatToolMemoryForPrompt(input.toolMemory ?? []);
   const systemPrompt =
-    buildSystemPromptFor(input.userEmail, approvalDefaults) + toolMemoryAppendix + focusAppendix;
+    buildSystemPromptFor(input.userEmail, approvalDefaults) + toolMemoryAppendix + focusAppendix + meetingAppendix;
 
   return {
     effectiveFocus,

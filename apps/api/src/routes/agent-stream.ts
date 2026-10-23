@@ -47,6 +47,8 @@ const agentStreamBodySchema = z.object({
   focusEventLabel: z.string().trim().min(1).max(200).optional(),
   /** When true, client intentionally cleared focus — do not reload from session. */
   focusCleared: z.boolean().optional(),
+  /** The Thread meeting room the user is chatting from; adds live meeting context. */
+  focusMeetingId: z.string().uuid().optional(),
 });
 
 export const agentStreamRouter = Router();
@@ -85,6 +87,7 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     focusThreadLabel,
     focusEventLabel,
     focusCleared,
+    focusMeetingId,
   } = parsed.data;
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -148,6 +151,7 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
         toolMemory: effectiveToolMemory,
         userEmail,
         focus: effectiveFocus,
+        meetingId: focusMeetingId,
       },
       (toolName) => {
         send("status", { tool: toolName, label: toolStatusLabel(toolName) });
@@ -213,6 +217,20 @@ function toolStatusLabel(tool: string): string {
     queue_calendar_invite: "Preparing calendar invite…",
     list_queue: "Checking queue…",
     list_calendar_events: "Checking calendar…",
+    search_drive: "Searching Drive…",
+    read_drive_file: "Reading the file…",
+    read_doc: "Reading the doc…",
+    read_sheet: "Reading the sheet…",
+    read_presentation: "Reading the deck…",
+    get_form_responses: "Reading form responses…",
+    list_meetings: "Looking up meetings…",
+    get_meeting: "Reading the meeting…",
+    queue_doc_create: "Drafting the doc…",
+    queue_sheet_create: "Building the sheet…",
+    queue_slides_create: "Building the deck…",
+    queue_form_create: "Building the form…",
+    create_meet_link: "Creating a Meet link…",
+    list_classroom_due_work: "Checking Classroom…",
   };
   return labels[tool] ?? `Running ${tool}…`;
 }

@@ -18,6 +18,6 @@ describe("agent ↔ MCP tool parity", () => {
     const agentNames = AGENT_TOOLS.map((tool) => tool.function.name).sort();
 
     expect(agentNames).toEqual(mcpNames);
-    expect(agentNames.length).toBe(84);
+    expect(agentNames.length).toBe(86);
   });
 });
