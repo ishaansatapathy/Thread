@@ -12,6 +12,7 @@ import {
   appendAgentSessionTurn,
   getAgentSession,
 } from "@repo/services/ai/agent-sessions";
+import { PAGE_CONTEXT_MAX_CHARS } from "@repo/services/ai/agent-page-context";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
 
 const toolMemoryEntrySchema = z.object({
@@ -49,6 +50,15 @@ const agentStreamBodySchema = z.object({
   focusCleared: z.boolean().optional(),
   /** The Thread meeting room the user is chatting from; adds live meeting context. */
   focusMeetingId: z.string().uuid().optional(),
+  /** Text the user picked on a web page through Captain Thread (browser extension). */
+  pageContext: z
+    .object({
+      url: z.string().url().max(2000),
+      title: z.string().trim().max(300).optional(),
+      text: z.string().trim().min(1).max(PAGE_CONTEXT_MAX_CHARS),
+      source: z.enum(["selection", "area", "page"]),
+    })
+    .optional(),
 });
 
 export const agentStreamRouter = Router();
@@ -88,6 +98,7 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     focusEventLabel,
     focusCleared,
     focusMeetingId,
+    pageContext,
   } = parsed.data;
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -152,6 +163,7 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
         userEmail,
         focus: effectiveFocus,
         meetingId: focusMeetingId,
+        pageContext,
       },
       (toolName) => {
         send("status", { tool: toolName, label: toolStatusLabel(toolName) });

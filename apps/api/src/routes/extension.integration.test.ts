@@ -83,6 +83,29 @@ describe("extension auth", () => {
     });
   });
 
+  it("validates Captain Thread page context before running the agent", async () => {
+    await withUser(async (user) => {
+      const auth = { Authorization: `Bearer ${user.token}`, Origin: EXTENSION_ORIGIN };
+      const badSource = await request(app)
+        .post("/agent/stream")
+        .set(auth)
+        .send({ message: "Explain this", pageContext: { url: "https://leetcode.com/problems/two-sum/", text: "Given an array…", source: "screenshot" } });
+      expect(badSource.status).toBe(400);
+
+      const tooLong = await request(app)
+        .post("/agent/stream")
+        .set(auth)
+        .send({ message: "Explain this", pageContext: { url: "https://example.com", text: "x".repeat(6001), source: "selection" } });
+      expect(tooLong.status).toBe(400);
+
+      const notAUrl = await request(app)
+        .post("/agent/stream")
+        .set(auth)
+        .send({ message: "Explain this", pageContext: { url: "javascript-ish", text: "hello", source: "selection" } });
+      expect(notAUrl.status).toBe(400);
+    });
+  });
+
   it("finds the room for a Meet call by its link, ignoring query params", async () => {
     await withUser(async (user) => {
       const auth = { Authorization: `Bearer ${user.token}`, Origin: EXTENSION_ORIGIN };
