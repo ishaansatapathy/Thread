@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowRight, Link2, Loader2, Mic, Puzzle, Sparkles, Upload, Users, Video } from "lucide-react";
 
@@ -35,6 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export function MeetHub({ meetConnected, connectHref }: { meetConnected: boolean; connectHref: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const utils = trpc.useUtils();
   const [language] = useVoiceLanguage();
   const [title, setTitle] = useState("");
@@ -47,10 +48,11 @@ export function MeetHub({ meetConnected, connectHref }: { meetConnected: boolean
 
   const go = async (
     kind: string,
-    input: { mode: "live" | "upload"; createMeetLink?: boolean; meetUrl?: string },
+    input: { mode: "live" | "upload"; createMeetLink?: boolean; meetUrl?: string; skipPopup?: boolean },
   ) => {
     // Open the Meet tab inside the click gesture so pop-up blockers allow it.
-    const meetTab = input.createMeetLink || input.meetUrl ? window.open("about:blank", "_blank") : null;
+    // skipPopup=true when the caller already opened the popup (e.g. autoJoin from the agent).
+    const meetTab = input.skipPopup ? null : (input.createMeetLink || input.meetUrl ? window.open("about:blank", "_blank") : null);
     setBusy(kind);
     try {
       const meeting = await create.mutateAsync({
@@ -76,6 +78,21 @@ export function MeetHub({ meetConnected, connectHref }: { meetConnected: boolean
       setBusy(null);
     }
   };
+
+  // When arriving from an agent "Join the meeting" link, auto-join without another click.
+  const autoJoinFired = useRef(false);
+  useEffect(() => {
+    const raw = searchParams.get("autoJoin");
+    if (!raw || autoJoinFired.current) return;
+    const meetUrl = decodeURIComponent(raw);
+    if (!/^https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(meetUrl)) return;
+    autoJoinFired.current = true;
+    // Clear the param so a reload doesn't re-trigger.
+    router.replace("/apps/meet");
+    // Meet popup is already open from the agent link click; skip opening another one.
+    void go("join", { mode: "live", meetUrl, skipPopup: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const validJoin = /^https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(joinLink.trim());
   const transcriptionReady = status.data?.transcriptionConfigured ?? true;
