@@ -44,6 +44,25 @@ export type DriveFile = {
   parents?: string[];
 };
 
+export type DriveFilePreview = {
+  id: string;
+  name: string;
+  mimeType?: string;
+  isFolder: boolean;
+  url: string;
+  modifiedTime?: string;
+  size?: number;
+  /** Short-lived Google thumbnail URL (Docs, Sheets, Slides, PDFs, images). */
+  thumbnailUrl?: string;
+  owner?: string;
+  lastModifiedBy?: string;
+  description?: string;
+  /** First few hundred characters, for text-readable files. */
+  snippet?: string;
+  /** Item count, for folders. */
+  childCount?: number;
+};
+
 export type SpreadsheetRef = { spreadsheetId: string; title?: string; url: string };
 export type DocumentRef = { documentId: string; title?: string; url: string };
 export type DriveFileText = {
@@ -129,8 +148,18 @@ export interface WorkspaceService {
 
   driveListFiles(
     tenantId: string,
-    opts: { query?: string; folderId?: string; foldersOnly?: boolean; mimeType?: string; maxResults?: number },
+    opts: {
+      query?: string;
+      folderId?: string;
+      foldersOnly?: boolean;
+      mimeType?: string;
+      maxResults?: number;
+      /** "recent" (default): newest first. "name": folders first, then A–Z, like Drive's My Drive view. */
+      orderBy?: "recent" | "name";
+    },
   ): Promise<DriveFile[]>;
+  /** Hover-card details for one Drive item, plus a short text snippet for readable files. */
+  driveFilePreview(tenantId: string, fileId: string): Promise<DriveFilePreview>;
   driveFindFolderByName(tenantId: string, name: string, parentId?: string): Promise<DriveFile | null>;
   driveCreateFolder(tenantId: string, input: { name: string; parentId?: string }): Promise<DriveFile>;
   driveUploadFile(

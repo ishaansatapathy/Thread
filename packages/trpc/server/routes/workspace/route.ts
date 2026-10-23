@@ -67,6 +67,8 @@ export const workspaceRouter = router({
         app: z.enum(["drive", "docs", "sheets", "forms", "slides"]),
         query: z.string().trim().max(200).optional(),
         folderId: z.string().trim().min(1).optional(),
+        /** recent: newest first across Drive. folders: browse My Drive from the root, like drive.google.com. */
+        view: z.enum(["recent", "folders"]).default("recent"),
       }),
     )
     .output(
@@ -96,11 +98,13 @@ export const workspaceRouter = router({
                 : input.app === "slides"
                   ? "application/vnd.google-apps.presentation"
                   : undefined;
+        const browsing = input.view === "folders" && !input.query;
         const files = await getWorkspaceService().driveListFiles(ctx.user.id, {
           query: input.query || undefined,
-          folderId: input.query ? undefined : input.folderId,
+          folderId: input.query ? undefined : (input.folderId ?? (browsing ? "root" : undefined)),
           mimeType,
-          maxResults: 30,
+          maxResults: browsing ? 100 : 30,
+          orderBy: browsing ? "name" : "recent",
         });
         return {
           files: files.map((f) => ({
@@ -113,6 +117,26 @@ export const workspaceRouter = router({
             size: f.size,
           })),
         };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  classroomDueWork: protectedProcedure
+    .input(z.object({ withinDays: z.number().int().min(1).max(60).default(14) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return { work: await getWorkspaceService().classroomListDueWork(ctx.user.id, { withinDays: input.withinDays }) };
+      } catch (error) {
+        mapServiceError(error);
+      }
+    }),
+
+  filePreview: protectedProcedure
+    .input(z.object({ fileId: z.string().trim().min(1).max(200) }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getWorkspaceService().driveFilePreview(ctx.user.id, input.fileId);
       } catch (error) {
         mapServiceError(error);
       }

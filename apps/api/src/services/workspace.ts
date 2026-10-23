@@ -7,6 +7,7 @@ import { ServiceError, serviceError } from "@repo/services/errors";
 import {
   WORKSPACE_PLUGINS,
   driveFileUrl,
+  type DriveFilePreview,
   type DriveFileText,
   type ClassroomAnnouncement,
   type ClassroomCourse,
@@ -521,7 +522,14 @@ export class CorsairWorkspaceService implements WorkspaceService {
 
   async driveListFiles(
     tenantId: string,
-    opts: { query?: string; folderId?: string; foldersOnly?: boolean; mimeType?: string; maxResults?: number },
+    opts: {
+      query?: string;
+      folderId?: string;
+      foldersOnly?: boolean;
+      mimeType?: string;
+      maxResults?: number;
+      orderBy?: "recent" | "name";
+    },
   ): Promise<DriveFile[]> {
     const clauses = ["trashed=false"];
     if (opts.query) clauses.push(`name contains '${escapeDriveQuery(opts.query)}'`);
@@ -530,8 +538,8 @@ export class CorsairWorkspaceService implements WorkspaceService {
     else if (opts.mimeType) clauses.push(`mimeType='${escapeDriveQuery(opts.mimeType)}'`);
     const params = new URLSearchParams({
       q: clauses.join(" and "),
-      pageSize: String(Math.min(Math.max(opts.maxResults ?? 20, 1), 50)),
-      orderBy: "modifiedTime desc",
+      pageSize: String(Math.min(Math.max(opts.maxResults ?? 20, 1), 100)),
+      orderBy: opts.orderBy === "name" ? "folder,name_natural" : "modifiedTime desc",
       fields: `files(${DRIVE_FIELDS})`,
     });
     try {
@@ -864,6 +872,57 @@ export class CorsairWorkspaceService implements WorkspaceService {
       return { title: data.title, text: text.slice(0, max), truncated: text.length > max };
     } catch (error) {
       userFacingGoogleError(error, "Reading the Google Doc");
+    }
+  }
+
+  async driveFilePreview(tenantId: string, fileId: string): Promise<DriveFilePreview> {
+    const id = encodeURIComponent(fileId);
+    try {
+      const { data } = await googleFetch<
+        RawDriveFile & {
+          thumbnailLink?: string;
+          description?: string;
+          owners?: Array<{ displayName?: string; emailAddress?: string }>;
+          lastModifyingUser?: { displayName?: string };
+        }
+      >(
+        tenantId,
+        "googledrive",
+        `https://www.googleapis.com/drive/v3/files/${id}?supportsAllDrives=true&fields=${DRIVE_FIELDS},thumbnailLink,description,owners(displayName,emailAddress),lastModifyingUser(displayName)`,
+      );
+      const file = mapDriveFile(data);
+      if (!file) throw serviceError("NOT_FOUND", "Drive did not return that file");
+
+      const preview: DriveFilePreview = {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        isFolder: file.isFolder,
+        url: driveFileUrl(file),
+        modifiedTime: file.modifiedTime,
+        size: file.size,
+        thumbnailUrl: data.thumbnailLink,
+        owner: data.owners?.[0]?.displayName ?? data.owners?.[0]?.emailAddress,
+        lastModifiedBy: data.lastModifyingUser?.displayName,
+        description: data.description?.slice(0, 300),
+      };
+
+      if (file.isFolder) {
+        const children = await this.driveListFiles(tenantId, { folderId: file.id, maxResults: 100 }).catch(() => []);
+        preview.childCount = children.length;
+        return preview;
+      }
+
+      const mime = file.mimeType ?? "";
+      const readable =
+        Boolean(GOOGLE_TEXT_EXPORTS[mime]) || isTextMime(mime) || (mime === "application/pdf" && (file.size ?? 0) <= 5 * 1024 * 1024);
+      if (readable) {
+        const text = await this.driveReadFileText(tenantId, { fileId: file.id, maxChars: 420 }).catch(() => null);
+        if (text && !text.unreadable && text.text) preview.snippet = text.text;
+      }
+      return preview;
+    } catch (error) {
+      userFacingGoogleError(error, "Previewing the Drive file");
     }
   }
 
