@@ -43,6 +43,10 @@ const nextConfig = {
         destination: `${apiInternalUrl}/speech/:path*`,
       },
       {
+        source: "/api-extension/:path*",
+        destination: `${apiInternalUrl}/extension/:path*`,
+      },
+      {
         source: "/mcp",
         destination: `${apiInternalUrl}/mcp`,
       },

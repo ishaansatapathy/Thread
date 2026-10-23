@@ -264,7 +264,9 @@ export function ThreadAppShell({ children }: { children: ReactNode }) {
     PAGE_META[pathname ?? "/inbox"] ??
     (pathname?.startsWith("/meet/")
       ? { title: "Meeting room", sub: "Live transcript by Gnani · ask Thread anything" }
-      : { title: "Thread", sub: "" });
+      : pathname === "/connect-extension"
+        ? { title: "Chrome extension", sub: "Thread inside Google Meet" }
+        : { title: "Thread", sub: "" });
 
   return (
     <div className="thread-page thread-app">
