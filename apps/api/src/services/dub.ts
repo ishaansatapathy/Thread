@@ -81,6 +81,7 @@ export function toPublicJob(job: DubJob): PublicDubJob {
           error: dub.error,
           notice: dub.notice,
           lines: dub.lines,
+          lipsync: dub.lipsync,
           startedAt: dub.startedAt,
           finishedAt: dub.finishedAt,
         }
@@ -350,8 +351,40 @@ class TransformCap extends Transform {
   }
 }
 
+/**
+ * YouTube intermittently answers 403 for yt-dlp's default clients; retry with another client.
+ * Which clients work changes as YouTube changes — re-check with yt-dlp updates.
+ */
+const YOUTUBE_RETRY_CLIENTS = (process.env.YTDLP_YOUTUBE_RETRY_CLIENTS?.trim() || "android")
+  .split(";")
+  .map((c) => c.trim())
+  .filter(Boolean);
+
+async function runYtdlp(args: string[]): Promise<Awaited<ReturnType<typeof runProcess>>> {
+  const configured = process.env.YTDLP_PATH?.trim();
+  const attempts: Array<[string, string[]]> = configured
+    ? [[configured, args]]
+    : [
+        ["yt-dlp", args],
+        ["python", ["-m", "yt_dlp", ...args]],
+      ];
+  for (const [cmd, cmdArgs] of attempts) {
+    try {
+      return await runProcess(cmd, cmdArgs, YTDLP_TIMEOUT_MS);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  throw new ServiceError("PRECONDITION_FAILED", "Link downloads need yt-dlp installed on the server (or set YTDLP_PATH).");
+}
+
+async function clearPartialDownloads(dir: string) {
+  const files = await readdir(dir).catch(() => [] as string[]);
+  await Promise.all(files.filter((f) => f.startsWith("source.")).map((f) => rm(path.join(dir, f), { force: true })));
+}
+
 async function downloadWithYtdlp(job: DubJob, dir: string, url: string) {
-  const args = [
+  const baseArgs = [
     "--no-playlist",
     "--match-filter",
     `duration <=? ${MAX_DUB_SECONDS}`,
@@ -364,31 +397,20 @@ async function downloadWithYtdlp(job: DubJob, dir: string, url: string) {
     "mp4",
     "--print",
     "after_move:title",
+    "--retries",
+    "3",
     "-o",
     path.join(dir, "source.%(ext)s"),
-    "--",
-    url,
   ];
 
-  const configured = process.env.YTDLP_PATH?.trim();
-  const attempts: Array<[string, string[]]> = configured
-    ? [[configured, args]]
-    : [
-        ["yt-dlp", args],
-        ["python", ["-m", "yt_dlp", ...args]],
-      ];
-
-  let result: Awaited<ReturnType<typeof runProcess>> | null = null;
-  for (const [cmd, cmdArgs] of attempts) {
-    try {
-      result = await runProcess(cmd, cmdArgs, YTDLP_TIMEOUT_MS);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  let result = await runYtdlp([...baseArgs, "--", url]);
+  if (job.sourceKind === "youtube") {
+    for (const clients of YOUTUBE_RETRY_CLIENTS) {
+      if (result.code === 0 || !/HTTP Error 403/i.test(result.stderr)) break;
+      logger.info("dub.ytdlp_retry", { jobId: job.id, clients });
+      await clearPartialDownloads(dir);
+      result = await runYtdlp([...baseArgs, "--extractor-args", `youtube:player_client=${clients}`, "--", url]);
     }
-  }
-  if (!result) {
-    throw new ServiceError("PRECONDITION_FAILED", "Link downloads need yt-dlp installed on the server (or set YTDLP_PATH).");
   }
   if (result.code !== 0) {
     logger.warn("dub.ytdlp_failed", { jobId: job.id, stderr: result.stderr.slice(-500) });
