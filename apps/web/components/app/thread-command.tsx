@@ -16,6 +16,7 @@ import {
   BarChart2,
   Keyboard,
   Sun,
+  Languages,
 } from "lucide-react";
 
 type CommandAction = {
@@ -53,6 +54,7 @@ export function ThreadCommand({
       { id: "queue", group: "Navigate", label: "Open approval queue", icon: ListChecks, run: go("/queue") },
       { id: "calendar", group: "Navigate", label: "Go to Calendar", icon: Calendar, run: go("/calendar") },
       { id: "agent", group: "Navigate", label: "Open Thread Agent", icon: Bot, run: go("/agent") },
+      { id: "dub", group: "Navigate", label: "Open Dub", icon: Languages, run: go("/dub") },
       { id: "analytics", group: "Navigate", label: "Go to Analytics", icon: BarChart2, run: go("/analytics") },
       { id: "settings", group: "Navigate", label: "Go to Settings", icon: Settings, run: go("/settings") },
       { id: "compose", group: "Actions", label: "Compose new email", icon: PenLine, run: go("/inbox?compose=1") },
