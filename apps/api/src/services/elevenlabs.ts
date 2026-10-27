@@ -47,12 +47,28 @@ export async function cloneVoice(name: string, sample: { data: Buffer; filename:
     method: "POST",
     headers: { "xi-api-key": apiKey() },
     body: form,
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(300_000),
   });
   if (!res.ok) await failure(res, "voice clone");
   const data = (await res.json()) as { voice_id?: string };
   if (!data.voice_id) throw new ServiceError("INTERNAL", "ElevenLabs did not return a voice id.");
   return data.voice_id;
+}
+
+/**
+ * Deletes clones whose name starts with `prefix`. Used when a clone request errors or times out
+ * after ElevenLabs already created the voice, so it doesn't sit in the account using a slot.
+ */
+export async function deleteVoicesNamed(prefix: string): Promise<void> {
+  try {
+    const res = await fetch(`${BASE_URL}/v1/voices`, { headers: { "xi-api-key": apiKey() }, signal: AbortSignal.timeout(60_000) });
+    if (!res.ok) return;
+    const data = (await res.json()) as { voices?: Array<{ voice_id: string; name?: string; category?: string }> };
+    const orphans = (data.voices ?? []).filter((v) => v.category === "cloned" && v.name?.startsWith(prefix));
+    await Promise.all(orphans.map((v) => deleteVoice(v.voice_id)));
+  } catch (error) {
+    logger.warn("elevenlabs.orphan_cleanup_failed", { message: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 export async function deleteVoice(voiceId: string): Promise<void> {
@@ -114,13 +130,21 @@ export async function synthesizeWithTimestamps(input: {
   nextText?: string;
   stability: number;
   style: number;
+  /** Model-side speaking rate (ElevenLabs accepts 0.7–1.2); sounds more natural than stretching afterwards. */
+  speed?: number;
 }): Promise<TimedSpeech> {
   const body = {
     text: input.text,
     model_id: TTS_MODEL,
     previous_text: input.previousText || undefined,
     next_text: input.nextText || undefined,
-    voice_settings: { stability: input.stability, similarity_boost: 0.85, style: input.style, use_speaker_boost: true },
+    voice_settings: {
+      stability: input.stability,
+      similarity_boost: 0.85,
+      style: input.style,
+      use_speaker_boost: true,
+      speed: Math.min(1.2, Math.max(0.7, input.speed ?? 1)),
+    },
   };
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(
