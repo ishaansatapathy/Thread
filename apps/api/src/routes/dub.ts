@@ -8,6 +8,7 @@ import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
 import { ServiceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 
+import { isLipsyncConfigured } from "../services/dub-lipsync";
 import { DUB_SOURCE_LANGUAGES, isDubSourceLanguage, startDub } from "../services/dub-pipeline";
 import { DUB_TARGETS, isDubTarget } from "../services/dub-translate";
 import {
@@ -109,7 +110,12 @@ dubRouter.post(
 dubRouter.get("/options", async (req, res) => {
   const user = await authService.resolveSession(req, res);
   if (!user) return res.status(401).json({ error: "Authentication required" });
-  return res.json({ targets: DUB_TARGETS, sources: DUB_SOURCE_LANGUAGES, maxSeconds: MAX_DUB_SECONDS });
+  return res.json({
+    targets: DUB_TARGETS,
+    sources: DUB_SOURCE_LANGUAGES,
+    maxSeconds: MAX_DUB_SECONDS,
+    lipsync: isLipsyncConfigured(),
+  });
 });
 
 dubRouter.post("/jobs/:id/dub", express.json({ limit: "4kb" }), async (req, res) => {
@@ -130,7 +136,7 @@ dubRouter.post("/jobs/:id/dub", express.json({ limit: "4kb" }), async (req, res)
   if (!isDubSourceLanguage(source)) return res.status(400).json({ error: "Unsupported source language" });
 
   try {
-    startDub(job, target, source);
+    startDub(job, target, source, req.body?.lipsync === true);
     return res.status(202).json(toPublicJob(job));
   } catch (error) {
     return sendError(res, error, "Could not start dubbing");
