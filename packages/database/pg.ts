@@ -26,10 +26,20 @@ export function getMigrationDatabaseUrl() {
 }
 
 export function createPgPool(connectionString = env.DATABASE_URL) {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     ...pgConnectionConfig(connectionString),
     max: isNeonDatabase(connectionString) ? 5 : 10,
+    // Neon drops idle connections when its compute sleeps; don't hand those back out.
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 15_000,
+    keepAlive: true,
   });
+  // An idle client losing its socket (network blip, Neon scale-to-zero) emits 'error' on the pool;
+  // without a listener Node treats it as unhandled and kills the whole API process.
+  pool.on("error", (error) => {
+    console.warn(`[db] idle connection dropped: ${error.message}`);
+  });
+  return pool;
 }
 
 export async function createPgClient(connectionString?: string) {
