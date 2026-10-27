@@ -310,6 +310,26 @@
   background: var(--thread-surface-raised);
 }
 
+.thread-dub-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.thread-dub-check input {
+  margin-top: 3px;
+  accent-color: var(--thread-accent);
+}
+
+.thread-dub-check small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--thread-dim);
+}
+
 .thread-dub-steps {
   list-style: none;
   margin: 0;
