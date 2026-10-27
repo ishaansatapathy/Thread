@@ -62,8 +62,11 @@ export function envelopeCorrelation(a: Float32Array, b: Float32Array): number {
 const ONSET_WEIGHT = 1;
 const STEP_PENALTY = 0.15;
 const ANCHOR_STEP_FRAMES = 8;
-const MIN_LOCAL_RATE = 0.5;
-const MAX_LOCAL_RATE = 2.0;
+/** Absolute playback-speed limits for any stretch of dubbed speech — beyond these it stops sounding human. */
+export const MIN_LOCAL_RATE = 0.8;
+export const MAX_LOCAL_RATE = 1.25;
+/** How far local speed may drift from the phrase's average speed. */
+const RELATIVE_SPAN = 0.15;
 
 function onsets(env: Float32Array): Float32Array {
   const out = new Float32Array(env.length);
@@ -116,35 +119,66 @@ function dtwMap(dub: Float32Array, orig: Float32Array): Float32Array {
 
 export type Anchor = { out: number; in: number };
 
+/** Playback speed (dub seconds per output second) on each segment between anchors. */
+export function segmentRates(anchors: Anchor[]): number[] {
+  const rates: number[] = [];
+  for (let k = 1; k < anchors.length; k++) {
+    const a = anchors[k - 1]!;
+    const b = anchors[k]!;
+    rates.push((b.in - a.in) / Math.max(1e-6, b.out - a.out));
+  }
+  return rates;
+}
+
+function withinBounds(anchors: Anchor[], lo: number, hi: number): Anchor[] {
+  const end = anchors[anchors.length - 1]!;
+  const kept: Anchor[] = [anchors[0]!];
+  for (const a of anchors.slice(1, -1)) {
+    const prev = kept[kept.length - 1]!;
+    const rate = (a.in - prev.in) / Math.max(1e-6, a.out - prev.out);
+    if (a.out > prev.out && rate >= lo && rate <= hi) kept.push(a);
+  }
+  while (kept.length > 1) {
+    const prev = kept[kept.length - 1]!;
+    const rate = (end.in - prev.in) / Math.max(1e-6, end.out - prev.out);
+    if (rate >= lo && rate <= hi) break;
+    kept.pop();
+  }
+  kept.push(end);
+  return kept;
+}
+
 /**
  * Time map (seconds) from the original's timeline to the dub's, sampled from the DTW path every
- * 80 ms. Local speed changes stay within [MIN_LOCAL_RATE, MAX_LOCAL_RATE] so speech stays natural.
+ * 80 ms. Local speed stays close to the phrase's own average speed (±RELATIVE_SPAN) and inside
+ * [MIN_LOCAL_RATE, MAX_LOCAL_RATE]; anchors are smoothed so the speed never jumps between syllables.
  */
 export function alignmentAnchors(dubEnv: Float32Array, origEnv: Float32Array): Anchor[] {
   const n = dubEnv.length;
   const m = origEnv.length;
-  const map = dtwMap(dubEnv, origEnv);
-  const minRate = MIN_LOCAL_RATE;
-  const maxRate = MAX_LOCAL_RATE;
-  const anchors: Anchor[] = [{ out: 0, in: 0 }];
-  for (let i = ANCHOR_STEP_FRAMES; i < n - ANCHOR_STEP_FRAMES; i += ANCHOR_STEP_FRAMES) {
-    const prev = anchors[anchors.length - 1]!;
-    const outFrame = map[i]!;
-    const dOut = outFrame - prev.out / FRAME_SECONDS;
-    if (dOut <= 0) continue;
-    const rate = (i - prev.in / FRAME_SECONDS) / dOut;
-    if (rate < minRate || rate > maxRate) continue;
-    anchors.push({ out: outFrame * FRAME_SECONDS, in: i * FRAME_SECONDS });
-  }
   const end = { out: m * FRAME_SECONDS, in: n * FRAME_SECONDS };
-  while (anchors.length > 1) {
-    const prev = anchors[anchors.length - 1]!;
-    const rate = (end.in - prev.in) / Math.max(1e-6, end.out - prev.out);
-    if (rate >= minRate && rate <= maxRate) break;
-    anchors.pop();
+  const average = n / Math.max(1, m);
+  const lo = Math.max(MIN_LOCAL_RATE, average * (1 - RELATIVE_SPAN));
+  const hi = Math.min(MAX_LOCAL_RATE, average * (1 + RELATIVE_SPAN));
+  if (lo >= hi) return [{ out: 0, in: 0 }, end];
+
+  const map = dtwMap(dubEnv, origEnv);
+  const raw: Anchor[] = [{ out: 0, in: 0 }];
+  for (let i = ANCHOR_STEP_FRAMES; i < n - ANCHOR_STEP_FRAMES; i += ANCHOR_STEP_FRAMES) {
+    raw.push({ out: map[i]! * FRAME_SECONDS, in: i * FRAME_SECONDS });
   }
-  anchors.push(end);
-  return anchors;
+  raw.push(end);
+
+  // Smooth the mapped output times (1-2-1 kernel, two passes) so speed changes glide.
+  let smooth = raw;
+  for (let pass = 0; pass < 2; pass++) {
+    smooth = smooth.map((a, k) =>
+      k === 0 || k === smooth.length - 1
+        ? a
+        : { in: a.in, out: (smooth[k - 1]!.out + 2 * a.out + smooth[k + 1]!.out) / 4 },
+    );
+  }
+  return withinBounds(smooth, lo, hi);
 }
 
 function inputTimeAt(anchors: Anchor[], out: number): number {
