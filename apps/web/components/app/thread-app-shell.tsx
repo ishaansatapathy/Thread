@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Sun,
+  Languages,
 } from "lucide-react";
 
 import { trpc } from "~/trpc/client";
@@ -33,6 +34,7 @@ const NAV_TOP = [
   { label: "Brief", href: "/brief", icon: Sun },
   { label: "Agent", href: "/agent", icon: Bot },
   { label: "Queue", href: "/queue", icon: ListChecks },
+  { label: "Dub", href: "/dub", icon: Languages },
 ];
 
 const NAV_BOTTOM = [{ label: "Analytics", href: "/analytics", icon: BarChart2 }];
@@ -135,6 +137,7 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/queue": { title: "Queue", sub: "Approve before anything sends" },
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
   "/agent": { title: "Agent", sub: "AI assistant — always through Queue" },
+  "/dub": { title: "Dub", sub: "Bring a video — keep your voice in any language" },
   "/analytics": { title: "Analytics", sub: "Queue activity & trends" },
   "/settings": { title: "Settings", sub: "Account & connections" },
   "/apps/drive": { title: "Drive", sub: "Files Thread can save and organise" },
