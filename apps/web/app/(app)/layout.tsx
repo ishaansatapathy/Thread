@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import "~/components/thread/thread.css";
 import "~/components/app/thread-app.css";
 import "~/components/app/thread-meetings.css";
+import "~/components/app/thread-dub.css";
 import { ThreadAppShell } from "~/components/app/thread-app-shell";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
