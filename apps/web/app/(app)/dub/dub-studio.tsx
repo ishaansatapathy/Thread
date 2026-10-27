@@ -3,7 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Download } from "lucide-react";
 
-export type DubStage = "extracting" | "transcribing" | "analyzing" | "translating" | "cloning" | "voicing" | "mixing" | "done";
+export type DubStage =
+  | "extracting"
+  | "transcribing"
+  | "analyzing"
+  | "translating"
+  | "cloning"
+  | "voicing"
+  | "mixing"
+  | "lipsync"
+  | "done";
 
 export type DubChunk = {
   start: number;
@@ -39,6 +48,7 @@ export type DubRun = {
   error: string | null;
   notice: string | null;
   lines: DubLine[];
+  lipsync: boolean;
   startedAt: number;
   finishedAt: number | null;
 };
@@ -78,6 +88,8 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
   const run = job.dub;
   const [targets, setTargets] = useState<Option[]>([]);
   const [sources, setSources] = useState<Option[]>([]);
+  const [lipsyncAvailable, setLipsyncAvailable] = useState(false);
+  const [withLipsync, setWithLipsync] = useState(run?.lipsync ?? false);
   const [target, setTarget] = useState(run?.target ?? "hinglish");
   const [source, setSource] = useState(run?.sourceLanguage ?? "hi-IN");
   const [starting, setStarting] = useState(false);
@@ -90,10 +102,11 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
   useEffect(() => {
     void fetch("/api-dub/options", { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: { targets: Option[]; sources: Option[] } | null) => {
+      .then((d: { targets: Option[]; sources: Option[]; lipsync?: boolean } | null) => {
         if (!d) return;
         setTargets(d.targets);
         setSources(d.sources);
+        setLipsyncAvailable(Boolean(d.lipsync));
       })
       .catch(() => undefined);
   }, []);
@@ -118,7 +131,7 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json", "x-thread-csrf": "1" },
-        body: JSON.stringify({ target, source }),
+        body: JSON.stringify({ target, source, lipsync: lipsyncAvailable && withLipsync }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -133,7 +146,8 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
     }
   };
 
-  const stageIndex = run ? STAGES.findIndex((s) => s.key === run.stage) : -1;
+  const stages = run?.lipsync ? [...STAGES, { key: "lipsync" as const, label: "Lip-sync the mouth" }] : STAGES;
+  const stageIndex = run ? stages.findIndex((s) => s.key === run.stage) : -1;
   const lines = useMemo(() => run?.lines.filter((l) => l.original) ?? [], [run?.lines]);
   const currentLine = lines.find((l) => currentTime >= l.start - 0.05 && currentTime < l.end + 0.3)?.id ?? null;
   const videoSrc =
@@ -219,6 +233,15 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
               ))}
             </select>
           </div>
+          {lipsyncAvailable ? (
+            <label className="thread-dub-check">
+              <input type="checkbox" checked={withLipsync} onChange={(e) => setWithLipsync(e.target.checked)} disabled={running} />
+              <span>
+                Lip-sync the mouth
+                <small>Beta · runs on this machine&apos;s GPU · about 6 min per minute of video</small>
+              </span>
+            </label>
+          ) : null}
           <button
             type="button"
             className="thread-dub-btn"
@@ -238,7 +261,7 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
 
           {run ? (
             <ol className="thread-dub-steps" aria-label="Progress">
-              {STAGES.map((stage, i) => {
+              {stages.map((stage, i) => {
                 const state =
                   run.status === "done" || i < stageIndex
                     ? "done"
@@ -290,9 +313,7 @@ export function DubStudio({ job, onStarted }: { job: DubJob; onStarted: () => vo
             <h3>Script</h3>
             <span className="thread-mono-tag">
               {lines.length} lines · {lines.reduce((n, l) => n + l.chunks.length, 0)} phrases
-              {run?.transcriber ? ` · timing by ${run.transcriber === "scribe" ? "Scribe" : "Gnani"}` : ""}
-              {run?.syncScore !== null && run?.syncScore !== undefined ? ` · rhythm match ${run.syncScore}%` : ""}
-            </span>
+              {run?.transcriber ? ` · timing by ${run.transcriber === "scribe" ? "Scribe" : "Gnani"}` : ""}            </span>
           </div>
           {lines.map((line) => (
             <button
