@@ -28,11 +28,22 @@ import {
   type Prosody,
   type Tone,
 } from "./dub-media";
-import { alignmentAnchors, envelope, envelopeCorrelation, uniformAnchors, warp } from "./dub-align";
+import {
+  MAX_LOCAL_RATE,
+  MIN_LOCAL_RATE,
+  alignmentAnchors,
+  envelope,
+  envelopeCorrelation,
+  segmentRates,
+  uniformAnchors,
+  warp,
+} from "./dub-align";
+import { isLipsyncConfigured, lipsync } from "./dub-lipsync";
 import { buildContext, shortenSentence, translateSentences, type DubTargetCode, type SentenceInput } from "./dub-translate";
 import {
   cloneVoice,
   deleteVoice,
+  deleteVoicesNamed,
   isElevenLabsConfigured,
   synthesizeWithTimestamps,
   transcribeWords,
@@ -40,7 +51,16 @@ import {
 } from "./elevenlabs";
 import { isGnaniConfigured, transcribeClip } from "./gnani";
 
-export type DubStage = "extracting" | "transcribing" | "analyzing" | "translating" | "cloning" | "voicing" | "mixing" | "done";
+export type DubStage =
+  | "extracting"
+  | "transcribing"
+  | "analyzing"
+  | "translating"
+  | "cloning"
+  | "voicing"
+  | "mixing"
+  | "lipsync"
+  | "done";
 
 export type DubChunk = {
   start: number;
@@ -53,6 +73,10 @@ export type DubChunk = {
   sync: number | null;
   /** Same correlation with a plain uniform stretch, for comparison. */
   syncBefore: number | null;
+  /** Seconds this phrase starts after the original (the previous phrase ran long). */
+  delay: number;
+  /** Seconds cut from the end because the next speaker starts (should stay 0). */
+  clipped: number;
 };
 
 export type DubLine = {
@@ -81,6 +105,8 @@ export type DubRun = {
   error: string | null;
   notice: string | null;
   lines: DubLine[];
+  /** Whether the mouth is re-animated to the dub (MuseTalk; slow, GPU only). */
+  lipsync: boolean;
   startedAt: number;
   finishedAt: number | null;
   outputPath: string | null;
@@ -116,13 +142,23 @@ const MIN_CHUNK_SECONDS = 0.6;
 /** Sentence boundaries: speaker change, end punctuation, or a pause this long. */
 const SENTENCE_PAUSE = 1.0;
 const MAX_SENTENCE_SECONDS = 18;
-const MIN_TEMPO = 0.9;
-const MAX_TEMPO = 1.3;
-const HARD_MAX_TEMPO = 1.5;
-const SHORTEN_ABOVE = 1.3;
-/** Within this length ratio a phrase is warped onto the original rhythm; outside it, stretched uniformly. */
-const WARP_MIN_SPEED = 0.7;
-const WARP_MAX_SPEED = 1.45;
+/** Only used when a phrase would otherwise be cut off before the next speaker starts. */
+const HARD_MAX_TEMPO = 1.3;
+/** Breath left between phrases when one is pushed back by the previous. */
+const PHRASE_GAP = 0.04;
+/** ElevenLabs' own speaking-rate range we allow; the model sounds natural inside it. */
+const MIN_MODEL_SPEED = 0.85;
+const MAX_MODEL_SPEED = 1.15;
+/** A take more than this far from the sentence's length is redone at a corrected model speed. */
+const RETAKE_TOLERANCE = 0.08;
+/** Above this, the translation is shortened rather than spoken faster. */
+const SHORTEN_ABOVE = 1.12;
+
+type Pace = { chars: number; seconds: number };
+
+function clampSpeed(speed: number) {
+  return Math.min(MAX_MODEL_SPEED, Math.max(MIN_MODEL_SPEED, speed));
+}
 /** The original track still carries the speaker's voice, so it is muted wherever anyone speaks. */
 const BG_GAIN_UNDER_SPEECH = 0;
 const BG_GAIN_OPEN = 0.6;
@@ -139,9 +175,10 @@ export function assertCanDub() {
   }
 }
 
-export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: string) {
+export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: string, withLipsync = false) {
   if (job.status !== "ready" || !job.filePath) throw new ServiceError("BAD_REQUEST", "The video isn't ready yet.");
   if (job.dub?.status === "running") throw new ServiceError("BAD_REQUEST", "This video is already being dubbed.");
+  if (withLipsync && !isLipsyncConfigured()) throw new ServiceError("BAD_REQUEST", "Lip-sync isn't set up on this server.");
   assertCanDub();
 
   const run: DubRun = {
@@ -155,6 +192,7 @@ export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: str
     error: null,
     notice: null,
     lines: [],
+    lipsync: withLipsync,
     startedAt: Date.now(),
     finishedAt: null,
     outputPath: null,
@@ -183,11 +221,18 @@ export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: str
       run.progress = null;
       await Promise.all(run.voiceIds.map((id) => deleteVoice(id)));
       run.voiceIds = [];
+      if (run.status === "error") await deleteVoicesNamed(clonePrefix(job.id));
       const dir = jobDir(job.id);
-      await Promise.all(["a16k.f32", "a8k.f32", "a44.f32", "mix.f32"].map((f) => rm(path.join(dir, f), { force: true })));
+      await Promise.all(
+        ["a16k.f32", "a8k.f32", "a44.f32", "mix.f32", "speech.wav", "lipsync.mp4"].map((f) =>
+          rm(path.join(dir, f), { force: true }),
+        ),
+      );
       await rm(path.join(dir, "tts"), { recursive: true, force: true });
     });
 }
+
+const clonePrefix = (jobId: string) => `Thread dub ${jobId.slice(0, 8)}`;
 
 /** Premade ElevenLabs voices used when cloning isn't available on the account. */
 function stockVoice(pitchHz: number): string {
@@ -343,23 +388,65 @@ function referenceAudio(lines: DubLine[], speaker: string, pcm: Float32Array): {
 
 type PlacedPiece = { at: number; pcm: Float32Array };
 
-/** Cut times (seconds) between parts, taken from the TTS character alignment. */
-function partCutTimes(parts: string[], charStarts: number[], charEnds: number[], totalSeconds: number): number[] {
+/**
+ * Where to cut one TTS take into per-chunk pieces. Each cut lands on a word gap: the translator's
+ * suggested boundary when it falls near the time the original speaker reached that chunk, otherwise
+ * the word gap closest to that time — so no piece ends up far too long or short for its slot.
+ * Returns cut times (seconds) and the words that ended up in each piece.
+ */
+function chooseCuts(
+  parts: string[],
+  speech: { charStarts: number[]; charEnds: number[] },
+  takeStart: number,
+  takeEnd: number,
+  line: DubLine,
+): { cuts: number[]; texts: string[] } {
   const text = parts.join(" ");
-  const cuts: number[] = [];
-  let offset = 0;
-  const aligned = charStarts.length === text.length && charEnds.length === text.length;
-  for (let i = 0; i < parts.length - 1; i++) {
-    offset += parts[i]!.length + 1;
-    if (aligned) {
-      const prevEnd = charEnds[Math.max(0, offset - 2)] ?? 0;
-      const nextStart = charStarts[offset] ?? prevEnd;
-      cuts.push((prevEnd + Math.max(prevEnd, nextStart)) / 2);
-    } else {
-      cuts.push((offset / text.length) * totalSeconds);
+  const n = parts.length;
+  if (n <= 1) return { cuts: [], texts: [text] };
+  const { charStarts, charEnds } = speech;
+  if (charStarts.length !== text.length || charEnds.length !== text.length) {
+    const cuts: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < n - 1; i++) {
+      offset += parts[i]!.length + 1;
+      cuts.push(takeStart + (offset / text.length) * (takeEnd - takeStart));
+    }
+    return { cuts, texts: parts };
+  }
+
+  const gaps: Array<{ index: number; time: number }> = [];
+  for (let k = 1; k < text.length - 1; k++) {
+    if (text[k] === " " && text[k - 1] !== " ") {
+      gaps.push({ index: k, time: (charEnds[k - 1]! + Math.max(charEnds[k - 1]!, charStarts[k + 1]!)) / 2 });
     }
   }
-  return cuts;
+  const span = Math.max(0.3, line.end - line.start);
+  const chosen: number[] = [];
+  let suggested = 0;
+  let minGap = 0;
+  for (let b = 1; b < n; b++) {
+    suggested += parts[b - 1]!.length + 1;
+    const target = takeStart + ((line.chunks[b]!.start - line.start) / span) * (takeEnd - takeStart);
+    const tolerance = Math.max(0.35, 0.2 * (line.chunks[b - 1]!.end - line.chunks[b - 1]!.start));
+    const remaining = gaps.filter((g, gi) => gi >= minGap && gaps.length - gi >= n - b);
+    if (remaining.length === 0) break;
+    const llm = remaining.find((g) => g.index === suggested - 1);
+    const pick =
+      llm && Math.abs(llm.time - target) <= tolerance
+        ? llm
+        : remaining.reduce((best, g) => (Math.abs(g.time - target) < Math.abs(best.time - target) ? g : best));
+    chosen.push(pick.index);
+    minGap = gaps.indexOf(pick) + 1;
+  }
+  if (chosen.length !== n - 1) {
+    return { cuts: [], texts: [text] };
+  }
+  const bounds = [-1, ...chosen, text.length];
+  return {
+    cuts: chosen.map((idx) => gaps.find((g) => g.index === idx)!.time),
+    texts: bounds.slice(1).map((end, i) => text.slice(bounds[i]! + 1, end).trim()),
+  };
 }
 
 async function voiceSentence(
@@ -371,88 +458,121 @@ async function voiceSentence(
   ctx: Awaited<ReturnType<typeof buildContext>>,
   nextSpeechStart: number,
   original: Float32Array,
+  pace: Pace,
 ): Promise<PlacedPiece[]> {
   const line = run.lines[index]!;
   const settings = TONE_VOICE_SETTINGS[line.tone];
-  const slotTotal = line.chunks.reduce((a, c) => a + (c.end - c.start), 0);
+  // The take includes the speaker's own pauses, so it is compared against the whole sentence span.
+  const span = Math.max(0.3, line.end - line.start);
+  const text = () => line.chunks.map((c) => c.text).join(" ");
 
-  const take = async () => {
+  const take = async (speed: number) => {
     const speech = await synthesizeWithTimestamps({
       voiceId,
-      text: line.chunks.map((c) => c.text).join(" "),
+      text: text(),
       previousText: run.lines[index - 1]?.translation,
       nextText: run.lines[index + 1]?.translation,
       stability: settings.stability,
       style: settings.style,
+      speed,
     });
     const mp3 = path.join(ttsDir, `${line.id}.mp3`);
     await writeFile(mp3, speech.audio);
     const pcm = await decodeToF32(mp3, path.join(ttsDir, `${line.id}.f32`), MIX_RATE);
-    return { pcm, speech };
+    const [from, to] = trimSilence(pcm, MIX_RATE);
+    const spoken = (to - from) / MIX_RATE;
+    pace.chars += text().length;
+    pace.seconds += spoken * speed;
+    return { pcm, speech, ratio: spoken / span };
   };
 
-  let { pcm, speech } = await take();
-  const spoken = () => {
-    const [from, to] = trimSilence(pcm, MIX_RATE);
-    return (to - from) / MIX_RATE;
-  };
-  const ratio = spoken() / Math.max(0.3, slotTotal);
-  if (ratio > SHORTEN_ABOVE) {
-    const shorter = await shortenSentence(input, { translation: line.translation, parts: line.chunks.map((c) => c.text) }, ctx, run.target, ratio);
+  // Pre-fit: predict this voice's natural length from earlier takes and ask the model to pace itself.
+  let speed = clampSpeed(pace.seconds > 2 ? (text().length * (pace.seconds / pace.chars)) / span : 1);
+  let { pcm, speech, ratio } = await take(speed);
+
+  if (ratio > SHORTEN_ABOVE && speed * ratio > MAX_MODEL_SPEED) {
+    const shorter = await shortenSentence(
+      input,
+      { translation: line.translation, parts: line.chunks.map((c) => c.text) },
+      ctx,
+      run.target,
+      (speed * ratio) / MAX_MODEL_SPEED,
+    );
     line.translation = shorter.translation;
     shorter.parts.forEach((p, i) => (line.chunks[i]!.text = p));
-    ({ pcm, speech } = await take());
+    ({ pcm, speech, ratio } = await take(speed));
+  }
+  if (ratio > 1 + RETAKE_TOLERANCE || ratio < 1 - RETAKE_TOLERANCE) {
+    const better = clampSpeed(speed * ratio);
+    if (Math.abs(better - speed) > 0.03) {
+      speed = better;
+      ({ pcm, speech, ratio } = await take(speed));
+    }
   }
 
-  const totalSeconds = pcm.length / MIX_RATE;
-  const cuts = partCutTimes(
-    line.chunks.map((c) => c.text),
-    speech.charStarts,
-    speech.charEnds,
-    totalSeconds,
-  );
-  const bounds = [0, ...cuts.map((t) => Math.round(t * MIX_RATE)), pcm.length];
+  const [speechFrom, speechTo] = trimSilence(pcm, MIX_RATE);
+  const split = chooseCuts(line.chunks.map((c) => c.text), speech, speechFrom / MIX_RATE, speechTo / MIX_RATE, line);
+  if (split.cuts.length === line.chunks.length - 1) {
+    split.texts.forEach((t, i) => (line.chunks[i]!.text = t));
+  } else {
+    // Not enough word gaps to split: voice the whole sentence as one phrase from the first chunk.
+    const first = line.chunks[0]!;
+    const last = line.chunks[line.chunks.length - 1]!;
+    line.chunks = [{ ...first, end: last.end, source: line.original, text: line.chunks.map((c) => c.text).join(" ") }];
+  }
+  const bounds = [0, ...split.cuts.map((t) => Math.round(t * MIX_RATE)), pcm.length];
 
   const pieces: PlacedPiece[] = [];
+  // End of the previous phrase as placed; a phrase that ran long pushes the next one back
+  // (into the speaker's pause) instead of being cut off mid-word.
+  let cursor = 0;
   for (const [i, chunk] of line.chunks.entries()) {
     const raw = pcm.subarray(bounds[i]!, Math.max(bounds[i]!, bounds[i + 1]!));
     const [from, to] = trimSilence(raw, MIX_RATE);
     let piece: Float32Array = raw.subarray(from, to);
     if (piece.length === 0) continue;
 
-    const slot = Math.max(0.2, chunk.end - chunk.start);
-    const nextStart = line.chunks[i + 1]?.start ?? nextSpeechStart;
-    const available = Math.max(slot, nextStart - chunk.start - 0.03);
+    const at = Math.max(chunk.start, cursor + PHRASE_GAP);
+    chunk.delay = round2(at - chunk.start);
+    const isLast = i === line.chunks.length - 1;
+    const slot = Math.max(0.2, chunk.end - at);
+    const nextStart = isLast ? nextSpeechStart : line.chunks[i + 1]!.start;
+    // Within a sentence a long phrase may run on; at the sentence end it must finish before the next speaker.
+    const available = isLast ? Math.max(slot, nextStart - at - 0.03) : Infinity;
     const seconds = piece.length / MIX_RATE;
     const speed = seconds / slot;
     const origSpan = original.subarray(Math.floor(chunk.start * MIX_RATE), Math.ceil(chunk.end * MIX_RATE));
     const origEnv = envelope(origSpan, MIX_RATE);
+    const onTime = chunk.delay === 0;
 
-    if (speed >= WARP_MIN_SPEED && speed <= WARP_MAX_SPEED && origEnv.length > 20) {
+    if (onTime && speed >= MIN_LOCAL_RATE && speed <= MAX_LOCAL_RATE && origEnv.length > 20) {
       // Close enough in length: warp the dub frame-by-frame onto the original's loudness rhythm.
       const anchors = alignmentAnchors(envelope(piece, MIX_RATE), origEnv);
       const uniform = warp(piece, MIX_RATE, uniformAnchors(seconds, slot), slot);
       piece = warp(piece, MIX_RATE, anchors, slot);
-      chunk.tempo = Math.round(speed * 100) / 100;
+      chunk.tempo = round2(Math.max(...segmentRates(anchors)));
       chunk.syncBefore = round2(envelopeCorrelation(envelope(uniform, MIX_RATE), origEnv));
       chunk.sync = round2(envelopeCorrelation(envelope(piece, MIX_RATE), origEnv));
     } else {
-      let tempo = Math.min(MAX_TEMPO, Math.max(MIN_TEMPO, speed));
+      // Too far off to warp naturally: a gentle uniform change, spilling into the following pause if needed.
+      let tempo = Math.min(MAX_LOCAL_RATE, Math.max(onTime ? MIN_LOCAL_RATE : 1, speed));
       if (seconds / tempo > available) tempo = Math.min(HARD_MAX_TEMPO, seconds / available);
       if (Math.abs(tempo - 1) > 0.02) {
         piece = warp(piece, MIX_RATE, uniformAnchors(seconds, seconds / tempo), seconds / tempo);
-        chunk.tempo = Math.round(tempo * 100) / 100;
       }
+      chunk.tempo = round2(tempo);
       if (origEnv.length > 20) chunk.sync = round2(envelopeCorrelation(envelope(piece, MIX_RATE), origEnv));
     }
 
     const maxLen = Math.round(available * MIX_RATE);
     if (piece.length > maxLen) {
+      chunk.clipped = round2((piece.length - maxLen) / MIX_RATE);
       piece = piece.slice(0, maxLen);
       const fade = Math.min(piece.length, Math.round(MIX_RATE * 0.03));
       for (let s = 0; s < fade; s++) piece[piece.length - 1 - s]! *= s / fade;
     }
-    pieces.push({ at: chunk.start, pcm: piece });
+    pieces.push({ at, pcm: piece });
+    cursor = at + piece.length / MIX_RATE;
   }
   return pieces;
 }
@@ -508,6 +628,8 @@ async function runPipeline(job: DubJob, run: DubRun) {
       tempo: null,
       sync: null,
       syncBefore: null,
+      delay: 0,
+      clipped: 0,
     })),
   }));
 
@@ -540,7 +662,7 @@ async function runPipeline(job: DubJob, run: DubRun) {
     const ref = referenceAudio(run.lines, speaker, original);
     if (ref.seconds < MIN_CLONE_SECONDS) continue;
     try {
-      const voiceId = await cloneVoice(`Thread dub ${job.id.slice(0, 8)} ${speaker}`, {
+      const voiceId = await cloneVoice(`${clonePrefix(job.id)} ${speaker}`, {
         data: ref.wav,
         filename: `${speaker}.wav`,
         mimeType: "audio/wav",
@@ -548,7 +670,11 @@ async function runPipeline(job: DubJob, run: DubRun) {
       run.voiceIds.push(voiceId);
       voiceBySpeaker.set(speaker, voiceId);
     } catch (error) {
-      if (!(error instanceof ServiceError && error.message.includes("paid ElevenLabs plan"))) throw error;
+      if (!(error instanceof ServiceError && error.message.includes("paid ElevenLabs plan"))) {
+        // A timed-out request may still have created the clone on ElevenLabs' side.
+        await deleteVoicesNamed(clonePrefix(job.id));
+        throw error;
+      }
       const pitches = run.lines.filter((l) => l.speaker === speaker && l.prosody.pitchHz > 0).map((l) => l.prosody.pitchHz);
       voiceBySpeaker.set(speaker, stockVoice(pitches.reduce((a, b) => a + b, 0) / Math.max(1, pitches.length)));
       run.notice = "Using a stock voice: voice cloning needs a paid ElevenLabs plan (Starter or above).";
@@ -565,17 +691,21 @@ async function runPipeline(job: DubJob, run: DubRun) {
   const placed: PlacedPiece[][] = new Array(run.lines.length);
   let done = 0;
   run.progress = { done, total: run.lines.length };
+  const paceByVoice = new Map<string, Pace>();
   await mapLimit(run.lines, 3, async (line, i) => {
     const nextSpeechStart = run.lines[i + 1]?.start ?? Math.max(duration, line.end + 1);
+    const voiceId = voiceBySpeaker.get(line.speaker) ?? fallbackVoice;
+    if (!paceByVoice.has(voiceId)) paceByVoice.set(voiceId, { chars: 0, seconds: 0 });
     placed[i] = await voiceSentence(
       run,
       i,
-      voiceBySpeaker.get(line.speaker) ?? fallbackVoice,
+      voiceId,
       ttsDir,
       inputs[i]!,
       ctx,
       nextSpeechStart,
       original,
+      paceByVoice.get(voiceId)!,
     );
     run.progress = { done: ++done, total: run.lines.length };
   });
@@ -583,6 +713,10 @@ async function runPipeline(job: DubJob, run: DubRun) {
   run.syncScore = scored.length
     ? Math.round((scored.reduce((a, c) => a + Math.max(0, c.sync!), 0) / scored.length) * 100)
     : null;
+
+  // Free the cloned voices now — lip-sync can take a long time and they shouldn't hold account slots.
+  await Promise.all(run.voiceIds.map((id) => deleteVoice(id)));
+  run.voiceIds = [];
 
   run.stage = "mixing";
   run.progress = null;
@@ -601,6 +735,10 @@ async function runPipeline(job: DubJob, run: DubRun) {
     const from = Math.max(0, Math.floor((line.start - SPEECH_PAD_BEFORE) * MIX_RATE));
     speech.fill(1, from, Math.min(total, Math.ceil((line.end + SPEECH_PAD_AFTER) * MIX_RATE)));
   }
+
+  // Lip-sync is driven by the dubbed voice alone, so background music doesn't move the mouth.
+  const speechWav = path.join(dir, "speech.wav");
+  if (run.lipsync) await writeFile(speechWav, f32ToWav16(mix, MIX_RATE));
 
   // One-pole smoothing (~60ms) so the background fades instead of clicking at chunk boundaries.
   const smoothing = 1 - Math.exp(-1 / (0.06 * MIX_RATE));
@@ -622,4 +760,22 @@ async function runPipeline(job: DubJob, run: DubRun) {
     await ffmpeg(["-i", source, ...audioArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", ...tail]);
   }
   run.outputPath = output;
+
+  if (!run.lipsync) return;
+  run.stage = "lipsync";
+  const synced = path.join(dir, "lipsync.mp4");
+  try {
+    await lipsync(source, speechWav, synced);
+    const final = path.join(dir, `dubbed-${run.target}-lipsync.mp4`);
+    await ffmpeg([
+      "-i", synced, ...audioArgs,
+      "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+      "-movflags", "+faststart", "-shortest", final,
+    ]);
+    run.outputPath = final;
+  } catch (error) {
+    // The dub itself is done; lip-sync is a bonus, so keep the plain dub rather than failing the run.
+    run.notice = error instanceof ServiceError ? error.message : "Lip-sync failed; showing the dub without it.";
+    logger.warn("dub.lipsync_skipped", { jobId: job.id, message: error instanceof Error ? error.message : String(error) });
+  }
 }
