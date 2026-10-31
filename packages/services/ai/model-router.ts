@@ -39,7 +39,8 @@ export type AiTask =
   | "daily_brief"
   | "summarize_meeting"
   | "dub_context"
-  | "dub_translate";
+  | "dub_translate"
+  | "dub_live";
 
 /** Above this many input characters a one-shot task is escalated (≈ tokens × 4). */
 const TASK_ESCALATION_CHARS: Record<AiTask, number> = {
@@ -56,6 +57,7 @@ const TASK_ESCALATION_CHARS: Record<AiTask, number> = {
   summarize_meeting: 70_000,
   dub_context: 70_000,
   dub_translate: Number.POSITIVE_INFINITY,
+  dub_live: Number.POSITIVE_INFINITY,
 };
 
 /**
@@ -76,6 +78,8 @@ const TASK_EFFORT: Record<AiTask, ReasoningEffort> = {
   summarize_meeting: "none",
   dub_context: "none",
   dub_translate: "low",
+  // Live call dubbing: every millisecond of thinking is heard as delay.
+  dub_live: "none",
 };
 
 function decide(tier: ModelTier, effort: { fast: ReasoningEffort; smart: ReasoningEffort }, reason: string): ModelDecision {

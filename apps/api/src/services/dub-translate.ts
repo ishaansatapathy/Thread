@@ -361,3 +361,27 @@ Return JSON: { "translation": "...", "parts": ["..."] }`,
   if (!translation) return current;
   return { translation, parts: normaliseParts(parsed.parts, translation, sentence.chunks) };
 }
+
+/**
+ * Live call dubbing: translates one spoken utterance, using the last few lines as context so
+ * pronouns and terms stay consistent. Kept to a single fast call — latency is heard by everyone.
+ */
+export async function translateUtterance(text: string, target: DubTargetCode, recent: string[]): Promise<string> {
+  const raw = await createChatCompletion(
+    [
+      {
+        role: "system",
+        content: `You are a live interpreter on a video call. Translate the speaker's latest utterance for listeners.
+${targetInstructions(target)}
+Speak it the way a person would say it out loud: natural, same tone, about the same length. Fix obvious speech-to-text errors from context.
+Never add commentary or placeholders such as "..." — if a word is unclear, infer it or leave it out.
+"recent" is only context (what was said just before); translate only "utterance".
+${DATA_RULE}
+Return JSON: { "translation": "..." }`,
+      },
+      { role: "user", content: JSON.stringify({ recent: recent.slice(-3), utterance: text }) },
+    ],
+    { task: "dub_live", jsonObject: true, temperature: 0.2 },
+  );
+  return parseJson<{ translation?: string }>(raw).translation?.trim() ?? "";
+}
