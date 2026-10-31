@@ -30,6 +30,7 @@ import {
   submitMeetingAudio,
   transcribeClip,
 } from "./gnani";
+import { deleteMeetingAudio, saveMeetingClip } from "./meeting-audio";
 
 export const MAX_MEETING_AUDIO_BYTES = 10 * 1024 * 1024; // Gnani batch STT's per-file cap.
 /** A 30s 16 kHz mono 16-bit WAV is ~960 KB; leave headroom for other formats. */
@@ -190,6 +191,8 @@ export async function appendLiveChunk(
     durationSeconds: number;
     speaker: "you" | "meeting" | "room";
     languageCode?: string;
+    /** The user opted in to keeping this meeting's audio so it can be dubbed afterwards. */
+    keepAudio?: boolean;
   },
 ): Promise<MeetingSegment | null> {
   if (!isGnaniConfigured()) throw serviceError("PRECONDITION_FAILED", "Gnani is not configured. Set GNANI_API_KEY.");
@@ -200,6 +203,10 @@ export async function appendLiveChunk(
   const meeting = await getOwnedMeeting(userId, meetingId);
   if (meeting.status !== "pending" && meeting.status !== "live") {
     throw serviceError("CONFLICT", `This meeting is already ${meeting.status}.`);
+  }
+
+  if (input.keepAudio) {
+    await saveMeetingClip(meetingId, { wav: input.audio.data, startSeconds: input.startSeconds, speaker: input.speaker });
   }
 
   const text = await transcribeClip(input.audio, input.languageCode ?? meeting.languageCode ?? "en-IN");
@@ -308,6 +315,7 @@ export async function deleteMeeting(userId: string, meetingId: string) {
   await db
     .delete(meetingRecordingsTable)
     .where(and(eq(meetingRecordingsTable.id, meetingId), eq(meetingRecordingsTable.userId, userId)));
+  await deleteMeetingAudio(meetingId);
 }
 
 /** Context block for the agent: rolling notes + the last few minutes verbatim, fenced as data. */
