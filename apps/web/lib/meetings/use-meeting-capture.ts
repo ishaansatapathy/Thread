@@ -36,7 +36,7 @@ export class CaptureError extends Error {
 
 type Job = { chunk: SpeechChunk; speaker: CaptureSpeaker };
 
-async function postChunk(meetingId: string, job: Job, language: string): Promise<LiveSegment | null> {
+async function postChunk(meetingId: string, job: Job, language: string, keepAudio: boolean): Promise<LiveSegment | null> {
   const res = await fetch(`/api-meetings/${meetingId}/chunk`, {
     method: "POST",
     credentials: "include",
@@ -47,6 +47,7 @@ async function postChunk(meetingId: string, job: Job, language: string): Promise
       "X-Duration-Seconds": job.chunk.durationSec.toFixed(2),
       "X-Speaker": job.speaker,
       "X-Language": language,
+      ...(keepAudio ? { "X-Keep-Audio": "1" } : {}),
     },
     body: job.chunk.wav,
   });
@@ -65,6 +66,8 @@ async function postChunk(meetingId: string, job: Job, language: string): Promise
 export function useMeetingCapture(opts: {
   meetingId: string;
   language: string;
+  /** The user opted in to saving this meeting's audio so it can be dubbed afterwards. */
+  keepAudio: boolean;
   onSegment: (segment: LiveSegment) => void;
   onFatal: (error: CaptureError) => void;
 }) {
@@ -106,7 +109,7 @@ export function useMeetingCapture(opts: {
     while (inFlightRef.current < MAX_CONCURRENT_UPLOADS && queueRef.current.length > 0 && !fatalRef.current) {
       const job = queueRef.current.shift()!;
       inFlightRef.current++;
-      void postChunk(optsRef.current.meetingId, job, optsRef.current.language)
+      void postChunk(optsRef.current.meetingId, job, optsRef.current.language, optsRef.current.keepAudio)
         .then((segment) => {
           if (segment) optsRef.current.onSegment(segment);
         })

@@ -18,6 +18,7 @@ import {
   FileText,
   FileSpreadsheet,
   GraduationCap,
+  Languages,
   Loader2,
   Mail,
   Maximize2,
@@ -37,6 +38,7 @@ import {
 import { trpc } from "~/trpc/client";
 import { AgentMarkdown } from "~/components/app/agent-markdown";
 import { VoiceInputButton } from "~/components/app/voice-input-button";
+import { MeetingDubPanel } from "~/components/app/meeting-dub-panel";
 import { useAgentStream, type StreamActionCard } from "~/lib/agent/use-agent-stream";
 import { CaptureError, useMeetingCapture, type LiveSegment } from "~/lib/meetings/use-meeting-capture";
 import { VOICE_LANGUAGES, useVoiceLanguage, voiceLanguageLabel } from "~/lib/voice/languages";
@@ -514,7 +516,8 @@ export function MeetingRoom({ meetingId }: { meetingId: string }) {
   const [language, setLanguage] = useVoiceLanguage();
   const [liveSegments, setLiveSegments] = useState<LiveSegment[]>([]);
   const [fatal, setFatal] = useState<CaptureError | null>(null);
-  const [panel, setPanel] = useState<"ask" | "notes">("ask");
+  const [panel, setPanel] = useState<"ask" | "notes" | "dub">("ask");
+  const [keepAudio, setKeepAudio] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingTitle, setEditingTitle] = useState<string | null>(null);
@@ -525,6 +528,7 @@ export function MeetingRoom({ meetingId }: { meetingId: string }) {
   const capture = useMeetingCapture({
     meetingId,
     language,
+    keepAudio,
     onSegment: (segment) => setLiveSegments((prev) => [...prev, segment]),
     onFatal: (error) => setFatal(error),
   });
@@ -858,6 +862,10 @@ export function MeetingRoom({ meetingId }: { meetingId: string }) {
               End meeting
             </button>
           ) : null}
+          <label className="thread-room-keep-audio" title="Keeps this meeting's audio for 48 hours so you can dub it after it ends. Off by default.">
+            <input type="checkbox" checked={keepAudio} onChange={(e) => setKeepAudio(e.target.checked)} />
+            Save audio for dubbing
+          </label>
           <span className="thread-room-hint">
             {voiceLanguageLabel(language).label} · silence is skipped in your browser, only speech goes to Gnani
           </span>
@@ -898,9 +906,14 @@ export function MeetingRoom({ meetingId }: { meetingId: string }) {
               <Sparkles size={13} /> Notes
               {notes?.actionItems.length ? <em>{notes.actionItems.length}</em> : null}
             </button>
+            <button type="button" role="tab" aria-selected={panel === "dub"} data-active={panel === "dub" ? "true" : undefined} onClick={() => setPanel("dub")}>
+              <Languages size={13} /> Dub
+            </button>
           </div>
           {panel === "ask" ? (
             <AskPanel agent={agent} />
+          ) : panel === "dub" ? (
+            <MeetingDubPanel meetingId={meetingId} ended={meeting.status === "ready"} />
           ) : (
             <NotesPanel
               notes={notes}
