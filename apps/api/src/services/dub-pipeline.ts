@@ -1,10 +1,11 @@
 /**
- * Dub pipeline for one ingested video:
- * extract audio → word-timed STT (ElevenLabs Scribe; Gnani + pause detection as fallback)
- * → sentences split into pause-delimited chunks → per-sentence prosody → context-aware
- * translation split back into chunk-sized parts → voice clone per speaker → one natural TTS
- * take per sentence, cut at chunk boundaries and fitted into each chunk's original slot
- * → mix over the ducked original → mux into the video.
+ * Dub pipeline for one recording (a meeting's saved audio):
+ * word-timed STT (ElevenLabs Scribe; Gnani + pause detection as fallback) → sentences split into
+ * pause-delimited chunks → per-sentence prosody → context-aware translation split back into
+ * chunk-sized parts → one natural TTS take per sentence in the speaker's chosen voice, cut at chunk
+ * boundaries and fitted into each chunk's original slot, then matched to the original phrase's
+ * pitch and loudness → mixed over the original's non-speech audio → one audio file.
+ * Only audio is produced; nothing visual is ever generated or altered.
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -12,14 +13,14 @@ import path from "node:path";
 import { ServiceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 
-import type { DubJob } from "./dub";
-import { jobDir } from "./dub";
 import {
   ANALYSIS_RATE,
   MIX_RATE,
   TONE_VOICE_SETTINGS,
   analyzeLine,
   decodeToF32,
+  resampleBy,
+  rmsDb,
   detectSpeech,
   f32ToWav16,
   ffmpeg,
@@ -38,29 +39,24 @@ import {
   uniformAnchors,
   warp,
 } from "./dub-align";
-import { isLipsyncConfigured, lipsync } from "./dub-lipsync";
 import { buildContext, shortenSentence, translateSentences, type DubTargetCode, type SentenceInput } from "./dub-translate";
-import {
-  cloneVoice,
-  deleteVoice,
-  deleteVoicesNamed,
-  isElevenLabsConfigured,
-  synthesizeWithTimestamps,
-  transcribeWords,
-  type ScribeWord,
-} from "./elevenlabs";
+import { isElevenLabsConfigured, synthesizeWithTimestamps, transcribeWords, type ScribeWord } from "./elevenlabs";
 import { isGnaniConfigured, transcribeClip } from "./gnani";
 
-export type DubStage =
-  | "extracting"
-  | "transcribing"
-  | "analyzing"
-  | "translating"
-  | "cloning"
-  | "voicing"
-  | "mixing"
-  | "lipsync"
-  | "done";
+export type DubStage = "extracting" | "transcribing" | "analyzing" | "translating" | "voices" | "voicing" | "mixing" | "done";
+
+/** What to dub and how each speaker should sound. */
+export type DubSource = {
+  id: string;
+  /** Scratch directory for intermediate files (cleaned up after the run). */
+  dir: string;
+  sourcePath: string;
+  durationSeconds: number;
+  /** Who is speaking in [start, end] when the caller knows better than diarization (e.g. mic vs. tab). */
+  speakerAt?: (start: number, end: number) => string | null;
+  /** Voice id for a speaker; their median pitch helps pick a matching stock voice. */
+  voiceFor: (speaker: string, pitchHz: number) => Promise<{ voiceId: string; notice?: string }>;
+};
 
 export type DubChunk = {
   start: number;
@@ -77,6 +73,10 @@ export type DubChunk = {
   delay: number;
   /** Seconds cut from the end because the next speaker starts (should stay 0). */
   clipped: number;
+  /** Semitones the dub was moved to follow the original phrase's intonation. */
+  pitchShift: number;
+  /** Gain applied so the dub follows the original phrase's loudness. */
+  gainDb: number;
 };
 
 export type DubLine = {
@@ -105,12 +105,9 @@ export type DubRun = {
   error: string | null;
   notice: string | null;
   lines: DubLine[];
-  /** Whether the mouth is re-animated to the dub (MuseTalk; slow, GPU only). */
-  lipsync: boolean;
   startedAt: number;
   finishedAt: number | null;
   outputPath: string | null;
-  voiceIds: string[];
 };
 
 export const DUB_SOURCE_LANGUAGES = [
@@ -132,9 +129,6 @@ export function isDubSourceLanguage(code: string) {
 
 const MAX_CONCURRENT_RUNS = 2;
 const STT_RATE = 16000;
-const MIN_CLONE_SECONDS = 5;
-const MAX_CLONE_SECONDS = 60;
-const MAX_CLONED_SPEAKERS = 3;
 /** Chunk boundaries: a pause at least this long splits a chunk. */
 const CHUNK_PAUSE = 0.28;
 const MAX_CHUNK_SECONDS = 6;
@@ -175,10 +169,8 @@ export function assertCanDub() {
   }
 }
 
-export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: string, withLipsync = false) {
-  if (job.status !== "ready" || !job.filePath) throw new ServiceError("BAD_REQUEST", "The video isn't ready yet.");
-  if (job.dub?.status === "running") throw new ServiceError("BAD_REQUEST", "This video is already being dubbed.");
-  if (withLipsync && !isLipsyncConfigured()) throw new ServiceError("BAD_REQUEST", "Lip-sync isn't set up on this server.");
+/** Starts a dub in the background; the returned run is updated in place as it progresses. */
+export function startDub(source: DubSource, target: DubTargetCode, sourceLanguage: string): DubRun {
   assertCanDub();
 
   const run: DubRun = {
@@ -192,16 +184,13 @@ export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: str
     error: null,
     notice: null,
     lines: [],
-    lipsync: withLipsync,
     startedAt: Date.now(),
     finishedAt: null,
     outputPath: null,
-    voiceIds: [],
   };
-  job.dub = run;
   runningRuns++;
 
-  void runPipeline(job, run)
+  void runPipeline(source, run)
     .then(() => {
       run.status = "done";
       run.stage = "done";
@@ -210,7 +199,7 @@ export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: str
       run.status = "error";
       run.error = error instanceof ServiceError ? error.message : "Dubbing failed. Try again.";
       logger.warn("dub.pipeline_failed", {
-        jobId: job.id,
+        sourceId: source.id,
         stage: run.stage,
         message: error instanceof Error ? error.message : String(error),
       });
@@ -219,26 +208,67 @@ export function startDub(job: DubJob, target: DubTargetCode, sourceLanguage: str
       runningRuns--;
       run.finishedAt = Date.now();
       run.progress = null;
-      await Promise.all(run.voiceIds.map((id) => deleteVoice(id)));
-      run.voiceIds = [];
-      if (run.status === "error") await deleteVoicesNamed(clonePrefix(job.id));
-      const dir = jobDir(job.id);
       await Promise.all(
-        ["a16k.f32", "a8k.f32", "a44.f32", "mix.f32", "speech.wav", "lipsync.mp4"].map((f) =>
-          rm(path.join(dir, f), { force: true }),
-        ),
+        ["a16k.f32", "a8k.f32", "a44.f32", "mix.f32"].map((f) => rm(path.join(source.dir, f), { force: true })),
       );
-      await rm(path.join(dir, "tts"), { recursive: true, force: true });
+      await rm(path.join(source.dir, "tts"), { recursive: true, force: true });
     });
+  return run;
 }
 
-const clonePrefix = (jobId: string) => `Thread dub ${jobId.slice(0, 8)}`;
+/** The speaker's typical pitch and loudness, so each phrase can be compared against it. */
+type SpeakerBaseline = { pitchHz: number; loudnessDb: number };
 
-/** Premade ElevenLabs voices used when cloning isn't available on the account. */
-function stockVoice(pitchHz: number): string {
-  const male = process.env.ELEVENLABS_FALLBACK_VOICE_MALE?.trim() || "iP95p4xoKVk53GoZ742B";
-  const female = process.env.ELEVENLABS_FALLBACK_VOICE_FEMALE?.trim() || "hpp4J3VqNfWAUOO0d1Us";
-  return pitchHz >= 165 ? female : male;
+/** Largest intonation shift applied to a dubbed phrase; bigger shifts start to sound processed. */
+const MAX_PITCH_SHIFT_ST = 2;
+/** Pitch differences beyond this are almost always octave errors in detection, not intonation. */
+const PITCH_TRUST_LIMIT_ST = 5;
+/** Share of the measured intonation difference to carry over (pitch tracking on short phrases is noisy). */
+const PITCH_TRANSFER = 0.7;
+const MAX_GAIN_DB = 6;
+/** Typical level of ElevenLabs speech; dubbed phrases are set relative to it. */
+const DUB_REFERENCE_DB = -20;
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+/**
+ * Carries the original phrase's intonation and energy onto the dubbed phrase: if the speaker said
+ * this phrase higher or louder than they usually talk, the dub is raised by the same amount.
+ * Pitch is moved without changing duration (resample + WSOLA back to length).
+ */
+function matchProsody(piece: Float32Array, chunk: DubChunk, analysis: Float32Array, baseline: SpeakerBaseline): Float32Array {
+  const orig = analyzeLine(analysis, chunk.start, chunk.end, chunk.source);
+  const dub = analyzeLine(resampleBy(piece, MIX_RATE / ANALYSIS_RATE), 0, piece.length / MIX_RATE, chunk.text);
+  let out = piece;
+
+  if (orig.pitchHz > 0 && dub.pitchHz > 0 && baseline.pitchHz > 0) {
+    // Target: the dub sits above/below the speaker's usual pitch exactly as much as the original did.
+    const wanted = 12 * Math.log2(orig.pitchHz / baseline.pitchHz);
+    const current = 12 * Math.log2(dub.pitchHz / baseline.pitchHz);
+    const diff = wanted - current;
+    const shift = Math.max(-MAX_PITCH_SHIFT_ST, Math.min(MAX_PITCH_SHIFT_ST, diff * PITCH_TRANSFER));
+    if (Math.abs(diff) <= PITCH_TRUST_LIMIT_ST && Math.abs(shift) >= 0.3) {
+      const ratio = 2 ** (shift / 12);
+      const seconds = out.length / MIX_RATE;
+      const raised = resampleBy(out, ratio);
+      out = warp(raised, MIX_RATE, uniformAnchors(raised.length / MIX_RATE, seconds), seconds);
+      chunk.pitchShift = round2(shift);
+    }
+  }
+
+  const relative = Math.max(-MAX_GAIN_DB, Math.min(MAX_GAIN_DB, orig.loudnessDb - baseline.loudnessDb));
+  const gainDb = Math.max(-MAX_GAIN_DB, Math.min(MAX_GAIN_DB, DUB_REFERENCE_DB + relative - rmsDb(out)));
+  if (Math.abs(gainDb) >= 0.5) {
+    const gain = 10 ** (gainDb / 20);
+    if (out === piece) out = piece.slice();
+    for (let i = 0; i < out.length; i++) out[i]! *= gain;
+    chunk.gainDb = round2(gainDb);
+  }
+  return out;
 }
 
 type RawChunk = { start: number; end: number; text: string };
@@ -322,7 +352,7 @@ async function transcribeRegion(wav: Buffer, language: string): Promise<string> 
 async function sentencesViaGnani(run: DubRun, pcm16k: Float32Array): Promise<RawSentence[]> {
   if (!isGnaniConfigured()) throw new ServiceError("PRECONDITION_FAILED", "Speech-to-text isn't available (Scribe or Gnani).");
   const regions = detectSpeech(pcm16k, STT_RATE, MAX_CHUNK_SECONDS + 2, CHUNK_PAUSE);
-  if (regions.length === 0) throw new ServiceError("BAD_REQUEST", "No speech was detected in this video.");
+  if (regions.length === 0) throw new ServiceError("BAD_REQUEST", "No speech was detected in this recording.");
   const chunks: RawChunk[] = [];
   run.progress = { done: 0, total: regions.length };
   for (const [i, region] of regions.entries()) {
@@ -349,9 +379,9 @@ async function transcribe(run: DubRun, pcm16k: Float32Array): Promise<RawSentenc
   try {
     const { words } = await transcribeWords(
       { data: f32ToWav16(pcm16k, STT_RATE), filename: "audio.wav", mimeType: "audio/wav" },
-      run.sourceLanguage.slice(0, 2),
+      /^[a-z]{2}-/i.test(run.sourceLanguage) ? run.sourceLanguage.slice(0, 2) : null,
     );
-    if (words.length === 0) throw new ServiceError("BAD_REQUEST", "No speech was detected in this video.");
+    if (words.length === 0) throw new ServiceError("BAD_REQUEST", "No speech was detected in this recording.");
     run.transcriber = "scribe";
     return sentencesFromWords(words);
   } catch (error) {
@@ -360,30 +390,6 @@ async function transcribe(run: DubRun, pcm16k: Float32Array): Promise<RawSentenc
     run.notice = `${error.message} Using Gnani with pause detection instead — timing is less precise.`;
     return sentencesViaGnani(run, pcm16k);
   }
-}
-
-function referenceAudio(lines: DubLine[], speaker: string, pcm: Float32Array): { wav: Buffer; seconds: number } {
-  const parts: Float32Array[] = [];
-  let seconds = 0;
-  const spans = lines
-    .filter((l) => l.speaker === speaker)
-    .flatMap((l) => l.chunks)
-    .sort((a, b) => b.end - b.start - (a.end - a.start));
-  for (const span of spans) {
-    if (seconds >= MAX_CLONE_SECONDS) break;
-    const from = Math.floor(span.start * MIX_RATE);
-    const to = Math.min(pcm.length, Math.ceil(span.end * MIX_RATE));
-    if (to <= from) continue;
-    parts.push(pcm.subarray(from, to));
-    seconds += (to - from) / MIX_RATE;
-  }
-  const joined = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const p of parts) {
-    joined.set(p, offset);
-    offset += p.length;
-  }
-  return { wav: f32ToWav16(joined, MIX_RATE), seconds };
 }
 
 type PlacedPiece = { at: number; pcm: Float32Array };
@@ -459,6 +465,8 @@ async function voiceSentence(
   nextSpeechStart: number,
   original: Float32Array,
   pace: Pace,
+  analysis: Float32Array,
+  baseline: SpeakerBaseline,
 ): Promise<PlacedPiece[]> {
   const line = run.lines[index]!;
   const settings = TONE_VOICE_SETTINGS[line.tone];
@@ -564,6 +572,8 @@ async function voiceSentence(
       if (origEnv.length > 20) chunk.sync = round2(envelopeCorrelation(envelope(piece, MIX_RATE), origEnv));
     }
 
+    piece = matchProsody(piece, chunk, analysis, baseline);
+
     const maxLen = Math.round(available * MIX_RATE);
     if (piece.length > maxLen) {
       chunk.clipped = round2((piece.length - maxLen) / MIX_RATE);
@@ -591,10 +601,11 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T, index: numbe
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-async function runPipeline(job: DubJob, run: DubRun) {
-  const dir = jobDir(job.id);
-  const source = job.filePath!;
-  const duration = job.durationSeconds ?? 0;
+async function runPipeline(src: DubSource, run: DubRun) {
+  const dir = src.dir;
+  const source = src.sourcePath;
+  const duration = src.durationSeconds;
+  await mkdir(dir, { recursive: true });
 
   run.stage = "extracting";
   const pcm16k = await decodeToF32(source, path.join(dir, "a16k.f32"), STT_RATE);
@@ -602,6 +613,11 @@ async function runPipeline(job: DubJob, run: DubRun) {
   run.stage = "transcribing";
   const sentences = await transcribe(run, pcm16k);
   run.progress = null;
+  if (src.speakerAt) {
+    for (const s of sentences) {
+      s.speaker = src.speakerAt(s.chunks[0]!.start, s.chunks[s.chunks.length - 1]!.end) ?? s.speaker;
+    }
+  }
 
   run.stage = "analyzing";
   const analysis = await decodeToF32(source, path.join(dir, "a8k.f32"), ANALYSIS_RATE);
@@ -630,6 +646,8 @@ async function runPipeline(job: DubJob, run: DubRun) {
       syncBefore: null,
       delay: 0,
       clipped: 0,
+      pitchShift: 0,
+      gainDb: 0,
     })),
   }));
 
@@ -651,38 +669,15 @@ async function runPipeline(job: DubJob, run: DubRun) {
     t.parts.forEach((p, i) => (line.chunks[i]!.text = p));
   }
 
-  run.stage = "cloning";
+  run.stage = "voices";
   run.progress = null;
   const original = await decodeToF32(source, path.join(dir, "a44.f32"), MIX_RATE);
-  const speechBySpeaker = new Map<string, number>();
-  for (const l of run.lines) speechBySpeaker.set(l.speaker, (speechBySpeaker.get(l.speaker) ?? 0) + (l.end - l.start));
-  const ranked = [...speechBySpeaker.entries()].sort((a, b) => b[1] - a[1]);
   const voiceBySpeaker = new Map<string, string>();
-  for (const [speaker] of ranked.slice(0, MAX_CLONED_SPEAKERS)) {
-    const ref = referenceAudio(run.lines, speaker, original);
-    if (ref.seconds < MIN_CLONE_SECONDS) continue;
-    try {
-      const voiceId = await cloneVoice(`${clonePrefix(job.id)} ${speaker}`, {
-        data: ref.wav,
-        filename: `${speaker}.wav`,
-        mimeType: "audio/wav",
-      });
-      run.voiceIds.push(voiceId);
-      voiceBySpeaker.set(speaker, voiceId);
-    } catch (error) {
-      if (!(error instanceof ServiceError && error.message.includes("paid ElevenLabs plan"))) {
-        // A timed-out request may still have created the clone on ElevenLabs' side.
-        await deleteVoicesNamed(clonePrefix(job.id));
-        throw error;
-      }
-      const pitches = run.lines.filter((l) => l.speaker === speaker && l.prosody.pitchHz > 0).map((l) => l.prosody.pitchHz);
-      voiceBySpeaker.set(speaker, stockVoice(pitches.reduce((a, b) => a + b, 0) / Math.max(1, pitches.length)));
-      run.notice = "Using a stock voice: voice cloning needs a paid ElevenLabs plan (Starter or above).";
-    }
-  }
-  const fallbackVoice = voiceBySpeaker.values().next().value;
-  if (!fallbackVoice) {
-    throw new ServiceError("BAD_REQUEST", `Need at least ${MIN_CLONE_SECONDS} seconds of clear speech to clone the voice.`);
+  for (const speaker of new Set(run.lines.map((l) => l.speaker))) {
+    const pitch = median(run.lines.filter((l) => l.speaker === speaker && l.prosody.pitchHz > 0).map((l) => l.prosody.pitchHz));
+    const choice = await src.voiceFor(speaker, pitch);
+    voiceBySpeaker.set(speaker, choice.voiceId);
+    if (choice.notice) run.notice = choice.notice;
   }
 
   run.stage = "voicing";
@@ -692,9 +687,17 @@ async function runPipeline(job: DubJob, run: DubRun) {
   let done = 0;
   run.progress = { done, total: run.lines.length };
   const paceByVoice = new Map<string, Pace>();
+  const baselines = new Map<string, SpeakerBaseline>();
+  for (const speaker of new Set(run.lines.map((l) => l.speaker))) {
+    const own = run.lines.filter((l) => l.speaker === speaker);
+    baselines.set(speaker, {
+      pitchHz: median(own.map((l) => l.prosody.pitchHz).filter((p) => p > 0)),
+      loudnessDb: median(own.map((l) => l.prosody.loudnessDb)),
+    });
+  }
   await mapLimit(run.lines, 3, async (line, i) => {
     const nextSpeechStart = run.lines[i + 1]?.start ?? Math.max(duration, line.end + 1);
-    const voiceId = voiceBySpeaker.get(line.speaker) ?? fallbackVoice;
+    const voiceId = voiceBySpeaker.get(line.speaker)!;
     if (!paceByVoice.has(voiceId)) paceByVoice.set(voiceId, { chars: 0, seconds: 0 });
     placed[i] = await voiceSentence(
       run,
@@ -706,6 +709,8 @@ async function runPipeline(job: DubJob, run: DubRun) {
       nextSpeechStart,
       original,
       paceByVoice.get(voiceId)!,
+      analysis,
+      baselines.get(line.speaker)!,
     );
     run.progress = { done: ++done, total: run.lines.length };
   });
@@ -713,10 +718,6 @@ async function runPipeline(job: DubJob, run: DubRun) {
   run.syncScore = scored.length
     ? Math.round((scored.reduce((a, c) => a + Math.max(0, c.sync!), 0) / scored.length) * 100)
     : null;
-
-  // Free the cloned voices now — lip-sync can take a long time and they shouldn't hold account slots.
-  await Promise.all(run.voiceIds.map((id) => deleteVoice(id)));
-  run.voiceIds = [];
 
   run.stage = "mixing";
   run.progress = null;
@@ -736,10 +737,6 @@ async function runPipeline(job: DubJob, run: DubRun) {
     speech.fill(1, from, Math.min(total, Math.ceil((line.end + SPEECH_PAD_AFTER) * MIX_RATE)));
   }
 
-  // Lip-sync is driven by the dubbed voice alone, so background music doesn't move the mouth.
-  const speechWav = path.join(dir, "speech.wav");
-  if (run.lipsync) await writeFile(speechWav, f32ToWav16(mix, MIX_RATE));
-
   // One-pole smoothing (~60ms) so the background fades instead of clicking at chunk boundaries.
   const smoothing = 1 - Math.exp(-1 / (0.06 * MIX_RATE));
   let gain = BG_GAIN_OPEN;
@@ -751,31 +748,10 @@ async function runPipeline(job: DubJob, run: DubRun) {
 
   const mixPath = path.join(dir, "mix.f32");
   await writeFile(mixPath, Buffer.from(mix.buffer, mix.byteOffset, mix.byteLength));
-  const output = path.join(dir, `dubbed-${run.target}.mp4`);
-  const audioArgs = ["-f", "f32le", "-ar", String(MIX_RATE), "-ac", "1", "-i", mixPath];
-  const tail = ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-shortest", output];
-  try {
-    await ffmpeg(["-i", source, ...audioArgs, "-c:v", "copy", ...tail]);
-  } catch {
-    await ffmpeg(["-i", source, ...audioArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", ...tail]);
-  }
+  const output = path.join(dir, `dubbed-${run.target}.m4a`);
+  await ffmpeg([
+    "-f", "f32le", "-ar", String(MIX_RATE), "-ac", "1", "-i", mixPath,
+    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output,
+  ]);
   run.outputPath = output;
-
-  if (!run.lipsync) return;
-  run.stage = "lipsync";
-  const synced = path.join(dir, "lipsync.mp4");
-  try {
-    await lipsync(source, speechWav, synced);
-    const final = path.join(dir, `dubbed-${run.target}-lipsync.mp4`);
-    await ffmpeg([
-      "-i", synced, ...audioArgs,
-      "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-      "-movflags", "+faststart", "-shortest", final,
-    ]);
-    run.outputPath = final;
-  } catch (error) {
-    // The dub itself is done; lip-sync is a bonus, so keep the plain dub rather than failing the run.
-    run.notice = error instanceof ServiceError ? error.message : "Lip-sync failed; showing the dub without it.";
-    logger.warn("dub.lipsync_skipped", { jobId: job.id, message: error instanceof Error ? error.message : String(error) });
-  }
 }

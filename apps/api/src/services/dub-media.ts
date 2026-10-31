@@ -1,6 +1,6 @@
 /**
- * ffmpeg/ffprobe helpers and per-line prosody analysis (pitch, loudness, speaking rate)
- * for the dub pipeline. Audio is analysed as raw float32 PCM, so no native deps.
+ * ffmpeg helpers and per-line prosody analysis (pitch, loudness, speaking rate) for dubbing.
+ * Audio is analysed as raw float32 PCM, so no native deps.
  */
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -8,11 +8,10 @@ import { readFile } from "node:fs/promises";
 import { ServiceError } from "@repo/services/errors";
 
 const FFMPEG = process.env.FFMPEG_PATH?.trim() || "ffmpeg";
-const FFPROBE = process.env.FFPROBE_PATH?.trim() || "ffprobe";
 export const ANALYSIS_RATE = 8000;
 export const MIX_RATE = 44100;
 
-export function runProcess(
+function runProcess(
   command: string,
   args: string[],
   timeoutMs = 10 * 60 * 1000,
@@ -48,21 +47,6 @@ export async function ffmpeg(args: string[]): Promise<void> {
   if (result.code !== 0) throw new Error(`ffmpeg failed: ${result.stderr.slice(-600)}`);
 }
 
-export async function probeDuration(filePath: string): Promise<number> {
-  let result;
-  try {
-    result = await runProcess(FFPROBE, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", filePath], 60_000);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new ServiceError("PRECONDITION_FAILED", "Dubbing needs ffprobe installed on the server (or set FFPROBE_PATH).");
-    }
-    throw error;
-  }
-  const seconds = Number.parseFloat(result.stdout.trim());
-  if (result.code !== 0 || !Number.isFinite(seconds)) throw new Error(`ffprobe failed: ${result.stderr.slice(-300)}`);
-  return seconds;
-}
-
 /** Decodes any audio/video file to mono float32 PCM at `rate`. */
 export async function decodeToF32(input: string, rawOut: string, rate: number): Promise<Float32Array> {
   await ffmpeg(["-i", input, "-vn", "-ac", "1", "-ar", String(rate), "-f", "f32le", rawOut]);
@@ -85,6 +69,25 @@ export function trimSilence(pcm: Float32Array, rate: number, thresholdDb = -42):
   while (to > from && !loud(Math.max(from, to - win))) to -= win;
   const pad = Math.round(rate * 0.02);
   return [Math.max(0, from - pad), Math.min(pcm.length, to + pad)];
+}
+
+/** Linear-interpolation resampler; `step` > 1 reads the input faster (shorter, higher-pitched output). */
+export function resampleBy(pcm: Float32Array, step: number): Float32Array {
+  const outLen = Math.max(1, Math.floor((pcm.length - 1) / step));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * step;
+    const k = Math.floor(pos);
+    const frac = pos - k;
+    out[i] = pcm[k]! * (1 - frac) + (pcm[k + 1] ?? pcm[k]!) * frac;
+  }
+  return out;
+}
+
+export function rmsDb(pcm: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i]! * pcm[i]!;
+  return 20 * Math.log10(Math.sqrt(sum / Math.max(1, pcm.length)) + 1e-9);
 }
 
 export function f32ToWav16(samples: Float32Array, rate: number): Buffer {
