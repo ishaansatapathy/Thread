@@ -651,3 +651,39 @@ body.permission main {
 body.permission img {
   border-radius: 14px;
 }
+
+/* ── Dubbing card ── */
+.card.dub {
+  gap: 6px;
+}
+
+.dub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dub-head h2 {
+  margin: 0;
+}
+
+.card.dub .hint {
+  margin: 0 0 6px 24px;
+  line-height: 1.45;
+}
+
+.card.dub .check input:disabled + * {
+  opacity: 0.5;
+}
+
+.dub-line {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.dub-line:empty {
+  display: none;
+}

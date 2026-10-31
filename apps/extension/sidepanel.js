@@ -48,7 +48,22 @@ const state = {
   recent: null,
   gnaniReady: true,
   captain: null, // Captain Thread settings from the service worker
+  // Meeting dubbing. Every switch starts off each session; nothing happens until the user turns it on.
+  dub: {
+    targets: [],
+    target: "en",
+    retentionHours: 48,
+    voiceReady: null,
+    speak: false, // A: my words into the call, translated, in My voice
+    listen: false, // B: other people's words, translated, played to me
+    keepAudio: false, // C: save this meeting's audio so it can be dubbed afterwards
+    armed: false,
+    line: null,
+  },
 };
+
+/** Original call audio level while "Hear the call in my language" is on. */
+const LISTEN_DUCK = 0.15;
 
 // ── tiny DOM helper (text is always set via textContent) ─────────────────────
 function el(tag, attrs = {}, ...children) {
@@ -217,6 +232,168 @@ function captainCard() {
   );
 }
 
+// ── dubbing (opt-in, audio only) ────────────────────────────────────────────
+async function loadDub() {
+  try {
+    const [options, voice] = await Promise.all([api.dubOptions(), api.voiceStatus()]);
+    state.dub.targets = options.targets ?? [];
+    state.dub.retentionHours = options.audioRetentionHours ?? 48;
+    state.dub.voiceReady = Boolean(voice.ready);
+    render();
+  } catch (error) {
+    if (error instanceof AuthError) onAuthLost(error);
+  }
+}
+
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+/** Talks to meet-voice.js in the Meet tab (through meet-bridge.js). */
+async function sendVoice(tabId, message) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "thread:voice", ...message });
+    return true;
+  } catch {
+    setNotice("Reload the Meet tab once so Thread can speak for you, then turn “Speak in another language” on again.", "error");
+    state.dub.speak = false;
+    render();
+    return false;
+  }
+}
+
+async function setSpeak(on) {
+  state.dub.speak = on;
+  const capture = state.capture;
+  if (capture) await sendVoice(capture.tabId, { action: on ? "arm" : "disarm" });
+  if (!on) state.dub.armed = false;
+  render();
+}
+
+function setListen(on) {
+  state.dub.listen = on;
+  if (state.capture?.playback) state.capture.playback.gain.value = on ? LISTEN_DUCK : 1;
+  render();
+}
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type !== "thread:voice-state" || sender.tab?.id !== state.capture?.tabId) return;
+  state.dub.armed = message.armed;
+  if (message.error) {
+    state.dub.speak = false;
+    setNotice(message.error, "error");
+  }
+  render();
+});
+
+function onDubChunk(capture, chunk, speaker) {
+  const direction = speaker === "you" ? "speak" : speaker === "meeting" ? "listen" : null;
+  if (!direction || !state.dub[direction]) return;
+  const queue = capture.dubQueues[direction];
+  queue.push(chunk);
+  // Stay close to real time: if the server falls behind, drop the oldest utterances.
+  if (queue.length > 3) queue.shift();
+  pumpDub(capture, direction);
+}
+
+async function pumpDub(capture, direction) {
+  if (capture.dubBusy[direction] || !capture.dubQueues[direction].length || state.capture !== capture) return;
+  capture.dubBusy[direction] = true;
+  const chunk = capture.dubQueues[direction].shift();
+  try {
+    const result = await api.dubLive(capture.meetingId, chunk.wav, { direction, language: state.language, target: state.dub.target });
+    if (result && state.dub[direction] && state.capture === capture) {
+      if (direction === "speak") await sendVoice(capture.tabId, { action: "play", audio: toBase64(result.audio), gainDb: result.gainDb });
+      else await playListen(capture, result.audio, result.gainDb);
+      state.dub.line = { direction, text: result.translation };
+      renderDubLine();
+    }
+  } catch (error) {
+    if (error instanceof AuthError) {
+      onAuthLost(error);
+    } else if (error.status === 412 || error.status === 400) {
+      if (direction === "speak") await setSpeak(false);
+      else setListen(false);
+      setNotice(error.message, "error");
+    }
+  } finally {
+    capture.dubBusy[direction] = false;
+    pumpDub(capture, direction);
+  }
+}
+
+async function playListen(capture, audio, gainDb) {
+  const buffer = await capture.ctx.decodeAudioData(audio).catch(() => null);
+  if (!buffer) return;
+  const source = capture.ctx.createBufferSource();
+  source.buffer = buffer;
+  const gain = capture.ctx.createGain();
+  gain.gain.value = Math.pow(10, Math.max(-6, Math.min(6, gainDb)) / 20);
+  source.connect(gain).connect(capture.ctx.destination);
+  const at = Math.max(capture.ctx.currentTime + 0.02, capture.listenCursor);
+  source.start(at);
+  capture.listenCursor = at + buffer.duration + 0.08;
+}
+
+function renderDubLine() {
+  const node = document.getElementById("dub-line");
+  if (!node) return;
+  const line = state.dub.line;
+  node.textContent = line ? `${line.direction === "speak" ? "You said" : "They said"}: ${line.text}` : "";
+}
+
+function dubCard() {
+  const d = state.dub;
+  const live = Boolean(state.capture);
+  const voiceLink = state.meeting ? `${state.auth.baseUrl}/meet/${state.meeting.id}` : `${state.auth.baseUrl}/apps/meet`;
+  const toggle = (label, checked, onchange, disabled) =>
+    el("label", { class: "check" }, el("input", { type: "checkbox", checked, disabled, onchange: (e) => onchange(e.target.checked) }), label);
+  return el(
+    "div",
+    { class: "card dub" },
+    el(
+      "div",
+      { class: "dub-head" },
+      el("h2", {}, "Dubbing"),
+      el(
+        "select",
+        {
+          class: "lang",
+          "aria-label": "Dub into",
+          onchange: (e) => {
+            d.target = e.target.value;
+            chrome.storage.local.set({ dubTarget: d.target });
+          },
+        },
+        d.targets.map((t) => el("option", { value: t.code, selected: t.code === d.target }, t.label)),
+      ),
+    ),
+    toggle("Speak in another language", d.speak, (on) => void setSpeak(on), d.voiceReady !== true || !state.includeMic),
+    el(
+      "p",
+      { class: "hint" },
+      d.voiceReady === false
+        ? el("a", { href: voiceLink, target: "_blank", rel: "noopener" }, "Set up My voice in Thread first ↗")
+        : !state.includeMic
+          ? "Turn on “Include my mic” to use this."
+          : d.speak && live && !d.armed
+            ? "Connecting to the call…"
+            : "The call hears you translated, in your own voice, ~2–4 s behind. Your real mic is muted for others while this is on.",
+    ),
+    toggle("Hear the call in my language", d.listen, (on) => setListen(on)),
+    el("p", { class: "hint" }, "Others are translated and played to you only, in a natural stock voice — their voices are never cloned."),
+    toggle("Save audio for dubbing after the meeting", d.keepAudio, (on) => {
+      d.keepAudio = on;
+      render();
+    }),
+    el("p", { class: "hint" }, `Kept for ${d.retentionHours} hours, then deleted. Dub it from the meeting page in Thread.`),
+    el("p", { class: "dub-line", id: "dub-line" }),
+  );
+}
+
 async function loadRecent() {
   try {
     state.recent = (await api.recentMeetings()).slice(0, 8);
@@ -275,6 +452,10 @@ async function startCapture({ fresh = false } = {}) {
     sources: { meeting: false, you: false },
     fatal: false,
     drainWaiters: [],
+    dubQueues: { speak: [], listen: [] },
+    dubBusy: { speak: false, listen: false },
+    listenCursor: 0,
+    playback: null,
   };
   const lastEnd = state.segments.reduce((max, s) => Math.max(max, s.endTime ?? 0), 0);
   const baseOffsetSec = lastEnd > 0 ? Math.ceil(lastEnd) + 1 : 0;
@@ -289,8 +470,27 @@ async function startCapture({ fresh = false } = {}) {
         capture.levels[speaker] = level;
       },
     });
+    // A second, snappier chunker feeds live dubbing: shorter utterances mean less delay in the call.
+    const dubChunker = new VoiceActivityChunker({
+      sampleRate: ctx.sampleRate,
+      baseOffsetSec,
+      minSpeechSec: 0.5,
+      silenceToCutSec: 0.45,
+      maxChunkSec: 7,
+      onChunk: (chunk) => onDubChunk(capture, chunk, speaker),
+    });
     capture.chunkers.push(chunker);
-    capture.taps.push(await tapStream(stream, (frames) => chunker.push(frames), ctx));
+    capture.dubChunkers = [...(capture.dubChunkers ?? []), dubChunker];
+    capture.taps.push(
+      await tapStream(
+        stream,
+        (frames) => {
+          chunker.push(frames);
+          if (state.dub.speak || state.dub.listen) dubChunker.push(frames);
+        },
+        ctx,
+      ),
+    );
     capture.streams.push(stream);
     capture.sources[speaker] = true;
   };
@@ -300,8 +500,11 @@ async function startCapture({ fresh = false } = {}) {
       audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
       video: false,
     });
-    // Capturing a tab mutes it for the user — play it back so the call stays audible.
-    ctx.createMediaStreamSource(tabStream).connect(ctx.destination);
+    // Capturing a tab mutes it for the user — play it back so the call stays audible
+    // (turned down while the user hears it translated instead).
+    capture.playback = ctx.createGain();
+    capture.playback.gain.value = state.dub.listen ? LISTEN_DUCK : 1;
+    ctx.createMediaStreamSource(tabStream).connect(capture.playback).connect(ctx.destination);
     await attach(tabStream, "meeting");
   } catch (error) {
     await ctx.close().catch(() => {});
@@ -321,6 +524,7 @@ async function startCapture({ fresh = false } = {}) {
   }
 
   state.capture = capture;
+  if (state.dub.speak) await sendVoice(tab.id, { action: "arm" });
   chrome.action.setBadgeText({ tabId: tab.id, text: "LIVE" }).catch(() => {});
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#ef4444" }).catch(() => {});
   capture.timer = setInterval(() => renderLiveBits(), 250);
@@ -338,7 +542,7 @@ function pump(capture) {
     const job = capture.queue.shift();
     capture.inFlight++;
     api
-      .uploadChunk(capture.meetingId, job.chunk, job.speaker, state.language)
+      .uploadChunk(capture.meetingId, job.chunk, job.speaker, state.language, state.dub.keepAudio)
       .then((segment) => {
         if (segment && state.meeting?.id === capture.meetingId) {
           state.segments.push(segment);
@@ -372,6 +576,11 @@ async function stopCapture() {
   state.capture = null;
   clearInterval(capture.timer);
   clearInterval(capture.notesTimer);
+  // Always hand the real microphone back to Meet when capture stops.
+  if (state.dub.armed || state.dub.speak) {
+    chrome.tabs.sendMessage(capture.tabId, { type: "thread:voice", action: "disarm" }).catch(() => {});
+    state.dub.armed = false;
+  }
   capture.chunkers.forEach((c) => c.finish());
   capture.taps.forEach((t) => t.stop());
   capture.streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
@@ -679,6 +888,7 @@ function meetingView() {
     { class: "room" },
     head,
     controls,
+    state.dub.targets.length ? dubCard() : null,
     tabs,
     body,
     meeting
@@ -893,10 +1103,12 @@ function render() {
 
 // ── boot ────────────────────────────────────────────────────────────────────
 async function boot() {
-  const stored = await chrome.storage.local.get(["language", "includeMic"]);
+  const stored = await chrome.storage.local.get(["language", "includeMic", "dubTarget"]);
   if (stored.language) state.language = stored.language;
   if (typeof stored.includeMic === "boolean") state.includeMic = stored.includeMic;
+  if (typeof stored.dubTarget === "string") state.dub.target = stored.dubTarget;
   await Promise.all([loadAuth(), loadCaptain()]);
+  if (state.auth) void loadDub();
   state.meetCode = null; // force a reload for the current tab
   await refreshActiveTab();
 }

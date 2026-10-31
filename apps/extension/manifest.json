@@ -3,7 +3,7 @@
   "name": "Thread — Captain Thread & Meet copilot",
   "short_name": "Thread",
   "version": "0.2.0",
-  "description": "Captain Thread solves your doubts on any site — select text or draw around anything. Plus live Gnani transcripts, notes and the Thread agent inside Google Meet.",
+  "description": "Live transcripts, notes and the Thread assistant inside Google Meet, plus Captain Thread to answer questions on any site.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv9u/TwPgE6QomIQKtPjC6ax3BuPerwM5rBRF5jUK5AD2ltMNX7prdlCrsi3Bw80JefSKqu0nVJBGMAieGISmM8ugeC0BZznrX9C82ozHKx5bspe3bjbGpi6lma0aSDTtIAL8ytKCJmtFAkl7lIGFL5mokOStNQ1PkFNSt1k/hkwhXXrLtFf1X/TXxO8OSM2HlvAoTGh9EAmuOINJCrj/l+GPMXA0lZ3FM1YyyxoAGodzl8/5CAjSZjZabyRd12qxjsg6GDKq41Dr9z1bS7rc/3T0ZeAi52quVpq8wq/d+FnShGzP0mfDy81aPOHMCJwveElA2fGqyY5mkmhKfsu7ewIDAQAB",
   "minimum_chrome_version": "116",
   "icons": {
@@ -37,6 +37,19 @@
         "captain/captain.js"
       ],
       "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["meet/meet-voice.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["meet/meet-bridge.js"],
+      "run_at": "document_start",
       "all_frames": false
     }
   ],

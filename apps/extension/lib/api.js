@@ -52,7 +52,7 @@ export const api = {
 
   refreshNotes: (id) => json(`/api-meetings/${id}/refresh-notes`, { method: "POST" }),
 
-  async uploadChunk(id, chunk, speaker, language) {
+  async uploadChunk(id, chunk, speaker, language, keepAudio = false) {
     const res = await request(`/api-meetings/${id}/chunk`, {
       method: "POST",
       headers: {
@@ -61,6 +61,7 @@ export const api = {
         "X-Duration-Seconds": chunk.durationSec.toFixed(2),
         "X-Speaker": speaker,
         "X-Language": language,
+        ...(keepAudio ? { "X-Keep-Audio": "1" } : {}),
       },
       body: chunk.wav,
     });
@@ -71,6 +72,41 @@ export const api = {
       throw error;
     }
     return data.segment ?? null;
+  },
+
+  voiceStatus: () => json("/api-meetings/voice"),
+
+  dubOptions: () => json("/api-meetings/dub/options"),
+
+  /**
+   * Live dubbing for one utterance. direction "speak" = my words into the call in My voice;
+   * "listen" = other people's words, translated for me. Resolves null when nothing was said.
+   */
+  async dubLive(id, wav, { direction, language, target }) {
+    const res = await request(`/api-meetings/${id}/dub/live`, {
+      method: "POST",
+      headers: { "Content-Type": "audio/wav", "X-Direction": direction, "X-Language": language, "X-Target": target },
+      body: wav,
+    });
+    if (res.status === 204) return null;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const error = new Error(data.error ?? "Live dubbing failed");
+      error.status = res.status;
+      throw error;
+    }
+    const decode = (name) => {
+      try {
+        return decodeURIComponent(res.headers.get(name) ?? "");
+      } catch {
+        return "";
+      }
+    };
+    return {
+      audio: await res.arrayBuffer(),
+      translation: decode("X-Translation"),
+      gainDb: Number(res.headers.get("X-Gain-Db") ?? 0) || 0,
+    };
   },
 
   async transcribe(wav, language) {
