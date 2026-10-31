@@ -1,12 +1,16 @@
 /**
- * ElevenLabs — instant voice clone + text-to-speech for dubbing.
- * Clones are temporary: created per dub run and deleted afterwards to free voice slots.
+ * ElevenLabs — word-timed transcription, voice cloning (only of the signed-in user's own voice,
+ * with their consent) and text-to-speech for meeting dubbing.
  */
 import { logger } from "@repo/logger";
 import { ServiceError } from "@repo/services/errors";
 
 const BASE_URL = (process.env.ELEVENLABS_BASE_URL?.trim() || "https://api.elevenlabs.io").replace(/\/$/, "");
 const TTS_MODEL = process.env.ELEVENLABS_MODEL?.trim() || "eleven_multilingual_v2";
+/** Low-latency model for live dubbing during a call. */
+const LIVE_TTS_MODEL = process.env.ELEVENLABS_LIVE_MODEL?.trim() || "eleven_flash_v2_5";
+/** How closely generated speech must stick to the cloned voice; high keeps it sounding like the user. */
+const SIMILARITY_BOOST = 0.92;
 
 export function isElevenLabsConfigured() {
   return Boolean(process.env.ELEVENLABS_API_KEY?.trim());
@@ -16,6 +20,24 @@ function apiKey(): string {
   const key = process.env.ELEVENLABS_API_KEY?.trim();
   if (!key) throw new ServiceError("PRECONDITION_FAILED", "Dubbing needs ELEVENLABS_API_KEY on the server.");
   return key;
+}
+
+/**
+ * Retries requests that never got a response (connection dropped, DNS hiccup, timeout).
+ * Only for idempotent calls — not voice cloning, where a lost response may still have created a voice.
+ */
+async function fetchRetryingNetwork(url: string, init: () => RequestInit, attempts = 4): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init());
+    } catch (error) {
+      if (attempt >= attempts) {
+        logger.warn("elevenlabs.network_failed", { url, message: error instanceof Error ? error.message : String(error) });
+        throw new ServiceError("INTERNAL", "Lost the connection to ElevenLabs. Check the internet connection and try again.");
+      }
+      await new Promise((r) => setTimeout(r, 2000 * attempt));
+    }
+  }
 }
 
 async function failure(res: Response, label: string): Promise<never> {
@@ -37,12 +59,16 @@ async function failure(res: Response, label: string): Promise<never> {
   throw new ServiceError("INTERNAL", `ElevenLabs ${label} failed (${res.status}).`);
 }
 
-export async function cloneVoice(name: string, sample: { data: Buffer; filename: string; mimeType: string }): Promise<string> {
+export async function cloneVoice(
+  name: string,
+  sample: { data: Buffer; filename: string; mimeType: string },
+  description: string,
+): Promise<string> {
   const form = new FormData();
   form.append("name", name.slice(0, 100));
   form.append("files", new Blob([new Uint8Array(sample.data)], { type: sample.mimeType }), sample.filename);
   form.append("remove_background_noise", "true");
-  form.append("description", "Temporary Thread dub clone");
+  form.append("description", description);
   const res = await fetch(`${BASE_URL}/v1/voices/add`, {
     method: "POST",
     headers: { "xi-api-key": apiKey() },
@@ -55,20 +81,15 @@ export async function cloneVoice(name: string, sample: { data: Buffer; filename:
   return data.voice_id;
 }
 
-/**
- * Deletes clones whose name starts with `prefix`. Used when a clone request errors or times out
- * after ElevenLabs already created the voice, so it doesn't sit in the account using a slot.
- */
-export async function deleteVoicesNamed(prefix: string): Promise<void> {
-  try {
-    const res = await fetch(`${BASE_URL}/v1/voices`, { headers: { "xi-api-key": apiKey() }, signal: AbortSignal.timeout(60_000) });
-    if (!res.ok) return;
-    const data = (await res.json()) as { voices?: Array<{ voice_id: string; name?: string; category?: string }> };
-    const orphans = (data.voices ?? []).filter((v) => v.category === "cloned" && v.name?.startsWith(prefix));
-    await Promise.all(orphans.map((v) => deleteVoice(v.voice_id)));
-  } catch (error) {
-    logger.warn("elevenlabs.orphan_cleanup_failed", { message: error instanceof Error ? error.message : String(error) });
-  }
+/** Cloned voices on the account with exactly this name (normally zero or one). */
+export async function findClonedVoices(name: string): Promise<string[]> {
+  const res = await fetchRetryingNetwork(`${BASE_URL}/v1/voices`, () => ({
+    headers: { "xi-api-key": apiKey() },
+    signal: AbortSignal.timeout(60_000),
+  }));
+  if (!res.ok) await failure(res, "voice lookup");
+  const data = (await res.json()) as { voices?: Array<{ voice_id: string; name?: string; category?: string }> };
+  return (data.voices ?? []).filter((v) => v.category === "cloned" && v.name === name).map((v) => v.voice_id);
 }
 
 export async function deleteVoice(voiceId: string): Promise<void> {
@@ -98,12 +119,12 @@ export async function transcribeWords(
   form.append("diarize", "true");
   form.append("timestamps_granularity", "word");
   form.append("tag_audio_events", "false");
-  const res = await fetch(`${BASE_URL}/v1/speech-to-text`, {
+  const res = await fetchRetryingNetwork(`${BASE_URL}/v1/speech-to-text`, () => ({
     method: "POST",
     headers: { "xi-api-key": apiKey() },
     body: form,
     signal: AbortSignal.timeout(10 * 60 * 1000),
-  });
+  }));
   if (!res.ok) await failure(res, "speech-to-text");
   const data = (await res.json()) as {
     language_code?: string;
@@ -140,21 +161,21 @@ export async function synthesizeWithTimestamps(input: {
     next_text: input.nextText || undefined,
     voice_settings: {
       stability: input.stability,
-      similarity_boost: 0.85,
+      similarity_boost: SIMILARITY_BOOST,
       style: input.style,
       use_speaker_boost: true,
       speed: Math.min(1.2, Math.max(0.7, input.speed ?? 1)),
     },
   };
   for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(
+    const res = await fetchRetryingNetwork(
       `${BASE_URL}/v1/text-to-speech/${encodeURIComponent(input.voiceId)}/with-timestamps?output_format=mp3_44100_128`,
-      {
+      () => ({
         method: "POST",
         headers: { "xi-api-key": apiKey(), "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(120_000),
-      },
+      }),
     );
     if (res.ok) {
       const data = (await res.json()) as {
@@ -177,42 +198,37 @@ export async function synthesizeWithTimestamps(input: {
   throw new ServiceError("INTERNAL", "ElevenLabs text-to-speech failed.");
 }
 
-export async function synthesize(input: {
+/** Fast TTS for live dubbing during a call: one short utterance, MP3 out. */
+export async function synthesizeLive(input: {
   voiceId: string;
   text: string;
   previousText?: string;
-  nextText?: string;
   stability: number;
   style: number;
   speed?: number;
 }): Promise<Buffer> {
   const body = {
     text: input.text,
-    model_id: TTS_MODEL,
+    model_id: LIVE_TTS_MODEL,
     previous_text: input.previousText || undefined,
-    next_text: input.nextText || undefined,
     voice_settings: {
       stability: input.stability,
-      similarity_boost: 0.85,
+      similarity_boost: SIMILARITY_BOOST,
       style: input.style,
       use_speaker_boost: true,
-      speed: input.speed ?? 1,
+      speed: Math.min(1.2, Math.max(0.7, input.speed ?? 1)),
     },
   };
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch(`${BASE_URL}/v1/text-to-speech/${encodeURIComponent(input.voiceId)}?output_format=mp3_44100_128`, {
+  const res = await fetchRetryingNetwork(
+    `${BASE_URL}/v1/text-to-speech/${encodeURIComponent(input.voiceId)}?output_format=mp3_44100_128`,
+    () => ({
       method: "POST",
       headers: { "xi-api-key": apiKey(), "Content-Type": "application/json", Accept: "audio/mpeg" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
-    });
-    if (res.ok) return Buffer.from(await res.arrayBuffer());
-    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
-      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-      continue;
-    }
-    await failure(res, "text-to-speech");
-  }
-  throw new ServiceError("INTERNAL", "ElevenLabs text-to-speech failed.");
+      signal: AbortSignal.timeout(30_000),
+    }),
+    2,
+  );
+  if (!res.ok) await failure(res, "text-to-speech");
+  return Buffer.from(await res.arrayBuffer());
 }
