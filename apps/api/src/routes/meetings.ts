@@ -7,6 +7,10 @@
  *   POST   /meetings/:id/audio       upload: a whole recording (≤10 MB) → Gnani batch job
  *   POST   /meetings/:id/end         live: finalise notes
  *   DELETE /meetings/:id
+ * Dubbing (opt-in, audio only):
+ *   GET/POST/DELETE /meetings/voice  "My voice" (the user's own consented clone)
+ *   GET/POST /meetings/:id/dub       dub a finished meeting's saved audio; GET …/dub/audio for the file
+ *   POST   /meetings/:id/dub/live    one utterance, live during the call (speak or listen)
  */
 import express, { Router } from "express";
 import { z } from "zod";
@@ -27,6 +31,12 @@ import {
   MAX_MEETING_AUDIO_BYTES,
   refreshMeetingNotes,
 } from "../services/meetings";
+import { DUB_TARGETS, isDubTarget } from "../services/dub-translate";
+import { isElevenLabsConfigured } from "../services/elevenlabs";
+import { isGnaniConfigured, normalizeGnaniLanguage } from "../services/gnani";
+import { MEETING_AUDIO_RETENTION_HOURS, meetingAudioSeconds } from "../services/meeting-audio";
+import { dubLiveUtterance, getMeetingDub, startMeetingDub, toPublicRun } from "../services/meeting-dub";
+import { MAX_PROFILE_BYTES, createVoiceProfile, deleteVoiceProfile, getVoiceProfile } from "../services/voice-profile";
 
 /** "https://meet.google.com/abc-defg-hij?authuser=0" → "abc-defg-hij" */
 function meetCodeOf(url: string): string | null {
@@ -116,6 +126,153 @@ meetingsRouter.get("/", async (req, res) => {
   }
 });
 
+// ── Dubbing (opt-in, audio only) ────────────────────────────────────────────
+
+meetingsRouter.get("/dub/options", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  return res.json({
+    targets: DUB_TARGETS,
+    configured: isElevenLabsConfigured() && isGnaniConfigured(),
+    audioRetentionHours: MEETING_AUDIO_RETENTION_HOURS,
+  });
+});
+
+/** GET /meetings/voice — whether the user has set up "My voice". */
+meetingsRouter.get("/voice", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  try {
+    return res.json({ ready: Boolean(await getVoiceProfile(user.id)) });
+  } catch (error) {
+    return sendServiceError(res, error, "Could not check your voice.");
+  }
+});
+
+/**
+ * POST /meetings/voice — create "My voice" from a recording the user just made. Requires
+ * X-Voice-Consent: yes (the user ticked the consent box). Body: the raw recording.
+ */
+meetingsRouter.post(
+  "/voice",
+  express.raw({ type: () => true, limit: MAX_PROFILE_BYTES + 1024 }),
+  async (req, res) => {
+    const user = await authService.resolveSession(req, res);
+    if (!user) return res.status(401).json({ error: "Authentication required" });
+    if (req.header("x-voice-consent") !== "yes") {
+      return res.status(400).json({ error: "Confirm that this is your voice and you agree to it being cloned." });
+    }
+    if (process.env.VITEST !== "true") {
+      const limit = await checkDistributedRateLimit(`voice-profile:${user.id}`, 5, 60 * 60_000);
+      if (!limit.allowed) return res.status(429).json({ error: "Too many voice setups. Try again later." });
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.byteLength === 0) {
+      return res.status(400).json({ error: "Send the recording as the request body" });
+    }
+    try {
+      await createVoiceProfile(user.id, req.body);
+      return res.status(201).json({ ready: true });
+    } catch (error) {
+      return sendServiceError(res, error, "Could not set up your voice.");
+    }
+  },
+);
+
+meetingsRouter.delete("/voice", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  try {
+    await deleteVoiceProfile(user.id);
+    return res.status(204).end();
+  } catch (error) {
+    return sendServiceError(res, error, "Could not delete your voice.");
+  }
+});
+
+/** GET /meetings/:id/dub — after-meeting dub status, plus how much audio was saved. */
+meetingsRouter.get("/:id/dub", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+  try {
+    await getMeeting(user.id, req.params.id);
+    const run = getMeetingDub(user.id, req.params.id);
+    return res.json({ savedAudioSeconds: await meetingAudioSeconds(req.params.id), run: run ? toPublicRun(run) : null });
+  } catch (error) {
+    return sendServiceError(res, error, "Could not load the dub.");
+  }
+});
+
+meetingsRouter.post("/:id/dub", express.json({ limit: "4kb" }), async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+  if (process.env.VITEST !== "true") {
+    const limit = await checkDistributedRateLimit(`meeting-dub:${user.id}`, 6, 60 * 60_000);
+    if (!limit.allowed) return res.status(429).json({ error: "Dub limit reached for this hour. Try again later." });
+  }
+  const target = String(req.body?.target ?? "");
+  if (!isDubTarget(target)) return res.status(400).json({ error: "Pick a language to dub into" });
+  try {
+    return res.status(202).json({ run: toPublicRun(await startMeetingDub(user.id, req.params.id, target)) });
+  } catch (error) {
+    return sendServiceError(res, error, "Could not start dubbing.");
+  }
+});
+
+meetingsRouter.get("/:id/dub/audio", async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+  const run = getMeetingDub(user.id, req.params.id);
+  if (run?.status !== "done" || !run.outputPath) return res.status(404).json({ error: "Dubbed audio not found." });
+  if (req.query.download === "1") return res.download(run.outputPath, `meeting-dub-${run.target}.m4a`);
+  return res.type("audio/mp4").sendFile(run.outputPath, { acceptRanges: true });
+});
+
+/**
+ * POST /meetings/:id/dub/live — one utterance during the call. Body: 16 kHz mono WAV.
+ * Headers: X-Direction (speak = my words into the call in My voice; listen = others' words to me),
+ * X-Language (what's being spoken, Gnani code), X-Target. Responds with MP3, or 204 if nothing was said.
+ */
+meetingsRouter.post(
+  "/:id/dub/live",
+  express.raw({ type: () => true, limit: MAX_CHUNK_AUDIO_BYTES + 1024 }),
+  async (req, res) => {
+    const user = await authService.resolveSession(req, res);
+    if (!user) return res.status(401).json({ error: "Authentication required" });
+    if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+    if (process.env.VITEST !== "true") {
+      const limit = await checkDistributedRateLimit(`meeting-dub-live:${user.id}`, 180, 60_000);
+      if (!limit.allowed) return res.status(429).json({ error: "Too many live dub requests. Slow down." });
+    }
+    const direction = req.header("x-direction");
+    const target = String(req.header("x-target") ?? "");
+    if (direction !== "speak" && direction !== "listen") return res.status(400).json({ error: "X-Direction must be speak or listen" });
+    if (!isDubTarget(target)) return res.status(400).json({ error: "Unsupported X-Target language" });
+    if (!Buffer.isBuffer(req.body) || req.body.byteLength === 0) {
+      return res.status(400).json({ error: "Send the audio clip as the request body" });
+    }
+    try {
+      const result = await dubLiveUtterance(user.id, req.params.id, {
+        wav: req.body,
+        direction,
+        sourceLanguage: normalizeGnaniLanguage(req.header("x-language")),
+        target,
+      });
+      if (!result) return res.status(204).end();
+      res.setHeader("X-Transcript", encodeURIComponent(result.text.slice(0, 1500)));
+      res.setHeader("X-Translation", encodeURIComponent(result.translation.slice(0, 1500)));
+      res.setHeader("X-Gain-Db", String(result.gainDb));
+      res.setHeader("X-Tone", result.tone);
+      res.setHeader("Access-Control-Expose-Headers", "X-Transcript, X-Translation, X-Gain-Db, X-Tone");
+      return res.type("audio/mpeg").send(result.audio);
+    } catch (error) {
+      return sendServiceError(res, error, "Could not dub that.");
+    }
+  },
+);
+
 meetingsRouter.post("/:id/refresh-notes", async (req, res) => {
   const user = await authService.resolveSession(req, res);
   if (!user) return res.status(401).json({ error: "Authentication required" });
@@ -183,6 +340,7 @@ meetingsRouter.post(
         durationSeconds,
         speaker,
         languageCode: req.header("x-language") ?? undefined,
+        keepAudio: req.header("x-keep-audio") === "1",
       });
       return res.json({ segment });
     } catch (error) {
