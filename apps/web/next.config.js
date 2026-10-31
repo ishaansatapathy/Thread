@@ -43,10 +43,6 @@ const nextConfig = {
         destination: `${apiInternalUrl}/speech/:path*`,
       },
       {
-        source: "/api-dub/:path*",
-        destination: `${apiInternalUrl}/dub/:path*`,
-      },
-      {
         source: "/api-extension/:path*",
         destination: `${apiInternalUrl}/extension/:path*`,
       },
