@@ -100,7 +100,7 @@ function parseDate(text: string, refDate: Date): { date: Date; rest: string } | 
 }
 
 function extractDeleteQuery(rest: string): string | undefined {
-  let q = rest
+  const q = rest
     .replace(/\b(two|three|four|all|both|those|these|every)\b/gi, " ")
     .replace(/\b(which|is|are|there|here|that|this)\b/gi, " ")
     .replace(/\b(the|a|an|my|please|on|for|from|to)\b/gi, " ")
