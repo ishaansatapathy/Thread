@@ -11,6 +11,8 @@
  *   GET/POST/DELETE /meetings/voice  "My voice" (the user's own consented clone)
  *   GET/POST /meetings/:id/dub       dub a finished meeting's saved audio; GET …/dub/audio for the file
  *   POST   /meetings/:id/dub/live    one utterance, live during the call (speak or listen)
+ * Catch me up:
+ *   POST   /meetings/:id/catch-up    the last few minutes, summarised and read aloud
  */
 import express, { Router } from "express";
 import { z } from "zod";
@@ -33,8 +35,9 @@ import {
 } from "../services/meetings";
 import { DUB_TARGETS, isDubTarget } from "../services/dub-translate";
 import { isElevenLabsConfigured } from "../services/elevenlabs";
-import { isGnaniConfigured, normalizeGnaniLanguage } from "../services/gnani";
+import { canGnaniSpeak, isGnaniConfigured, normalizeGnaniLanguage } from "../services/gnani";
 import { MEETING_AUDIO_RETENTION_HOURS, meetingAudioSeconds } from "../services/meeting-audio";
+import { catchUpOnMeeting } from "../services/meeting-catchup";
 import { dubLiveUtterance, getMeetingDub, startMeetingDub, toPublicRun } from "../services/meeting-dub";
 import { MAX_PROFILE_BYTES, createVoiceProfile, deleteVoiceProfile, getVoiceProfile } from "../services/voice-profile";
 
@@ -272,6 +275,33 @@ meetingsRouter.post(
     }
   },
 );
+
+/** POST /meetings/:id/catch-up — { minutes?, target } → the last few minutes summarised and spoken (base64 MP3). */
+meetingsRouter.post("/:id/catch-up", express.json({ limit: "2kb" }), async (req, res) => {
+  const user = await authService.resolveSession(req, res);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  if (!idSchema.safeParse(req.params.id).success) return res.status(404).json({ error: "Meeting not found." });
+  if (process.env.VITEST !== "true") {
+    const limit = await checkDistributedRateLimit(`meeting-catchup:${user.id}`, 20, 60_000);
+    if (!limit.allowed) return res.status(429).json({ error: "Too many catch-ups. Try again in a minute." });
+  }
+  const target = String(req.body?.target ?? "");
+  const minutes = Number(req.body?.minutes ?? 5);
+  if (!isDubTarget(target) || !canGnaniSpeak(target)) return res.status(400).json({ error: "Pick an Indian language or English." });
+  if (!Number.isFinite(minutes)) return res.status(400).json({ error: "minutes must be a number" });
+  try {
+    const result = await catchUpOnMeeting(user.id, req.params.id, { minutes, target });
+    return res.json({
+      text: result.text,
+      summarized: result.summarized,
+      minutes: result.minutes,
+      mimeType: result.mimeType,
+      audio: result.audio.toString("base64"),
+    });
+  } catch (error) {
+    return sendServiceError(res, error, "Could not catch you up.");
+  }
+});
 
 meetingsRouter.post("/:id/refresh-notes", async (req, res) => {
   const user = await authService.resolveSession(req, res);
