@@ -60,6 +60,7 @@ const state = {
     armed: false,
     line: null,
   },
+  catchup: { target: null, minutes: 5, busy: false, playing: false, text: "", summarized: true, error: null, ctx: null, source: null },
 };
 
 /** Original call audio level while "Hear the call in my language" is on. */
@@ -229,6 +230,133 @@ function captainCard() {
           el("button", { class: "link", type: "button", onclick: () => setCaptain({ resetSites: true }) }, "Turn on everywhere"),
         )
       : null,
+  );
+}
+
+// ── catch me up ─────────────────────────────────────────────────────────────
+// The last few minutes of the call, summarised in the listener's language and read aloud by a Gnani
+// voice. The live call fades down while it speaks.
+const CATCHUP_LANGUAGES = [
+  ["en", "English"],
+  ["hi", "Hindi"],
+  ["hinglish", "Hinglish"],
+  ["ta", "Tamil"],
+  ["te", "Telugu"],
+  ["kn", "Kannada"],
+  ["ml", "Malayalam"],
+  ["mr", "Marathi"],
+  ["bn", "Bengali"],
+  ["gu", "Gujarati"],
+  ["pa", "Punjabi"],
+];
+const STT_TO_CATCHUP = { "en-IN": "en", "hi-IN": "hi", "bn-IN": "bn", "ta-IN": "ta", "te-IN": "te", "kn-IN": "kn", "ml-IN": "ml", "mr-IN": "mr", "gu-IN": "gu", "pa-IN": "pa" };
+const CATCHUP_DUCK = 0.2;
+
+function catchupTarget() {
+  return state.catchup.target ?? STT_TO_CATCHUP[state.language] ?? "en";
+}
+
+function stopCatchup() {
+  const c = state.catchup;
+  try {
+    c.source?.stop();
+  } catch {
+    /* already stopped */
+  }
+  c.source = null;
+  c.ctx?.close().catch(() => {});
+  c.ctx = null;
+  c.playing = false;
+  if (state.capture?.playback) state.capture.playback.gain.value = state.dub.listen ? LISTEN_DUCK : 1;
+}
+
+async function catchMeUp() {
+  const meeting = state.meeting;
+  const c = state.catchup;
+  if (!meeting) return;
+  if (c.playing || c.busy) {
+    stopCatchup();
+    c.busy = false;
+    return render();
+  }
+  c.busy = true;
+  c.error = null;
+  c.text = "";
+  render();
+  const ctx = new AudioContext(); // made inside the click so Chrome lets it play
+  c.ctx = ctx;
+  void ctx.resume();
+  try {
+    const res = await api.catchUp(meeting.id, { minutes: c.minutes, target: catchupTarget() });
+    if (c.ctx !== ctx) return;
+    c.text = res.text;
+    c.summarized = res.summarized;
+    const bytes = Uint8Array.from(atob(res.audio), (ch) => ch.charCodeAt(0));
+    const buffer = await ctx.decodeAudioData(bytes.buffer);
+    if (c.ctx !== ctx) return;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (c.ctx !== ctx) return;
+      stopCatchup();
+      render();
+    };
+    c.source = source;
+    c.playing = true;
+    if (state.capture?.playback) state.capture.playback.gain.value = CATCHUP_DUCK;
+    source.start();
+  } catch (error) {
+    if (error instanceof AuthError) onAuthLost(error);
+    else c.error = error?.message ?? "Couldn't catch you up.";
+    if (c.ctx === ctx) stopCatchup();
+  }
+  c.busy = false;
+  render();
+}
+
+function catchupCard() {
+  const c = state.catchup;
+  const label = c.playing ? "Stop" : c.busy ? "Preparing…" : "Catch me up";
+  return el(
+    "div",
+    { class: "card catchup" },
+    el(
+      "div",
+      { class: "dub-head" },
+      el("h2", {}, "Catch me up"),
+      el(
+        "select",
+        {
+          class: "lang",
+          "aria-label": "How many minutes to catch up on",
+          onchange: (e) => {
+            c.minutes = Number(e.target.value);
+          },
+        },
+        [3, 5, 10].map((m) => el("option", { value: m, selected: m === c.minutes }, `${m} min`)),
+      ),
+      el(
+        "select",
+        {
+          class: "lang",
+          "aria-label": "Catch me up in",
+          onchange: (e) => {
+            c.target = e.target.value;
+            chrome.storage.local.set({ catchupTarget: c.target });
+          },
+        },
+        CATCHUP_LANGUAGES.map(([code, name]) => el("option", { value: code, selected: code === catchupTarget() }, name)),
+      ),
+    ),
+    el(
+      "button",
+      { class: c.playing ? "secondary block" : "primary block", type: "button", disabled: c.busy && !c.playing, onclick: () => void catchMeUp() },
+      label,
+    ),
+    c.error ? el("p", { class: "hint catchup-error" }, c.error) : null,
+    c.text ? el("p", { class: "catchup-text" }, c.text) : null,
+    c.text && !c.summarized ? el("p", { class: "hint" }, "A summary wasn't available, so this is what was said most recently.") : null,
   );
 }
 
@@ -888,6 +1016,7 @@ function meetingView() {
     { class: "room" },
     head,
     controls,
+    state.meeting && segments.length ? catchupCard() : null,
     state.dub.targets.length ? dubCard() : null,
     tabs,
     body,
@@ -1103,10 +1232,11 @@ function render() {
 
 // ── boot ────────────────────────────────────────────────────────────────────
 async function boot() {
-  const stored = await chrome.storage.local.get(["language", "includeMic", "dubTarget"]);
+  const stored = await chrome.storage.local.get(["language", "includeMic", "dubTarget", "catchupTarget"]);
   if (stored.language) state.language = stored.language;
   if (typeof stored.includeMic === "boolean") state.includeMic = stored.includeMic;
   if (typeof stored.dubTarget === "string") state.dub.target = stored.dubTarget;
+  if (typeof stored.catchupTarget === "string") state.catchup.target = stored.catchupTarget;
   await Promise.all([loadAuth(), loadCaptain()]);
   if (state.auth) void loadDub();
   state.meetCode = null; // force a reload for the current tab

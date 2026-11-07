@@ -104,6 +104,42 @@ export function handleCaptainMessage(message, sender, sendResponse) {
     );
   }
 
+  if (type === "captain:speak") {
+    const text = typeof message.text === "string" ? message.text.trim().slice(0, 700) : "";
+    const language = typeof message.language === "string" ? message.language : "en-IN";
+    if (!text) return reply(Promise.resolve({ ok: false, error: "Nothing to read." }));
+    return reply(
+      (async () => {
+        const auth = await getAuth();
+        if (!auth) return { ok: false, needsConnect: true, error: "Connect Captain Thread to your Thread account first." };
+        try {
+          return { ok: true, ...(await api.speak(text, language)) };
+        } catch (error) {
+          if (error instanceof AuthError) return { ok: false, needsConnect: true, error: error.message };
+          return { ok: false, error: String(error?.message ?? "Couldn't read that aloud.") };
+        }
+      })(),
+    );
+  }
+
+  if (type === "captain:translate") {
+    const text = typeof message.text === "string" ? message.text.trim().slice(0, 1500) : "";
+    const target = typeof message.target === "string" ? message.target : "";
+    if (!text || !target) return reply(Promise.resolve({ ok: false, error: "Select some text first." }));
+    return reply(
+      (async () => {
+        const auth = await getAuth();
+        if (!auth) return { ok: false, needsConnect: true, error: "Connect Captain Thread to your Thread account first." };
+        try {
+          return { ok: true, ...(await api.translateSpeak(text, target)) };
+        } catch (error) {
+          if (error instanceof AuthError) return { ok: false, needsConnect: true, error: error.message };
+          return { ok: false, error: String(error?.message ?? "Could not translate that.") };
+        }
+      })(),
+    );
+  }
+
   if (type === "captain:connect") {
     return reply(webBase().then((base) => chrome.tabs.create({ url: `${base}/connect-extension` })).then(() => ({ ok: true })));
   }
@@ -221,6 +257,7 @@ export function handleCaptainPort(port) {
 export function registerCaptainMenus() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: "captain-ask", title: "Ask Captain Thread about “%s”", contexts: ["selection"] });
+    chrome.contextMenus.create({ id: "captain-read", title: "Read aloud with Thread", contexts: ["selection"] });
     chrome.contextMenus.create({ id: "captain-area", title: "Draw around something to ask Captain Thread", contexts: ["page", "image", "link"] });
   });
 }
@@ -228,5 +265,6 @@ export function registerCaptainMenus() {
 export function handleCaptainMenuClick(info, tab) {
   if (!tab?.id) return;
   if (info.menuItemId === "captain-ask") sendToCaptain(tab.id, { type: "captain:ask", text: info.selectionText ?? "" });
+  if (info.menuItemId === "captain-read") sendToCaptain(tab.id, { type: "captain:read", text: info.selectionText ?? "" });
   if (info.menuItemId === "captain-area") sendToCaptain(tab.id, { type: "captain:area" });
 }

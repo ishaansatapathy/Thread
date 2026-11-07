@@ -687,3 +687,23 @@ body.permission img {
 .dub-line:empty {
   display: none;
 }
+
+/* ── Catch me up ── */
+.card.catchup {
+  gap: 8px;
+}
+
+.catchup .dub-head {
+  flex-wrap: wrap;
+}
+
+.catchup-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.catchup-error {
+  color: #f87171;
+}

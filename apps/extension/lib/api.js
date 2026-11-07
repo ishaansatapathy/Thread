@@ -34,8 +34,39 @@ async function json(path, init) {
   return data;
 }
 
+function toBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
 export const api = {
   me: () => json("/api-extension/me"),
+
+  /** Reads text aloud with a Gnani voice. Resolves with the MP3 as base64 (safe to pass between extension parts). */
+  async speak(text, language) {
+    const res = await request("/api-speech/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const error = new Error(data.error ?? "Couldn't read that aloud.");
+      error.status = res.status;
+      throw error;
+    }
+    return { audio: toBase64(await res.arrayBuffer()), mimeType: res.headers.get("Content-Type") ?? "audio/mpeg" };
+  },
+
+  /** The last few minutes of a meeting, summarised and spoken. */
+  catchUp: (id, { minutes, target }) =>
+    json(`/api-meetings/${id}/catch-up`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutes, target }),
+    }),
 
   speechStatus: () => json("/api-speech/status"),
 
@@ -72,6 +103,16 @@ export const api = {
       throw error;
     }
     return data.segment ?? null;
+  },
+
+  /** Translates selected text and returns it with a Gnani voice reading the translation aloud. */
+  async translateSpeak(text, target) {
+    const data = await json("/api-speech/translate-speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, target }),
+    });
+    return { translation: String(data.translation ?? ""), audio: String(data.audio ?? ""), mimeType: String(data.mimeType ?? "audio/mpeg") };
   },
 
   voiceStatus: () => json("/api-meetings/voice"),

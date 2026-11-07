@@ -59,7 +59,8 @@
     "activeTab",
     "storage",
     "contextMenus",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": [
     "https://meet.google.com/*",
@@ -88,6 +89,12 @@
         "default": "Alt+Shift+C"
       },
       "description": "Captain Thread: draw around something to ask about it"
+    },
+    "dictate": {
+      "suggested_key": {
+        "default": "Alt+Shift+V"
+      },
+      "description": "Voice typing: start or stop dictating into the focused text box"
     }
   }
 }

@@ -14,6 +14,7 @@
 
   const MAX_TEXT = 6000;
   const AREA_SHORTCUT = "Alt+Shift+C";
+  const DICTATE_SHORTCUT = "Alt+Shift+V";
 
   const QUICK = {
     explain: { label: "Explain", prompt: "Explain this to me." },
@@ -40,6 +41,10 @@
     chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     eyeOff: '<path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.2 3.2M6.6 6.6A18 18 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="m2 2 20 20M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     sleep: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+    translate: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+    play: '<path d="M7 4.5v15l13-7.5z" fill="currentColor" stroke="none"/>',
+    speaker: '<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+    mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
   };
   const icon = (name, size = 16) =>
     `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -57,6 +62,10 @@
     area: null,
     mark: null,
     toast: null,
+    tr: null,
+    reader: null,
+    dict: null,
+    lastEditable: null,
     convo: null,
     hover: false,
     happyUntil: 0,
@@ -275,6 +284,8 @@
       item("scan", "Draw around something", startArea, AREA_SHORTCUT),
       item("page", "Ask about this page", () => openPanel({ text: visibleText(), source: "page" })),
       item("chat", "Ask anything", () => openPanel({ text: "", source: "page" })),
+      item("speaker", "Read this page aloud", () => startReading(readablePageText())),
+      item("mic", "Voice type into a text box", toggleDictation, DICTATE_SHORTCUT),
       h("div", { class: "tc-menu-sep" }),
       item("eyeOff", `Turn off on ${location.hostname.replace(/^www\./, "")}`, () => {
         send("captain:set", { siteOff: true });
@@ -374,6 +385,23 @@
         h("span", { class: "tc-bar-sep" }),
         quick(QUICK.explain, "explain"),
         quick(second, code ? "bug" : "hint"),
+        h("button", {
+          class: "tc-bar-btn tc-bar-icon",
+          html: icon("speaker", 14),
+          attrs: { type: "button", title: "Read aloud", "aria-label": "Read aloud" },
+          on: {
+            click: () => {
+              hideBar();
+              startReading(text);
+            },
+          },
+        }),
+        h("button", {
+          class: "tc-bar-btn tc-bar-icon",
+          html: icon("translate", 14),
+          attrs: { type: "button", title: "Translate & listen", "aria-label": "Translate and listen" },
+          on: { click: () => openTranslate(text, rect) },
+        }),
         copyBtn,
       ],
     );
@@ -392,6 +420,577 @@
   function hideBar() {
     S.bar?.remove();
     S.bar = null;
+  }
+
+  // ── translate & listen ────────────────────────────────────────────────────────
+  // Translate the selected text and hear it read aloud by a Gnani voice. Separate from the chat panel:
+  // a small card next to the selection, one language picker, one play button.
+  const TRANSLATE_LANGUAGES = [
+    ["hi", "Hindi"],
+    ["en", "English"],
+    ["hinglish", "Hinglish"],
+    ["ta", "Tamil"],
+    ["te", "Telugu"],
+    ["kn", "Kannada"],
+    ["ml", "Malayalam"],
+    ["mr", "Marathi"],
+    ["bn", "Bengali"],
+    ["gu", "Gujarati"],
+    ["pa", "Punjabi"],
+  ];
+  const DEVANAGARI_RE = /[ऀ-ॿ]/;
+
+  async function loadTranslateTarget(text) {
+    let target = "hi";
+    try {
+      const stored = await chrome.storage.local.get("captainTranslateTarget");
+      if (TRANSLATE_LANGUAGES.some(([code]) => code === stored.captainTranslateTarget)) target = stored.captainTranslateTarget;
+    } catch {}
+    // Translating Hindi into Hindi is pointless — meet Devanagari text with English.
+    if ((target === "hi" || target === "hinglish") && DEVANAGARI_RE.test(text)) target = "en";
+    return target;
+  }
+
+  function stopTranslateAudio() {
+    const t = S.tr;
+    if (!t) return;
+    try {
+      t.audio?.pause();
+    } catch {}
+    t.audio = null;
+    t.playing = false;
+    renderTranslate();
+  }
+
+  function closeTranslate() {
+    const t = S.tr;
+    if (!t) return;
+    t.token = null;
+    try {
+      t.audio?.pause();
+    } catch {}
+    if (t.url) URL.revokeObjectURL(t.url);
+    t.card?.remove();
+    S.tr = null;
+  }
+
+  async function openTranslate(text, rect) {
+    closeTranslate();
+    hideBar();
+    ensureHost();
+    const target = await loadTranslateTarget(text);
+    S.tr = { text: text.slice(0, 1500), target, rect, card: null, status: "loading", translation: "", error: null, needsConnect: false, audio: null, url: null, playing: false, token: null };
+    const card = h("div", { class: "tc-tr tc-card", attrs: { role: "dialog", "aria-label": "Translate and listen" } });
+    S.tr.card = card;
+    card.addEventListener("mousedown", (e) => e.stopPropagation());
+    S.layer.append(card);
+    renderTranslate();
+    placeTranslate();
+    void runTranslate();
+  }
+
+  function placeTranslate() {
+    const t = S.tr;
+    if (!t) return;
+    const { width, height } = t.card.getBoundingClientRect();
+    const rect = t.rect;
+    const x = clamp(rect.left + rect.width / 2 - width / 2, 8, innerWidth - width - 8);
+    const below = rect.bottom + 10;
+    const y = below + height <= innerHeight - 8 ? below : Math.max(8, rect.top - height - 10);
+    t.card.style.left = `${x}px`;
+    t.card.style.top = `${y}px`;
+  }
+
+  async function runTranslate() {
+    const t = S.tr;
+    if (!t) return;
+    const token = Symbol("translate");
+    t.token = token;
+    try {
+      t.audio?.pause();
+    } catch {}
+    t.audio = null;
+    t.playing = false;
+    if (t.url) URL.revokeObjectURL(t.url);
+    t.url = null;
+    t.status = "loading";
+    t.error = null;
+    t.needsConnect = false;
+    renderTranslate();
+    const res = await send("captain:translate", { text: t.text, target: t.target });
+    if (S.tr !== t || t.token !== token) return;
+    if (!res?.ok) {
+      t.status = "error";
+      t.error = res?.error ?? "Couldn't reach Thread. Try again.";
+      t.needsConnect = Boolean(res?.needsConnect);
+      renderTranslate();
+      placeTranslate();
+      return;
+    }
+    t.status = "ready";
+    t.translation = res.translation;
+    try {
+      const bytes = Uint8Array.from(atob(res.audio), (c) => c.charCodeAt(0));
+      t.url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType || "audio/mpeg" }));
+    } catch {
+      t.url = null;
+    }
+    renderTranslate();
+    placeTranslate();
+    void playTranslate();
+  }
+
+  async function playTranslate() {
+    const t = S.tr;
+    if (!t?.url) return;
+    try {
+      t.audio?.pause();
+      const audio = new Audio(t.url);
+      t.audio = audio;
+      audio.onended = () => {
+        if (S.tr === t) {
+          t.playing = false;
+          renderTranslate();
+        }
+      };
+      await audio.play();
+      t.playing = true;
+    } catch {
+      t.playing = false;
+    }
+    renderTranslate();
+  }
+
+  function renderTranslate() {
+    const t = S.tr;
+    if (!t) return;
+    const select = h(
+      "select",
+      {
+        class: "tc-tr-select",
+        attrs: { "aria-label": "Translate into" },
+        on: {
+          change: (e) => {
+            t.target = e.target.value;
+            try {
+              chrome.storage.local.set({ captainTranslateTarget: t.target });
+            } catch {}
+            void runTranslate();
+          },
+        },
+      },
+      TRANSLATE_LANGUAGES.map(([code, label]) => {
+        const option = h("option", { text: label, attrs: { value: code } });
+        if (code === t.target) option.selected = true;
+        return option;
+      }),
+    );
+    const head = h("div", { class: "tc-tr-head" }, [
+      h("span", { class: "tc-tr-title", html: icon("translate", 14) }),
+      h("strong", { text: "Translate & listen" }),
+      select,
+      h("button", {
+        class: "tc-icon-btn",
+        html: icon("close", 15),
+        attrs: { type: "button", title: "Close (Esc)", "aria-label": "Close" },
+        on: { click: closeTranslate },
+      }),
+    ]);
+
+    let body;
+    if (t.status === "loading") {
+      body = h("p", { class: "tc-tr-text is-muted", text: "Translating…" });
+    } else if (t.status === "error") {
+      body = h("div", {}, [
+        h("p", { class: "tc-tr-text is-error", text: t.error }),
+        t.needsConnect
+          ? h("button", { class: "tc-primary", text: "Connect Thread", attrs: { type: "button" }, on: { click: () => send("captain:connect") } })
+          : h("button", { class: "tc-tr-btn", text: "Try again", attrs: { type: "button" }, on: { click: () => void runTranslate() } }),
+      ]);
+    } else {
+      const actions = h(
+        "div",
+        { class: "tc-tr-actions" },
+        [
+          t.url
+            ? h("button", {
+                class: "tc-tr-btn is-primary",
+                html: `${icon(t.playing ? "stop" : "play", 13)}<span>${t.playing ? "Stop" : "Listen"}</span>`,
+                attrs: { type: "button" },
+                on: { click: () => (t.playing ? stopTranslateAudio() : void playTranslate()) },
+              })
+            : null,
+          h("button", {
+            class: "tc-tr-btn",
+            html: `${icon("copy", 13)}<span>Copy</span>`,
+            attrs: { type: "button" },
+            on: { click: () => copyText(t.translation) },
+          }),
+          h("span", { class: "tc-tr-by", text: "Voice by Gnani" }),
+        ].filter(Boolean),
+      );
+      body = h("div", {}, [h("p", { class: "tc-tr-text", text: t.translation }), actions]);
+    }
+    t.card.textContent = "";
+    t.card.append(head, body);
+  }
+
+  // ── read aloud ────────────────────────────────────────────────────────────────
+  // Reads a selection or the page with a Gnani voice. Text goes out in short pieces and each piece is
+  // queued for playback as soon as it arrives, so audio starts after the first piece, not the last.
+  const READ_MAX_CHARS = 6000;
+  const READ_CHUNK_CHARS = 520;
+  const READ_FIRST_CHARS = 200;
+  const SCRIPT_LANGUAGES = [
+    [/[ऀ-ॿ]/g, "hi-IN"],
+    [/[ঀ-৿]/g, "bn-IN"],
+    [/[਀-੿]/g, "pa-IN"],
+    [/[઀-૿]/g, "gu-IN"],
+    [/[஀-௿]/g, "ta-IN"],
+    [/[ఀ-౿]/g, "te-IN"],
+    [/[ಀ-೿]/g, "kn-IN"],
+    [/[ഀ-ൿ]/g, "ml-IN"],
+  ];
+  const LANGUAGE_NAMES = {
+    "en-IN": "English",
+    "hi-IN": "Hindi",
+    "bn-IN": "Bengali",
+    "ta-IN": "Tamil",
+    "te-IN": "Telugu",
+    "kn-IN": "Kannada",
+    "ml-IN": "Malayalam",
+    "mr-IN": "Marathi",
+    "gu-IN": "Gujarati",
+    "pa-IN": "Punjabi",
+  };
+
+  function detectReadLanguage(text) {
+    const letters = (text.match(/\p{L}/gu) ?? []).length || 1;
+    let best = ["en-IN", 0];
+    for (const [pattern, code] of SCRIPT_LANGUAGES) {
+      const count = (text.match(pattern) ?? []).length;
+      if (count > best[1]) best = [code, count];
+    }
+    return best[1] / letters >= 0.2 ? best[0] : "en-IN";
+  }
+
+  function readChunks(text) {
+    const sentences = text.replace(/\s+/g, " ").trim().match(/[^.!?।]+[.!?।]*\s*/g) ?? [];
+    const out = [];
+    let current = "";
+    const limit = () => (out.length === 0 ? READ_FIRST_CHARS : READ_CHUNK_CHARS);
+    const flush = () => {
+      if (current.trim()) out.push(current.trim());
+      current = "";
+    };
+    for (let sentence of sentences) {
+      while (sentence.length > limit()) {
+        const cut = sentence.lastIndexOf(" ", limit());
+        const at = cut > limit() * 0.5 ? cut : limit();
+        if ((current + sentence.slice(0, at)).length > limit()) flush();
+        current += sentence.slice(0, at);
+        flush();
+        sentence = sentence.slice(at);
+      }
+      if ((current + sentence).length > limit()) flush();
+      current += sentence;
+    }
+    flush();
+    return out;
+  }
+
+  function readablePageText() {
+    const root = document.querySelector("article") || document.querySelector("main, [role=main]") || document.body;
+    const text = (root?.innerText ?? "").replace(/\s+/g, " ").trim();
+    return text.length >= 80 ? text : (document.body?.innerText ?? "").replace(/\s+/g, " ").trim();
+  }
+
+  function stopReading() {
+    const r = S.reader;
+    if (!r) return;
+    S.reader = null;
+    for (const source of r.sources) {
+      try {
+        source.onended = null;
+        source.stop();
+      } catch {}
+    }
+    r.ctx.close().catch(() => {});
+    r.pill?.remove();
+  }
+
+  function startReading(rawText) {
+    stopReading();
+    ensureHost();
+    const text = String(rawText ?? "").replace(/\s+/g, " ").trim();
+    if (!text) return showToast("There's nothing to read here.");
+    if (!S.connected) {
+      showToast("Connect Captain Thread to your Thread account to use read-aloud.");
+      send("captain:connect");
+      return;
+    }
+    let ctx;
+    try {
+      ctx = new AudioContext(); // created inside the click, so the page allows it to play
+    } catch {
+      return showToast("This page doesn't allow audio.");
+    }
+    void ctx.resume().catch(() => {});
+    const clipped = text.slice(0, READ_MAX_CHARS);
+    const reader = {
+      ctx,
+      language: detectReadLanguage(clipped),
+      chunks: readChunks(clipped),
+      clipped: text.length > READ_MAX_CHARS,
+      sources: new Set(),
+      cursor: 0,
+      fetchDone: false,
+      status: "preparing",
+      error: null,
+      pill: null,
+    };
+    S.reader = reader;
+    renderReader();
+    void runReader(reader);
+  }
+
+  async function runReader(r) {
+    for (const chunk of r.chunks) {
+      if (S.reader !== r) return;
+      const res = await send("captain:speak", { text: chunk, language: r.language });
+      if (S.reader !== r) return;
+      if (!res?.ok) {
+        r.error = res?.error ?? "Couldn't reach Thread. Try again.";
+        break;
+      }
+      try {
+        const bytes = Uint8Array.from(atob(res.audio), (c) => c.charCodeAt(0));
+        const buffer = await r.ctx.decodeAudioData(bytes.buffer);
+        if (S.reader !== r) return;
+        const source = r.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(r.ctx.destination);
+        const at = Math.max(r.ctx.currentTime + 0.03, r.cursor);
+        r.cursor = at + buffer.duration + 0.05;
+        r.sources.add(source);
+        source.onended = () => {
+          r.sources.delete(source);
+          if (r.fetchDone && r.sources.size === 0 && S.reader === r) stopReading();
+        };
+        source.start(at);
+        if (r.status !== "playing") {
+          r.status = "playing";
+          renderReader();
+        }
+      } catch {
+        r.error = "Couldn't play that audio.";
+        break;
+      }
+    }
+    r.fetchDone = true;
+    if (r.error) {
+      renderReader();
+      setTimeout(() => {
+        if (S.reader === r) stopReading();
+      }, 4500);
+      return;
+    }
+    if (r.sources.size === 0) stopReading();
+  }
+
+  function renderReader() {
+    const r = S.reader;
+    if (!r) return;
+    if (!r.pill) {
+      r.pill = h("div", { class: "tc-pill tc-reader tc-card", attrs: { role: "status" } });
+      r.pill.addEventListener("mousedown", (e) => e.preventDefault());
+      S.layer.append(r.pill);
+    }
+    const name = LANGUAGE_NAMES[r.language] ?? "";
+    const label = r.error ? r.error : r.status === "playing" ? `Reading aloud · ${name}${r.clipped ? " (first part)" : ""}` : "Preparing audio…";
+    r.pill.textContent = "";
+    r.pill.append(
+      h("span", { class: `tc-pill-dot${r.error ? " is-error" : r.status === "playing" ? " is-live" : ""}`, html: icon("speaker", 14) }),
+      h("span", { class: "tc-pill-label", text: label }),
+      h("button", { class: "tc-tr-btn", html: `${icon("stop", 12)}<span>Stop</span>`, attrs: { type: "button" }, on: { click: stopReading } }),
+    );
+  }
+
+  // ── voice typing ──────────────────────────────────────────────────────────────
+  // Press the shortcut (or pick it from Captain's menu) with a text box focused, then just talk:
+  // each phrase is sent to Gnani and typed where the caret was. Esc or Stop ends it.
+  const DICTATION_LANGUAGES = [
+    ["en-IN", "English"],
+    ["hi-IN", "Hindi / Hinglish"],
+    ["bn-IN", "Bengali"],
+    ["ta-IN", "Tamil"],
+    ["te-IN", "Telugu"],
+    ["kn-IN", "Kannada"],
+    ["ml-IN", "Malayalam"],
+    ["mr-IN", "Marathi"],
+    ["gu-IN", "Gujarati"],
+    ["pa-IN", "Punjabi"],
+  ];
+
+  function isEditable(el) {
+    if (!el || !(el instanceof Element)) return false;
+    if (el.tagName === "TEXTAREA") return !el.readOnly && !el.disabled;
+    if (el.tagName === "INPUT") {
+      const type = (el.getAttribute("type") ?? "text").toLowerCase();
+      if (!["text", "search", "url", "email", "tel", ""].includes(type)) return false;
+      // Never type into payment or one-time-code fields.
+      const autocomplete = (el.getAttribute("autocomplete") ?? "").toLowerCase();
+      if (autocomplete.includes("cc-") || autocomplete.includes("one-time-code") || autocomplete.includes("password")) return false;
+      return !el.readOnly && !el.disabled;
+    }
+    return el.isContentEditable;
+  }
+
+  function dictationTarget() {
+    const active = deepActiveElement();
+    if (isEditable(active)) return active;
+    // The user is in some other field (a password or card box, a menu): never redirect their typing
+    // to a different box. Only fall back to the last text box when focus isn't on a form field at all
+    // (the page body, or Captain's own menu).
+    const inCaptain = Boolean(S.root) && active?.getRootNode?.() === S.root;
+    const onField = active && !inCaptain && (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable);
+    if (onField) return null;
+    return S.lastEditable?.isConnected && isEditable(S.lastEditable) ? S.lastEditable : null;
+  }
+
+  async function startDictation() {
+    ensureHost();
+    const target = dictationTarget();
+    if (!target) return showToast("Click inside a text box first, then start voice typing.");
+    if (!S.connected) {
+      showToast("Connect Captain Thread to your Thread account to use voice typing.");
+      send("captain:connect");
+      return;
+    }
+    let language = "en-IN";
+    try {
+      const stored = await chrome.storage.local.get(["dictationLanguage", "language"]);
+      language = stored.dictationLanguage ?? stored.language ?? language;
+    } catch {}
+    S.dict = { target, language, state: "starting", level: 0, first: true, pill: null, meter: null };
+    renderDictation();
+    send("dictation:start", { language });
+  }
+
+  function stopDictation() {
+    const d = S.dict;
+    if (!d || d.state === "stopping") return;
+    d.state = "stopping";
+    renderDictation();
+    send("dictation:stop");
+    // The background confirms with an "idle" state; don't leave the pill stuck if it never does.
+    setTimeout(() => {
+      if (S.dict === d) endDictation();
+    }, 6000);
+  }
+
+  function endDictation() {
+    S.dict?.pill?.remove();
+    S.dict = null;
+  }
+
+  function toggleDictation() {
+    if (S.dict) stopDictation();
+    else void startDictation();
+  }
+
+  function spaceBeforeCaret(el, first) {
+    if (!first) return true;
+    try {
+      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+        const pos = el.selectionStart ?? el.value.length;
+        const prev = el.value.slice(Math.max(0, pos - 1), pos);
+        return Boolean(prev) && !/\s/.test(prev);
+      }
+      const selection = window.getSelection();
+      if (selection?.rangeCount && selection.isCollapsed) {
+        const node = selection.anchorNode;
+        const offset = selection.anchorOffset;
+        if (node?.nodeType === Node.TEXT_NODE && offset > 0) return !/\s/.test(node.textContent[offset - 1]);
+      }
+    } catch {}
+    return false;
+  }
+
+  function insertDictation(text) {
+    const d = S.dict;
+    if (!d || !text) return;
+    const el = d.target;
+    if (!el?.isConnected) return stopDictation();
+    try {
+      el.focus({ preventScroll: true });
+    } catch {}
+    const chunk = (spaceBeforeCaret(el, d.first) ? " " : "") + text;
+    d.first = false;
+    let ok = false;
+    // execCommand keeps the page's own undo history and fires the input events frameworks listen for.
+    try {
+      ok = document.execCommand("insertText", false, chunk);
+    } catch {}
+    if (!ok && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) {
+      try {
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? start;
+        el.setRangeText(chunk, start, end, "end");
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: chunk }));
+        ok = true;
+      } catch {}
+    }
+    if (!ok) showToast("This text box doesn't accept voice typing.");
+  }
+
+  function renderDictation() {
+    const d = S.dict;
+    if (!d) return;
+    if (!d.pill) {
+      d.pill = h("div", { class: "tc-pill tc-dict tc-card", attrs: { role: "status", "aria-label": "Voice typing" } });
+      d.pill.addEventListener("mousedown", (e) => {
+        if (e.target?.tagName !== "SELECT") e.preventDefault(); // keep the caret in the text box
+      });
+      S.layer.append(d.pill);
+    }
+    const language = h(
+      "select",
+      {
+        class: "tc-tr-select",
+        attrs: { "aria-label": "Language you speak" },
+        on: {
+          change: (e) => {
+            d.language = e.target.value;
+            try {
+              chrome.storage.local.set({ dictationLanguage: d.language });
+            } catch {}
+            send("dictation:language", { language: d.language });
+          },
+        },
+      },
+      DICTATION_LANGUAGES.map(([code, label]) => {
+        const option = h("option", { text: label, attrs: { value: code } });
+        if (code === d.language) option.selected = true;
+        return option;
+      }),
+    );
+    d.meter = h("i", {});
+    const label =
+      d.state === "starting" ? "Starting the mic…" : d.state === "stopping" ? "Finishing…" : "Listening — talk, I'll type";
+    d.pill.textContent = "";
+    d.pill.append(
+      h("span", { class: `tc-pill-dot${d.state === "listening" ? " is-live" : ""}`, html: icon("mic", 14) }),
+      h("span", { class: "tc-pill-label", text: label }),
+      h("span", { class: "tc-pill-meter" }, [d.meter]),
+      language,
+      h("button", {
+        class: "tc-tr-btn",
+        html: `${icon("stop", 12)}<span>Stop</span>`,
+        attrs: { type: "button", title: "Stop (Esc)" },
+        on: { click: stopDictation },
+      }),
+    );
   }
 
   async function copyText(text) {
@@ -1025,6 +1624,14 @@
   // ── page listeners ───────────────────────────────────────────────────────────
   const LISTENERS = [
     [
+      "focusin",
+      (e) => {
+        const el = e.composedPath?.()[0] ?? e.target;
+        if (isEditable(el)) S.lastEditable = el;
+      },
+      true,
+    ],
+    [
       "mouseup",
       (e) => {
         if (inOurUi(e)) return;
@@ -1055,6 +1662,9 @@
       (e) => {
         if (e.key !== "Escape") return;
         if (S.area) return endArea();
+        if (S.tr) return closeTranslate();
+        if (S.dict) return stopDictation();
+        if (S.reader) return stopReading();
         if (S.menu) return closeMenu();
         if (S.bar) return hideBar();
         if (S.panel && (inOurUi(e) || !deepActiveElement()?.isContentEditable)) closePanel();
@@ -1115,6 +1725,30 @@
       const picked = currentSelection();
       const text = picked?.text.trim() ? picked.text : String(msg.text ?? "");
       if (text.trim()) openPanel({ text, source: "selection" }, { anchor: picked?.rect ?? null });
+    } else if (msg?.type === "captain:read") {
+      startReading(String(msg.text ?? ""));
+    } else if (msg?.type === "captain:dictate") {
+      toggleDictation();
+    } else if (msg?.type === "captain:dictation-level") {
+      if (S.dict?.meter) S.dict.meter.style.transform = `scaleX(${Math.min(1, (Number(msg.level) || 0) * 12)})`;
+    } else if (msg?.type === "captain:dictation-text") {
+      insertDictation(String(msg.text ?? ""));
+    } else if (msg?.type === "captain:dictation-state") {
+      const d = S.dict;
+      if (!d) return;
+      if (msg.state === "listening") {
+        d.state = "listening";
+        d.language = msg.language ?? d.language;
+        renderDictation();
+      } else if (msg.state === "error") {
+        showToast(msg.message ?? "Voice typing stopped.");
+        if (msg.needsConnect) send("captain:connect");
+        endDictation();
+      } else if (msg.state === "idle") {
+        if (msg.reason === "silence") showToast("Voice typing stopped — I didn't hear anything for a minute.");
+        else if (msg.reason === "limit") showToast("Voice typing stopped after 5 minutes. Start it again to keep going.");
+        endDictation();
+      }
     }
   });
 
@@ -1123,6 +1757,16 @@
     S.settings = res.settings;
     S.connected = res.connected;
     renderDock();
+  });
+
+  // The connect-extension page sets "auth" in storage right after this widget loads, so without
+  // this listener Captain would show "Not connected" until a visibilitychange (tab switch) happened.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !("auth" in changes)) return;
+    const wasConnected = S.connected;
+    S.connected = Boolean(changes.auth.newValue);
+    renderDock();
+    if (S.panel && wasConnected !== S.connected) renderPanel();
   });
 
   // ── styles (inside the shadow root only) ─────────────────────────────────────
@@ -1200,6 +1844,44 @@
 }
 .tc-bar-btn:hover, .tc-bar-btn:focus-visible { background: rgba(255,255,255,.08); color: #fff; }
 .tc-bar-icon { display: grid; place-items: center; padding: 6px 8px; }
+
+/* translate & listen */
+.tc-tr { position: fixed; width: 340px; max-width: calc(100vw - 16px); padding: 10px 12px 12px; animation: tc-pop .16s ease-out; }
+.tc-tr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.tc-tr-head strong { font-size: 12.5px; font-weight: 650; flex: 1; min-width: 0; }
+.tc-tr-title { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; background: rgba(59,130,246,.16); color: #93c5fd; }
+.tc-tr-select {
+  all: unset; box-sizing: border-box; padding: 4px 8px; border-radius: 8px; font-size: 12px; cursor: pointer;
+  background: rgba(255,255,255,.06); border: 1px solid var(--tc-line); color: rgba(255,255,255,.9);
+}
+.tc-tr-select option { background: #0b0b0e; color: #fff; }
+.tc-tr-text { margin: 0 0 10px; font-size: 14px; line-height: 1.6; max-height: 220px; overflow-y: auto; color: rgba(255,255,255,.94); white-space: pre-wrap; }
+.tc-tr-text.is-muted { color: var(--tc-dim); }
+.tc-tr-text.is-error { color: var(--tc-coral); }
+.tc-tr-actions { display: flex; align-items: center; gap: 6px; }
+.tc-tr-btn {
+  all: unset; display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: rgba(255,255,255,.88); background: rgba(255,255,255,.07); border: 1px solid var(--tc-line);
+}
+.tc-tr-btn:hover, .tc-tr-btn:focus-visible { background: rgba(255,255,255,.12); color: #fff; }
+.tc-tr-btn.is-primary { background: linear-gradient(135deg, var(--tc-sky), var(--tc-blue) 55%, var(--tc-blue-2)); border-color: transparent; color: #fff; }
+.tc-tr-by { margin-left: auto; font-size: 11px; color: var(--tc-dim); }
+
+/* read aloud + voice typing pills */
+.tc-pill {
+  position: fixed; left: 0; right: 0; margin: 0 auto; width: max-content; max-width: calc(100vw - 24px);
+  display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 10px; border-radius: 999px;
+  animation: tc-pop .18s ease-out;
+}
+.tc-reader { bottom: 18px; }
+.tc-dict { bottom: 70px; }
+.tc-pill-dot { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(59,130,246,.18); color: #93c5fd; flex: none; }
+.tc-pill-dot.is-live { background: rgba(239,68,68,.2); color: #fca5a5; animation: tc-breathe 1.4s ease-in-out infinite; }
+.tc-pill-dot.is-error { background: rgba(251,113,133,.2); color: var(--tc-coral); }
+.tc-pill-label { font-size: 12.5px; font-weight: 550; color: rgba(255,255,255,.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.tc-pill-meter { width: 46px; height: 5px; border-radius: 3px; overflow: hidden; background: rgba(255,255,255,.1); flex: none; }
+.tc-pill-meter i { display: block; width: 100%; height: 100%; background: #fca5a5; transform: scaleX(0); transform-origin: left; transition: transform .1s linear; }
+@keyframes tc-breathe { 50% { box-shadow: 0 0 0 5px rgba(239,68,68,.12); } }
 
 /* draw-around */
 .tc-area { position: fixed; inset: 0; cursor: crosshair; touch-action: none; background: rgba(2,6,23,.18); animation: tc-fade .15s ease-out; }

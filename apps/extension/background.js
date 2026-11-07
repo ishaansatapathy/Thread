@@ -5,6 +5,7 @@ import {
   registerCaptainMenus,
   sendToCaptain,
 } from "./captain/captain-background.js";
+import { handleDictationMessage, watchDictationTabs } from "./dictation/dictation-background.js";
 import { isAllowedOrigin, meetCodeFromUrl } from "./config.js";
 
 // The auth token lives in storage.local; keep it out of reach of content scripts.
@@ -25,7 +26,13 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.contextMenus.onClicked.addListener(handleCaptainMenuClick);
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === "captain-area" && tab?.id) sendToCaptain(tab.id, { type: "captain:area" });
+  // The page decides whether there's a text box to type into before the mic is touched.
+  if (command === "dictate" && tab?.id) sendToCaptain(tab.id, { type: "captain:dictate" });
 });
+
+// Voice typing: recorder clips come from the hidden page, start/stop from the page itself.
+chrome.runtime.onMessage.addListener(handleDictationMessage);
+watchDictationTabs();
 
 // The Thread web app hands us a token from its "Connect extension" page. The base URL is
 // taken from the verified sender origin, never from the message, so a page can't redirect
