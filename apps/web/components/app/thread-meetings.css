@@ -68,6 +68,34 @@
   transition: transform 0.08s linear;
 }
 
+.thread-voice-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--thread-line-strong);
+  background: transparent;
+  color: var(--thread-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.thread-voice-mode:hover {
+  color: var(--thread-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.thread-voice-mode[aria-pressed="true"] {
+  color: var(--app-blue-soft, #93b4ff);
+  border-color: rgba(59, 108, 246, 0.45);
+  background: rgba(59, 108, 246, 0.14);
+}
+
 .thread-voice-time {
   min-width: 26px;
   font-family: var(--thread-mono);

@@ -25,7 +25,17 @@ function toSpeechText(markdown: string): string {
  * user's speaking language). Falls back to the browser's built-in voice if Gnani can't be reached,
  * so the button never goes silent.
  */
-export function SpeakButton({ text }: { text: string }) {
+export function SpeakButton({
+  text,
+  autoPlay = false,
+  label,
+}: {
+  text: string;
+  /** Start speaking as soon as the button appears (hands-free voice replies). */
+  autoPlay?: boolean;
+  /** Show a labelled pill ("Listen") instead of the small round icon. */
+  label?: string;
+}) {
   const [voiceLanguage] = useVoiceLanguage();
   const [state, setState] = useState<"idle" | "loading" | "speaking">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -98,16 +108,23 @@ export function SpeakButton({ text }: { text: string }) {
     }
   }, [speakWithBrowser, stop, text, voiceLanguage]);
 
+  useEffect(() => {
+    if (autoPlay) void speak();
+    // Only when the button first appears: re-running on every text/language change would restart the audio.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <button
       type="button"
-      className="thread-speak-btn"
+      className={label ? "thread-speak-btn thread-speak-pill" : "thread-speak-btn"}
       onClick={state === "idle" ? () => void speak() : stop}
       aria-pressed={state === "speaking"}
       aria-label={state === "idle" ? "Read this reply aloud" : "Stop reading"}
       title={state === "idle" ? "Read aloud (Gnani)" : "Stop reading"}
     >
       {state === "loading" ? <Loader2 size={13} className="thread-spin" /> : state === "speaking" ? <VolumeX size={13} /> : <Volume2 size={13} />}
+      {label ? <span>{state === "idle" ? label : state === "loading" ? "Preparing…" : "Stop"}</span> : null}
     </button>
   );
 }

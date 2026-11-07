@@ -24,6 +24,7 @@ import {
   ListChecks,
   Square,
   Upload,
+  Volume2,
   X,
 } from "lucide-react";
 
@@ -464,6 +465,12 @@ function AgentPageContent() {
   const [toolMemory, setToolMemory] = useState<ToolMemoryEntry[]>([]);
   const [lastActions, setLastActions] = useState<ActionCard[]>([]);
   const [isPending, setIsPending] = useState(false);
+  // Hands-free voice mode: what you say is sent straight away and Thread's answer is read aloud.
+  const [voiceMode, setVoiceMode] = useState(false);
+  // Index of the reply to read aloud, so reopening an old chat never starts talking by itself.
+  const [speakReplyAt, setSpeakReplyAt] = useState<number | null>(null);
+  const sendRef = useRef<(text: string) => boolean>(() => false);
+  const voiceModeRef = useRef(false);
   const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [focus, setFocus] = useState<AgentFocusState>({});
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -733,6 +740,7 @@ function AgentPageContent() {
     streamAbortRef.current = abortController;
 
     setInput("");
+    setSpeakReplyAt(voiceMode ? messages.length + 1 : null);
     setFiles([]);
     setLastActions([]);
     setStreamStatus(null);
@@ -935,6 +943,33 @@ function AgentPageContent() {
     };
   }, [plusOpen]);
 
+  // The mic's callback can outlive the render it was created in, so it reads the latest values from refs.
+  useEffect(() => {
+    sendRef.current = send;
+    voiceModeRef.current = voiceMode;
+  });
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem("thread-voice-mode") === "1") setVoiceMode(true);
+    } catch {
+      // Private mode: voice mode simply starts off.
+    }
+  }, []);
+
+  useEffect(() => setSpeakReplyAt(null), [activeSessionId]);
+
+  const toggleVoiceMode = () => {
+    const next = !voiceMode;
+    setVoiceMode(next);
+    if (!next) setSpeakReplyAt(null);
+    try {
+      window.localStorage.setItem("thread-voice-mode", next ? "1" : "0");
+    } catch {
+      // Not persisted; still works for this visit.
+    }
+  };
+
   const modeLabel = approvalSettingsReady
     ? agentAutoApprove
       ? "Auto-approve on"
@@ -1014,8 +1049,21 @@ function AgentPageContent() {
       <VoiceInputButton
         hotkey
         disabled={isPending}
-        onText={(text) => setInput((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))}
+        onText={(text) => {
+          if (voiceModeRef.current) sendRef.current(text);
+          else setInput((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text));
+        }}
       />
+      <button
+        type="button"
+        className="thread-voice-mode"
+        aria-pressed={voiceMode}
+        aria-label="Hands-free voice replies"
+        title={voiceMode ? "Voice mode on: what you say is sent and the answer is read aloud (Gnani)" : "Voice mode: send what you say and hear the answer (Gnani)"}
+        onClick={toggleVoiceMode}
+      >
+        <Volume2 size={15} />
+      </button>
       <span className="thread-agent-mode" data-on={agentAutoApprove ? "true" : undefined}>
         {modeLabel}
       </span>
@@ -1179,7 +1227,7 @@ function AgentPageContent() {
                       <div className="thread-chat-assistant">
                         <AgentMarkdown text={typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)} />
                         {typeof msg.content === "string" && msg.content.trim() && !(isPending && i === messages.length - 1) ? (
-                          <SpeakButton text={msg.content} />
+                          <SpeakButton text={msg.content} autoPlay={voiceMode && speakReplyAt === i} />
                         ) : null}
                       </div>
                     </div>

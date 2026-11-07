@@ -3697,6 +3697,17 @@ button.thread-unsub-btn:disabled {
   border-color: rgba(255, 255, 255, 0.18);
 }
 
+.thread-speak-pill {
+  width: auto;
+  height: 30px;
+  margin-top: 0;
+  padding: 0 12px;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
 .thread-speak-btn[aria-pressed="true"] {
   color: var(--app-blue-soft, #93b4ff);
   border-color: rgba(59, 108, 246, 0.4);
@@ -5564,6 +5575,18 @@ button.thread-unsub-btn:disabled {
   justify-content: space-between;
   gap: 24px;
   padding-bottom: 12px;
+}
+
+.thread-brief-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.thread-brief-header-actions .thread-speak-pill {
+  height: 36px;
+  padding: 0 14px;
 }
 
 .thread-brief-header-main {

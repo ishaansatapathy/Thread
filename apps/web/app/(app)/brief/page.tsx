@@ -24,6 +24,7 @@ import type { RouterOutputs } from "@repo/trpc/client";
 import { trpc } from "~/trpc/client";
 import { SkeletonList } from "~/components/app/skeleton-list";
 import { SmartContextPanel } from "~/components/app/smart-context-panel";
+import { SpeakButton } from "~/components/app/speak-button";
 import { MeetingPrepPanel } from "~/components/app/meeting-prep-panel";
 import {
   dismissBriefThread,
@@ -34,6 +35,21 @@ import {
 type DailyBrief = RouterOutputs["ai"]["dailyBrief"];
 type BriefItem = DailyBrief["needsAttention"][number];
 type BriefAction = DailyBrief["recommendedActions"][number];
+
+/** What gets read aloud: the greeting, the summary, today's focus and the top things needing attention. */
+function briefSpeech(brief: DailyBrief) {
+  const sentence = (text?: string) => (text?.trim() ? `${text.trim().replace(/[.!?]+$/, "")}. ` : "");
+  const attention = brief.needsAttention.slice(0, 4).map((item) => item.headline.trim().replace(/[.!?]+$/, ""));
+  return [
+    sentence(brief.greeting),
+    sentence(brief.summary),
+    sentence(`Today's focus: ${brief.todaysFocus.headline}`),
+    sentence(brief.todaysFocus.detail),
+    attention.length ? `Needs your attention: ${attention.join(". ")}.` : "",
+  ]
+    .join("")
+    .trim();
+}
 
 function briefAgentUrl(prompt: string, threadId?: string) {
   const params = new URLSearchParams({ prompt });
@@ -589,6 +605,8 @@ export default function BriefPage() {
             </h1>
             {brief ? <p className="thread-brief-summary">{brief.summary}</p> : null}
           </div>
+          <div className="thread-brief-header-actions">
+            {brief ? <SpeakButton text={briefSpeech(brief)} label="Listen" /> : null}
           <button
             type="button"
             className="thread-brief-refresh"
@@ -605,6 +623,7 @@ export default function BriefPage() {
             )}
             Refresh
           </button>
+          </div>
         </header>
 
         {loading ? (
