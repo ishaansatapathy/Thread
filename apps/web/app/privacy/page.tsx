@@ -100,6 +100,40 @@ export default function PrivacyPage() {
           <li>Thread never joins or records a Meet call without you starting it from the extension.</li>
         </ul>
         <p>
+          <strong>Voice features</strong> (voice typing, read aloud, translate and listen, and
+          Catch me up) only run when you start them — with the keyboard shortcut, the right-click
+          menu, or a button.
+        </p>
+        <ul>
+          <li>
+            Voice typing records your microphone only while it is switched on, sends short clips
+            to Gnani to turn them into text, and types the result into the box you chose. It
+            refuses password, card-number and one-time-code fields. It stops by itself after a
+            minute of silence, when you press Esc, or when you leave the page. Audio is not
+            stored.
+          </li>
+          <li>
+            Read aloud and translate and listen send the text you selected (or the page text you
+            asked to hear) to Thread, which translates it if needed and has Gnani speak it. The
+            text is not kept after the request, apart from a short-lived in-memory cache so the
+            same sentence is not processed twice.
+          </li>
+          <li>
+            Catch me up summarises the recent part of the live transcript of a meeting you are in
+            and reads it to you in the language you pick.
+          </li>
+        </ul>
+        <p>
+          <strong>Dubbing and your voice.</strong> Dubbing in Thread Meetings changes audio only,
+          never the video, and only when you turn it on. Hearing a call translated, or speaking in
+          another language, are separate switches you control. Saving a meeting&apos;s audio so it
+          can be dubbed after the call is optional, and saved audio is deleted automatically after
+          48 hours or when you delete the meeting. Thread creates a copy of your voice (through
+          ElevenLabs) only from a sample you record yourself, uses it only for your own lines, and
+          you can delete it at any time from the Meetings page. Other speakers are never cloned;
+          they are given a standard Gnani voice.
+        </p>
+        <p>
           <strong>What stays on your device:</strong> the extension stores your sign-in token and a
           few preferences (like whether Captain Thread is on for a site) in Chrome&apos;s local
           extension storage, set to be unreadable by web pages. This never leaves your browser
@@ -138,8 +172,14 @@ export default function PrivacyPage() {
             <strong>OpenAI</strong> — AI summaries, replies and the Thread agent.
           </li>
           <li>
-            <strong>Gnani</strong> — live, multilingual speech-to-text for Meet calls and voice
-            input, used only when you record or speak into Thread.
+            <strong>Gnani</strong> — live, multilingual speech-to-text for Meet calls, voice typing
+            and voice input, and text-to-speech for read aloud, translate and listen, catch-up and
+            dubbing. Used only when you record, speak or ask to hear something.
+          </li>
+          <li>
+            <strong>ElevenLabs</strong> — speaks your own lines in your own cloned voice when you
+            have created one, and times dubbed audio. Not used unless you opt in to My voice
+            dubbing.
           </li>
           <li>
             <strong>Vercel</strong> and <strong>Render</strong> — hosting and deployment for the
