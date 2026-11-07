@@ -9,9 +9,10 @@ import { ServiceError } from "@repo/services/errors";
 
 import { ANALYSIS_RATE, TONE_VOICE_SETTINGS, analyzeLine, resampleBy, type Tone } from "./dub-media";
 import { startDub, type DubRun } from "./dub-pipeline";
-import { translateUtterance, type DubTargetCode } from "./dub-translate";
+import { DUB_TARGETS, GNANI_ONLY_TARGETS, translateUtterance, type DubTargetCode } from "./dub-translate";
 import { synthesizeLive } from "./elevenlabs";
-import { transcribeClip } from "./gnani";
+import { canGnaniSpeak, gnaniVoiceForPitch, isGnaniConfigured, synthesizeSpeech, transcribeClip } from "./gnani";
+import { translateCached } from "./translation-cache";
 import { assembleMeetingAudio, meetingWorkDir, readPcm16, type SpeechSpan } from "./meeting-audio";
 import { getMeeting } from "./meetings";
 import { getVoiceProfile, stockVoice } from "./voice-profile";
@@ -59,6 +60,11 @@ export async function startMeetingDub(userId: string, meetingId: string, target:
   }
 
   const profile = await getVoiceProfile(userId);
+  const gnaniCanSpeak = isGnaniConfigured() && canGnaniSpeak(target);
+  const gnaniOnly = GNANI_ONLY_TARGETS.has(target);
+  const language = DUB_TARGETS.find((t) => t.code === target)?.label ?? target;
+  // Voices are handed out in order per pitch group, so two similar-sounding speakers get different voices.
+  const handedOut = { male: 0, female: 0 };
   const run = startDub(
     {
       id: meetingId,
@@ -67,11 +73,23 @@ export async function startMeetingDub(userId: string, meetingId: string, target:
       durationSeconds: audio.seconds,
       speakerAt: (start, end) => speakerOverlapping(audio.spans, start, end),
       voiceFor: async (speaker, pitchHz) => {
-        if (speaker === "you" && profile) return { voiceId: profile };
-        if (speaker === "you") {
-          return { voiceId: stockVoice(pitchHz), notice: "Set up My voice to hear your own lines in your own voice." };
+        // The user's own consented clone, wherever ElevenLabs can speak the language.
+        if (speaker === "you" && profile && !gnaniOnly) return { voice: { provider: "elevenlabs", voiceId: profile } };
+        const notice =
+          speaker !== "you"
+            ? undefined
+            : profile
+              ? `Your own voice isn't available in ${language} yet, so your lines use a Gnani voice.`
+              : "Set up My voice to hear your own lines in your own voice.";
+        // Everyone else is voiced by Gnani wherever it speaks the language.
+        if (gnaniCanSpeak) {
+          const group = pitchHz >= 165 ? "female" : "male";
+          return { voice: { provider: "gnani", voice: gnaniVoiceForPitch(pitchHz, handedOut[group]++) }, notice };
         }
-        return { voiceId: stockVoice(pitchHz) };
+        if (gnaniOnly) {
+          throw new ServiceError("PRECONDITION_FAILED", `Dubbing into ${language} needs GNANI_API_KEY on the server.`);
+        }
+        return { voice: { provider: "elevenlabs", voiceId: stockVoice(pitchHz) }, notice };
       },
     },
     target,
@@ -94,6 +112,10 @@ type LiveState = { recent: string[]; loudness: number[]; pitch: number[]; touche
 const live = new Map<string, LiveState>();
 const MAX_LIVE_STATES = 500;
 const HISTORY = 40;
+/** Utterances up to this many words are cached after translation. */
+const SHORT_UTTERANCE_WORDS = 12;
+/** Gnani has no stability/style knobs; its speed is the one control, nudged by how the speaker sounded. */
+const GNANI_TONE_SPEED: Record<Tone, number> = { excited: 1.08, calm: 0.94, serious: 0.98, neutral: 1 };
 
 function liveState(key: string): LiveState {
   let state = live.get(key);
@@ -131,8 +153,14 @@ export async function dubLiveUtterance(
 ): Promise<LiveDubResult | null> {
   await getMeeting(userId, meetingId);
 
+  const gnaniOnly = GNANI_ONLY_TARGETS.has(input.target);
+  const gnaniCanSpeak = isGnaniConfigured() && canGnaniSpeak(input.target);
+  if (gnaniOnly && !gnaniCanSpeak) {
+    throw new ServiceError("PRECONDITION_FAILED", "That language needs GNANI_API_KEY on the server.");
+  }
   const profile = input.direction === "speak" ? await getVoiceProfile(userId) : null;
-  if (input.direction === "speak" && !profile) {
+  // ElevenLabs can't speak every Gnani language, so "speak" there uses a Gnani voice and needs no clone.
+  if (input.direction === "speak" && !profile && !gnaniOnly) {
     throw new ServiceError("PRECONDITION_FAILED", "Set up My voice in Thread first, so the call hears you in your own voice.");
   }
 
@@ -152,17 +180,42 @@ export async function dubLiveUtterance(
   const pitchDelta = prosody.pitchHz > 0 && basePitch > 0 ? 12 * Math.log2(prosody.pitchHz / basePitch) : 0;
   const tone = liveTone(loudnessDelta, pitchDelta);
 
-  const translation = await translateUtterance(text, input.target, state.recent);
+  // Short phrases ("okay", "thanks everyone") come up again and again; translate them once.
+  const short = text.split(/\s+/).length <= SHORT_UTTERANCE_WORDS;
+  const translation = short
+    ? (await translateCached(`live:${userId}`, input.target, text, () => translateUtterance(text, input.target, state.recent))).translation
+    : await translateUtterance(text, input.target, state.recent);
   if (!translation) return null;
 
   const settings = TONE_VOICE_SETTINGS[tone];
-  const audio = await synthesizeLive({
-    voiceId: profile ?? stockVoice(prosody.pitchHz || basePitch),
-    text: translation,
-    previousText: state.recent.at(-1),
-    stability: settings.stability,
-    style: settings.style,
-  });
+  const pitch = basePitch || prosody.pitchHz;
+  // The user's own words go out in their clone (ElevenLabs); everything else Gnani speaks.
+  const useClone = Boolean(profile) && !gnaniOnly;
+  const audio = useClone
+    ? await synthesizeLive({
+        voiceId: profile!,
+        text: translation,
+        previousText: state.recent.at(-1),
+        stability: settings.stability,
+        style: settings.style,
+      })
+    : gnaniCanSpeak
+      ? (
+          await synthesizeSpeech({
+            text: translation,
+            language: input.target,
+            voice: gnaniVoiceForPitch(pitch),
+            speed: GNANI_TONE_SPEED[tone],
+            format: "mp3",
+          })
+        ).audio
+      : await synthesizeLive({
+          voiceId: stockVoice(pitch),
+          text: translation,
+          previousText: state.recent.at(-1),
+          stability: settings.stability,
+          style: settings.style,
+        });
   state.recent = [...state.recent, translation].slice(-5);
 
   return { audio, text, translation, gainDb: Math.round(Math.max(-6, Math.min(6, loudnessDelta)) * 10) / 10, tone };

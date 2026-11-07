@@ -18,6 +18,13 @@ export const DUB_TARGETS = [
   { code: "hi", label: "Hindi" },
   { code: "en", label: "English" },
   { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "mr", label: "Marathi" },
+  { code: "bn", label: "Bengali" },
+  { code: "gu", label: "Gujarati" },
+  { code: "pa", label: "Punjabi" },
   { code: "es", label: "Spanish" },
   { code: "fr", label: "French" },
   { code: "de", label: "German" },
@@ -37,6 +44,9 @@ export function isDubTarget(code: string): code is DubTargetCode {
   return DUB_TARGETS.some((t) => t.code === code);
 }
 
+/** Languages only Gnani can speak (ElevenLabs' voices don't cover them), so every voice is Gnani's. */
+export const GNANI_ONLY_TARGETS: ReadonlySet<string> = new Set(["te", "kn", "ml", "mr", "pa", "bn", "gu"]);
+
 function targetInstructions(code: DubTargetCode): string {
   if (code === "hinglish") {
     return `Target: Hinglish — the natural Hindi-English mix urban Indian speakers actually use.
@@ -47,6 +57,9 @@ Do not force pure Hindi for words people normally say in English.`;
     return `Target: Hindi, in Devanagari. Keep names, brands and technical terms that Hindi speakers say in English in Latin script.`;
   }
   const label = DUB_TARGETS.find((t) => t.code === code)!.label;
+  if (GNANI_ONLY_TARGETS.has(code)) {
+    return `Target: ${label}, written in the native ${label} script (no Latin transliteration), natural spoken register (this is dubbed speech, not subtitles). Keep names and brands as-is, and keep widely used English tech terms in Latin script only if a ${label} speaker would say them in English.`;
+  }
   return `Target: ${label}, natural spoken register (this is dubbed speech, not subtitles). Keep names and brands as-is.`;
 }
 
@@ -384,4 +397,46 @@ Return JSON: { "translation": "..." }`,
     { task: "dub_live", jsonObject: true, temperature: 0.2 },
   );
   return parseJson<{ translation?: string }>(raw).translation?.trim() ?? "";
+}
+
+/** Translates text the user selected on a page (not a spoken utterance) so it can be read aloud. */
+export async function translateSelection(text: string, target: DubTargetCode): Promise<string> {
+  const raw = await createChatCompletion(
+    [
+      {
+        role: "system",
+        content: `You translate text a reader selected on a web page or document so it can be read aloud.
+${targetInstructions(target)}
+Keep the meaning, numbers, names and code identifiers exact. Plain text only: no markdown, no commentary, no quotation marks around the result. Code blocks stay as they are.
+${DATA_RULE}
+Return JSON: { "translation": "..." }`,
+      },
+      { role: "user", content: text },
+    ],
+    { task: "dub_live", jsonObject: true, temperature: 0.2 },
+  );
+  return parseJson<{ translation?: string }>(raw).translation?.trim() ?? "";
+}
+
+/**
+ * "Catch me up": a short spoken update on what was said in the last few minutes of a meeting, in the
+ * listener's language. "You" in the transcript is the listener, so anything asked of them is called out.
+ */
+export async function catchUpSummary(transcript: string, target: DubTargetCode, minutes: number): Promise<string> {
+  const raw = await createChatCompletion(
+    [
+      {
+        role: "system",
+        content: `You are quietly catching someone up on a meeting they stopped following. The transcript below is the last ${minutes} minutes, one line per speaker turn; "You" is the person you're talking to.
+Say what they missed as a short spoken update: 3 to 5 sentences, at most 90 words. Cover what was discussed, any decision, and anything asked of or promised by "You". Don't read names of speakers like a list, and don't open with "In the last ${minutes} minutes".
+${targetInstructions(target)}
+Plain spoken sentences only — no markdown, no bullets, no placeholders. If little was said, say so in one sentence.
+${DATA_RULE}
+Return JSON: { "summary": "..." }`,
+      },
+      { role: "user", content: transcript },
+    ],
+    { task: "dub_live", jsonObject: true, temperature: 0.3 },
+  );
+  return parseJson<{ summary?: string }>(raw).summary?.trim() ?? "";
 }

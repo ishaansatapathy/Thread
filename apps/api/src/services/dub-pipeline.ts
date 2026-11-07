@@ -41,9 +41,14 @@ import {
 } from "./dub-align";
 import { buildContext, shortenSentence, translateSentences, type DubTargetCode, type SentenceInput } from "./dub-translate";
 import { isElevenLabsConfigured, synthesizeWithTimestamps, transcribeWords, type ScribeWord } from "./elevenlabs";
-import { isGnaniConfigured, transcribeClip } from "./gnani";
+import { isGnaniConfigured, synthesizeSpeech, transcribeClip } from "./gnani";
 
 export type DubStage = "extracting" | "transcribing" | "analyzing" | "translating" | "voices" | "voicing" | "mixing" | "done";
+
+/** Which engine speaks for a speaker. Gnani voices are fitted per phrase; ElevenLabs per sentence. */
+export type DubVoice = { provider: "elevenlabs"; voiceId: string } | { provider: "gnani"; voice: string };
+
+const voiceKey = (v: DubVoice) => (v.provider === "elevenlabs" ? `el:${v.voiceId}` : `gn:${v.voice}`);
 
 /** What to dub and how each speaker should sound. */
 export type DubSource = {
@@ -54,8 +59,8 @@ export type DubSource = {
   durationSeconds: number;
   /** Who is speaking in [start, end] when the caller knows better than diarization (e.g. mic vs. tab). */
   speakerAt?: (start: number, end: number) => string | null;
-  /** Voice id for a speaker; their median pitch helps pick a matching stock voice. */
-  voiceFor: (speaker: string, pitchHz: number) => Promise<{ voiceId: string; notice?: string }>;
+  /** Voice for a speaker; their median pitch helps pick a matching stock voice. */
+  voiceFor: (speaker: string, pitchHz: number) => Promise<{ voice: DubVoice; notice?: string }>;
 };
 
 export type DubChunk = {
@@ -162,7 +167,9 @@ const SPEECH_PAD_AFTER = 0.35;
 let runningRuns = 0;
 
 export function assertCanDub() {
-  if (!isElevenLabsConfigured()) throw new ServiceError("PRECONDITION_FAILED", "Dubbing needs ELEVENLABS_API_KEY on the server.");
+  if (!isElevenLabsConfigured() && !isGnaniConfigured()) {
+    throw new ServiceError("PRECONDITION_FAILED", "Dubbing needs ELEVENLABS_API_KEY or GNANI_API_KEY on the server.");
+  }
   if (!process.env.OPENAI_API_KEY?.trim()) throw new ServiceError("PRECONDITION_FAILED", "Dubbing needs OPENAI_API_KEY on the server.");
   if (runningRuns >= MAX_CONCURRENT_RUNS) {
     throw new ServiceError("BAD_REQUEST", "The dubbing studio is busy. Try again in a few minutes.");
@@ -455,10 +462,83 @@ function chooseCuts(
   };
 }
 
+/**
+ * Gnani gives audio but no timing data, so a sentence can't be spoken once and cut apart. Instead each
+ * pause-delimited phrase is spoken on its own, with Gnani's own speed control aimed at that phrase's
+ * original slot; the shared per-phrase fitting then handles whatever is left over.
+ */
+async function gnaniPhraseTakes(
+  run: DubRun,
+  index: number,
+  voiceName: string,
+  ttsDir: string,
+  input: SentenceInput,
+  ctx: Awaited<ReturnType<typeof buildContext>>,
+  pace: Pace,
+): Promise<Float32Array[]> {
+  const line = run.lines[index]!;
+  const speakable = (i: number) => /[\p{L}\p{N}]/u.test(line.chunks[i]!.text);
+  const slotOf = (i: number) => Math.max(0.3, line.chunks[i]!.end - line.chunks[i]!.start);
+
+  const synth = async (i: number, speed: number) => {
+    const text = line.chunks[i]!.text;
+    const speech = await synthesizeSpeech({ text, language: run.target, voice: voiceName, speed, format: "wav", priority: "bulk" });
+    const file = path.join(ttsDir, `${line.id}-${i}.wav`);
+    await writeFile(file, speech.audio);
+    const pcm = await decodeToF32(file, path.join(ttsDir, `${line.id}-${i}.f32`), MIX_RATE);
+    const [from, to] = trimSilence(pcm, MIX_RATE);
+    const spoken = (to - from) / MIX_RATE;
+    pace.chars += text.length;
+    pace.seconds += spoken * speed;
+    return { pcm, spoken };
+  };
+
+  const pass = async () => {
+    const takes: Float32Array[] = [];
+    let spokenTotal = 0;
+    let slotTotal = 0;
+    for (let i = 0; i < line.chunks.length; i++) {
+      if (!speakable(i)) {
+        takes.push(new Float32Array(0));
+        continue;
+      }
+      const slot = slotOf(i);
+      const length = line.chunks[i]!.text.length;
+      const speed = clampSpeed(pace.seconds > 2 ? (length * (pace.seconds / pace.chars)) / slot : 1);
+      let take = await synth(i, speed);
+      const ratio = take.spoken / slot;
+      if (ratio > 1 + RETAKE_TOLERANCE || ratio < 1 - RETAKE_TOLERANCE) {
+        const better = clampSpeed(speed * ratio);
+        if (Math.abs(better - speed) > 0.03) take = await synth(i, better);
+      }
+      takes.push(take.pcm);
+      spokenTotal += take.spoken;
+      slotTotal += slot;
+    }
+    return { takes, ratio: slotTotal > 0 ? spokenTotal / slotTotal : 1 };
+  };
+
+  let result = await pass();
+  if (result.ratio > SHORTEN_ABOVE) {
+    // Already at Gnani's fastest pace and still too long: say it more briefly instead of rushing it.
+    const shorter = await shortenSentence(
+      input,
+      { translation: line.translation, parts: line.chunks.map((c) => c.text) },
+      ctx,
+      run.target,
+      result.ratio,
+    );
+    line.translation = shorter.translation;
+    shorter.parts.forEach((p, i) => (line.chunks[i]!.text = p));
+    result = await pass();
+  }
+  return result.takes;
+}
+
 async function voiceSentence(
   run: DubRun,
   index: number,
-  voiceId: string,
+  voice: DubVoice,
   ttsDir: string,
   input: SentenceInput,
   ctx: Awaited<ReturnType<typeof buildContext>>,
@@ -468,6 +548,27 @@ async function voiceSentence(
   analysis: Float32Array,
   baseline: SpeakerBaseline,
 ): Promise<PlacedPiece[]> {
+  const line = run.lines[index]!;
+  let rawFor: (i: number) => Float32Array;
+  if (voice.provider === "gnani") {
+    const takes = await gnaniPhraseTakes(run, index, voice.voice, ttsDir, input, ctx, pace);
+    rawFor = (i) => takes[i] ?? new Float32Array(0);
+  } else {
+    rawFor = await elevenLabsSentenceTake(run, index, voice.voiceId, ttsDir, input, ctx, pace);
+  }
+  return fitPhrases(line, rawFor, nextSpeechStart, original, analysis, baseline);
+}
+
+/** ElevenLabs: speak the whole sentence once, then cut it at phrase boundaries using its character timing. */
+async function elevenLabsSentenceTake(
+  run: DubRun,
+  index: number,
+  voiceId: string,
+  ttsDir: string,
+  input: SentenceInput,
+  ctx: Awaited<ReturnType<typeof buildContext>>,
+  pace: Pace,
+): Promise<(i: number) => Float32Array> {
   const line = run.lines[index]!;
   const settings = TONE_VOICE_SETTINGS[line.tone];
   // The take includes the speaker's own pauses, so it is compared against the whole sentence span.
@@ -529,13 +630,24 @@ async function voiceSentence(
     line.chunks = [{ ...first, end: last.end, source: line.original, text: line.chunks.map((c) => c.text).join(" ") }];
   }
   const bounds = [0, ...split.cuts.map((t) => Math.round(t * MIX_RATE)), pcm.length];
+  return (i) => pcm.subarray(bounds[i]!, Math.max(bounds[i]!, bounds[i + 1]!));
+}
 
+/** Places each phrase's audio inside its original slot, matched to the speaker's rhythm, pitch and loudness. */
+function fitPhrases(
+  line: DubLine,
+  rawFor: (i: number) => Float32Array,
+  nextSpeechStart: number,
+  original: Float32Array,
+  analysis: Float32Array,
+  baseline: SpeakerBaseline,
+): PlacedPiece[] {
   const pieces: PlacedPiece[] = [];
   // End of the previous phrase as placed; a phrase that ran long pushes the next one back
   // (into the speaker's pause) instead of being cut off mid-word.
   let cursor = 0;
   for (const [i, chunk] of line.chunks.entries()) {
-    const raw = pcm.subarray(bounds[i]!, Math.max(bounds[i]!, bounds[i + 1]!));
+    const raw = rawFor(i);
     const [from, to] = trimSilence(raw, MIX_RATE);
     let piece: Float32Array = raw.subarray(from, to);
     if (piece.length === 0) continue;
@@ -672,11 +784,11 @@ async function runPipeline(src: DubSource, run: DubRun) {
   run.stage = "voices";
   run.progress = null;
   const original = await decodeToF32(source, path.join(dir, "a44.f32"), MIX_RATE);
-  const voiceBySpeaker = new Map<string, string>();
+  const voiceBySpeaker = new Map<string, DubVoice>();
   for (const speaker of new Set(run.lines.map((l) => l.speaker))) {
     const pitch = median(run.lines.filter((l) => l.speaker === speaker && l.prosody.pitchHz > 0).map((l) => l.prosody.pitchHz));
     const choice = await src.voiceFor(speaker, pitch);
-    voiceBySpeaker.set(speaker, choice.voiceId);
+    voiceBySpeaker.set(speaker, choice.voice);
     if (choice.notice) run.notice = choice.notice;
   }
 
@@ -697,18 +809,19 @@ async function runPipeline(src: DubSource, run: DubRun) {
   }
   await mapLimit(run.lines, 3, async (line, i) => {
     const nextSpeechStart = run.lines[i + 1]?.start ?? Math.max(duration, line.end + 1);
-    const voiceId = voiceBySpeaker.get(line.speaker)!;
-    if (!paceByVoice.has(voiceId)) paceByVoice.set(voiceId, { chars: 0, seconds: 0 });
+    const voice = voiceBySpeaker.get(line.speaker)!;
+    const key = voiceKey(voice);
+    if (!paceByVoice.has(key)) paceByVoice.set(key, { chars: 0, seconds: 0 });
     placed[i] = await voiceSentence(
       run,
       i,
-      voiceId,
+      voice,
       ttsDir,
       inputs[i]!,
       ctx,
       nextSpeechStart,
       original,
-      paceByVoice.get(voiceId)!,
+      paceByVoice.get(key)!,
       analysis,
       baselines.get(line.speaker)!,
     );
