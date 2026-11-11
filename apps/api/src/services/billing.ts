@@ -52,6 +52,16 @@ export const STARTER_CREDITS = Math.max(0, Number(process.env.BILLING_STARTER_CR
 
 export const billingEnforced = () => process.env.BILLING_ENFORCED === "1";
 
+/** Admins: users with the admin role, plus anyone listed in ADMIN_EMAILS (comma-separated). */
+export function isAdminUser(user: { email: string; role?: string }): boolean {
+  if (user.role === "admin") return true;
+  const listed = (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return listed.includes(user.email.toLowerCase());
+}
+
 /** A request from the Chrome extension carries a bearer token and no cookies. */
 export function usageSource(req: Request): UsageSource {
   const bearer = /^Bearer\s+\S+$/.test(String(req.headers.authorization ?? ""));
@@ -301,11 +311,25 @@ export async function markPaymentFailed(orderId: string) {
 
 export async function usageOverview(days: number) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const [bySource, byFeature, daily, topUsers] = await Promise.all([
+  const [bySource, byFeature, daily, users, totals] = await Promise.all([
     db.execute(sql`select source, count(*)::int as events, count(distinct user_id)::int as users from usage_events where created_at >= ${since} group by source order by events desc`),
     db.execute(sql`select feature, source, count(*)::int as events, coalesce(sum(credits),0)::int as credits from usage_events where created_at >= ${since} group by feature, source order by events desc`),
     db.execute(sql`select to_char(created_at, 'YYYY-MM-DD') as day, source, count(*)::int as events from usage_events where created_at >= ${since} group by 1, 2 order by 1`),
-    db.execute(sql`select u.email, count(*)::int as events, sum((e.source = 'extension')::int)::int as extension_events from usage_events e join ${usersTable} u on u.id = e.user_id where e.created_at >= ${since} group by u.email order by events desc limit 15`),
+    // Everyone, busiest first. People with no activity in the window still show up (events = 0).
+    db.execute(sql`
+      select u.email, u.created_at as joined,
+        count(e.id)::int as events,
+        coalesce(sum((e.source = 'extension')::int), 0)::int as extension_events,
+        coalesce(sum(case when e.charged = 1 then e.credits else 0 end), 0)::int as credits_spent,
+        max(e.created_at) as last_active,
+        w.balance
+      from ${usersTable} u
+      left join usage_events e on e.user_id = u.id and e.created_at >= ${since}
+      left join credit_wallets w on w.user_id = u.id
+      group by u.id, u.email, u.created_at, w.balance
+      order by events desc, u.created_at desc
+      limit 200`),
+    db.execute(sql`select (select count(*)::int from ${usersTable}) as total_users, (select count(distinct user_id)::int from usage_events where created_at >= ${since}) as active_users, (select count(distinct user_id)::int from usage_events where created_at >= ${since} and source = 'extension') as extension_users`),
   ]);
-  return { days, bySource: bySource.rows, byFeature: byFeature.rows, daily: daily.rows, topUsers: topUsers.rows };
+  return { days, totals: totals.rows[0], bySource: bySource.rows, byFeature: byFeature.rows, daily: daily.rows, users: users.rows };
 }

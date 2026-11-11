@@ -19,7 +19,8 @@ type Usage = {
   days: number;
   bySource: Array<{ source: string; events: number; users: number }>;
   byFeature: Array<{ feature: string; source: string; events: number; credits: number }>;
-  topUsers: Array<{ email: string; events: number; extension_events: number }>;
+  totals: { total_users: number; active_users: number; extension_users: number };
+  users: Array<{ email: string; joined: string; events: number; extension_events: number; credits_spent: number; last_active: string | null; balance: number | null }>;
 };
 type RazorpayResponse = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
 type RazorpayWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, cb: () => void) => void } };
@@ -53,6 +54,7 @@ export default function BillingPage() {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
+  const [days, setDays] = useState(7);
 
   const load = useCallback(async () => {
     try {
@@ -62,13 +64,13 @@ export default function BillingPage() {
       setSummary(data);
       setError(null);
       if (data.isAdmin) {
-        const usageRes = await fetch("/api-billing/admin/usage?days=7", { credentials: "include" });
+        const usageRes = await fetch(`/api-billing/admin/usage?days=${days}`, { credentials: "include" });
         if (usageRes.ok) setUsage((await usageRes.json()) as Usage);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load your credits.");
     }
-  }, []);
+  }, [days]);
 
   useEffect(() => {
     void load();
@@ -190,7 +192,19 @@ export default function BillingPage() {
 
         {summary.isAdmin && usage ? (
           <section>
-            <h2 className="thread-credits-h">Usage, last {usage.days} days (admin)</h2>
+            <h2 className="thread-credits-h">
+              Usage (admin)
+              <select className="thread-credits-range" value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Time range">
+                {[1, 7, 30, 90].map((d) => (
+                  <option key={d} value={d}>{d === 1 ? "Last 24 hours" : `Last ${d} days`}</option>
+                ))}
+              </select>
+            </h2>
+            <ul className="thread-credits-costs">
+              <li><span>Accounts</span><b>{usage.totals.total_users}</b></li>
+              <li><span>Active in this period</span><b>{usage.totals.active_users}</b></li>
+              <li><span>Using the Chrome extension</span><b>{usage.totals.extension_users}</b></li>
+            </ul>
             <ul className="thread-credits-costs">
               {usage.bySource.map((row) => (
                 <li key={row.source}>
@@ -207,14 +221,26 @@ export default function BillingPage() {
                 </li>
               ))}
             </ul>
-            <ul className="thread-credits-costs">
-              {usage.topUsers.map((row) => (
-                <li key={row.email}>
-                  <span>{row.email}</span>
-                  <b>{row.events} ({row.extension_events} via extension)</b>
-                </li>
-              ))}
-            </ul>
+            <div className="thread-credits-table-wrap">
+              <table className="thread-credits-table">
+                <thead>
+                  <tr><th>User</th><th>Actions</th><th>Extension</th><th>Credits used</th><th>Balance</th><th>Last active</th><th>Joined</th></tr>
+                </thead>
+                <tbody>
+                  {usage.users.map((row) => (
+                    <tr key={row.email} data-idle={row.events === 0 ? "true" : undefined}>
+                      <td>{row.email}</td>
+                      <td>{row.events}</td>
+                      <td>{row.extension_events}</td>
+                      <td>{row.credits_spent}</td>
+                      <td>{row.balance ?? "—"}</td>
+                      <td>{row.last_active ? new Date(row.last_active).toLocaleDateString() : "—"}</td>
+                      <td>{new Date(row.joined).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         ) : null}
       </div>

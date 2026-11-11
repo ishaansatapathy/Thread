@@ -6906,3 +6906,46 @@ button.thread-unsub-btn:disabled {
 .thread-credits-history b[data-positive] {
   color: #4ade80;
 }
+
+.thread-credits-range {
+  margin-left: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--thread-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--thread-text);
+  font-size: 12px;
+}
+
+.thread-credits-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--thread-line-strong);
+  border-radius: 12px;
+}
+
+.thread-credits-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.thread-credits-table th,
+.thread-credits-table td {
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.thread-credits-table th {
+  color: var(--thread-muted);
+  font-weight: 550;
+  border-bottom: 1px solid var(--thread-line-strong);
+}
+
+.thread-credits-table tr + tr td {
+  border-top: 1px solid var(--thread-line);
+}
+
+.thread-credits-table tr[data-idle] td {
+  color: var(--thread-muted);
+}

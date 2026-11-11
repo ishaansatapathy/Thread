@@ -11,7 +11,6 @@ import { z } from "zod";
 
 import AuthService from "@repo/services/auth";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
-import { isAdminRole } from "@repo/services/auth/roles";
 import { ServiceError } from "@repo/services/errors";
 import { logger } from "@repo/logger";
 
@@ -19,6 +18,7 @@ import {
   completePayment,
   createOrder,
   getBillingSummary,
+  isAdminUser,
   markPaymentFailed,
   usageOverview,
   verifyCheckoutSignature,
@@ -49,7 +49,7 @@ billingRouter.get("/", async (req, res) => {
   const user = await authService.resolveSession(req, res);
   if (!user) return res.status(401).json({ error: "Authentication required" });
   try {
-    return res.json({ ...(await getBillingSummary(user.id)), isAdmin: isAdminRole(user.role) });
+    return res.json({ ...(await getBillingSummary(user.id)), isAdmin: isAdminUser(user) });
   } catch (error) {
     return sendError(res, error, "Could not load your credits.");
   }
@@ -122,7 +122,7 @@ billingRouter.post("/webhook", async (req, res) => {
 billingRouter.get("/admin/usage", async (req, res) => {
   const user = await authService.resolveSession(req, res);
   if (!user) return res.status(401).json({ error: "Authentication required" });
-  if (!isAdminRole(user.role)) return res.status(403).json({ error: "Admins only." });
+  if (!isAdminUser(user)) return res.status(403).json({ error: "Admins only." });
   const days = Math.min(90, Math.max(1, Number(req.query.days ?? 7) || 7));
   try {
     return res.json(await usageOverview(days));
