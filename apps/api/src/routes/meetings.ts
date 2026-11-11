@@ -36,6 +36,7 @@ import {
 import { DUB_TARGETS, isDubTarget } from "../services/dub-translate";
 import { isElevenLabsConfigured } from "../services/elevenlabs";
 import { canGnaniSpeak, isGnaniConfigured, normalizeGnaniLanguage } from "../services/gnani";
+import { CREDIT_COSTS, dubCost, metered, recordUsage, respondIfOutOfCredits, usageSource } from "../services/billing";
 import { MEETING_AUDIO_RETENTION_HOURS, meetingAudioSeconds } from "../services/meeting-audio";
 import { catchUpOnMeeting } from "../services/meeting-catchup";
 import { dubLiveUtterance, getMeetingDub, startMeetingDub, toPublicRun } from "../services/meeting-dub";
@@ -84,6 +85,7 @@ function errorStatus(code: ServiceError["code"]): number {
 }
 
 function sendServiceError(res: express.Response, error: unknown, fallback: string) {
+  if (respondIfOutOfCredits(res, error)) return res;
   if (error instanceof ServiceError) {
     return res.status(errorStatus(error.code)).json({ error: error.message });
   }
@@ -217,7 +219,11 @@ meetingsRouter.post("/:id/dub", express.json({ limit: "4kb" }), async (req, res)
   const target = String(req.body?.target ?? "");
   if (!isDubTarget(target)) return res.status(400).json({ error: "Pick a language to dub into" });
   try {
-    return res.status(202).json({ run: toPublicRun(await startMeetingDub(user.id, req.params.id, target)) });
+    const seconds = await meetingAudioSeconds(req.params.id);
+    const run = await metered({ userId: user.id, source: usageSource(req), feature: "dub" }, dubCost(seconds), () =>
+      startMeetingDub(user.id, req.params.id, target),
+    );
+    return res.status(202).json({ run: toPublicRun(run) });
   } catch (error) {
     return sendServiceError(res, error, "Could not start dubbing.");
   }
@@ -264,6 +270,7 @@ meetingsRouter.post(
         target,
       });
       if (!result) return res.status(204).end();
+      void recordUsage({ userId: user.id, source: usageSource(req), feature: "live_dub" });
       res.setHeader("X-Transcript", encodeURIComponent(result.text.slice(0, 1500)));
       res.setHeader("X-Translation", encodeURIComponent(result.translation.slice(0, 1500)));
       res.setHeader("X-Gain-Db", String(result.gainDb));
@@ -290,7 +297,9 @@ meetingsRouter.post("/:id/catch-up", express.json({ limit: "2kb" }), async (req,
   if (!isDubTarget(target) || !canGnaniSpeak(target)) return res.status(400).json({ error: "Pick an Indian language or English." });
   if (!Number.isFinite(minutes)) return res.status(400).json({ error: "minutes must be a number" });
   try {
-    const result = await catchUpOnMeeting(user.id, req.params.id, { minutes, target });
+    const result = await metered({ userId: user.id, source: usageSource(req), feature: "catch_up" }, CREDIT_COSTS.catchUp, () =>
+      catchUpOnMeeting(user.id, req.params.id, { minutes, target }),
+    );
     return res.json({
       text: result.text,
       summarized: result.summarized,

@@ -22,6 +22,7 @@ import {
   transcribeClip,
 } from "../services/gnani";
 import { MAX_CHUNK_AUDIO_BYTES } from "../services/meetings";
+import { CREDIT_COSTS, metered, recordUsage, respondIfOutOfCredits, speakCost, usageSource } from "../services/billing";
 import { translateCached } from "../services/translation-cache";
 
 const authService = new AuthService();
@@ -44,6 +45,7 @@ speechRouter.get("/status", async (req, res) => {
 });
 
 function sendSpeechError(res: express.Response, error: unknown, fallback: string) {
+  if (respondIfOutOfCredits(res, error)) return res;
   if (error instanceof ServiceError) {
     const status = error.code === "PRECONDITION_FAILED" ? 412 : error.code === "BAD_REQUEST" ? 400 : 502;
     return res.status(status).json({ error: error.message });
@@ -69,7 +71,9 @@ speechRouter.post("/speak", express.json({ limit: "32kb" }), async (req, res) =>
   const voice = req.body?.voice === "female" ? gnaniVoiceForPitch(220) : gnaniVoiceForPitch(110);
 
   try {
-    const speech = await speakText({ text, language, voice });
+    const speech = await metered({ userId: user.id, source: usageSource(req), feature: "speak" }, speakCost(text.length), () =>
+      speakText({ text, language, voice }),
+    );
     return res.type(speech.mimeType).send(speech.audio);
   } catch (error) {
     return sendSpeechError(res, error, "Could not read that aloud.");
@@ -95,14 +99,17 @@ speechRouter.post("/translate-speak", express.json({ limit: "16kb" }), async (re
   if (!isDubTarget(target) || !canGnaniSpeak(target)) return res.status(400).json({ error: "Pick one of the Indian languages or English." });
 
   try {
-    const { translation, cached } = await translateCached(`sel:${user.id}`, target, text, () => translateSelection(text, target));
-    if (!translation) return res.status(502).json({ error: "Could not translate that." });
-    const speech = await speakText({
-      text: translation,
-      language: target,
-      voice: req.body?.voice === "female" ? gnaniVoiceForPitch(220) : gnaniVoiceForPitch(110),
+    const result = await metered({ userId: user.id, source: usageSource(req), feature: "translate_speak" }, CREDIT_COSTS.translateSpeak, async () => {
+      const { translation, cached } = await translateCached(`sel:${user.id}`, target, text, () => translateSelection(text, target));
+      if (!translation) throw new ServiceError("INTERNAL", "Could not translate that.");
+      const speech = await speakText({
+        text: translation,
+        language: target,
+        voice: req.body?.voice === "female" ? gnaniVoiceForPitch(220) : gnaniVoiceForPitch(110),
+      });
+      return { translation, cached, speech };
     });
-    return res.json({ translation, cached, mimeType: speech.mimeType, audio: speech.audio.toString("base64") });
+    return res.json({ translation: result.translation, cached: result.cached, mimeType: result.speech.mimeType, audio: result.speech.audio.toString("base64") });
   } catch (error) {
     return sendSpeechError(res, error, "Could not translate that.");
   }
@@ -134,6 +141,7 @@ speechRouter.post(
         { data: req.body, filename: "voice.wav", mimeType: String(req.header("x-file-type") ?? "").trim() || "audio/wav" },
         language,
       );
+      void recordUsage({ userId: user.id, source: usageSource(req), feature: "dictation" });
       return res.json({ text, language });
     } catch (error) {
       if (error instanceof ServiceError) {

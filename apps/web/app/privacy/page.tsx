@@ -182,6 +182,12 @@ export default function PrivacyPage() {
             dubbing.
           </li>
           <li>
+            <strong>Razorpay</strong> — takes payments when you buy credits. Card, UPI and bank
+            details go to Razorpay only; Thread stores just the order, the amount and the payment
+            id, so it can add your credits. Thread also keeps a count of the features you use, and
+            whether it came from the web app or the extension, to work out credits and fix issues.
+          </li>
+          <li>
             <strong>Vercel</strong> and <strong>Render</strong> — hosting and deployment for the
             web app and API.
           </li>

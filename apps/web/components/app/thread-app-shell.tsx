@@ -14,6 +14,7 @@ import {
   ListChecks,
   Bot,
   BarChart2,
+  Coins,
   Menu,
   X,
   Sun,
@@ -35,7 +36,10 @@ const NAV_TOP = [
   { label: "Queue", href: "/queue", icon: ListChecks },
 ];
 
-const NAV_BOTTOM = [{ label: "Analytics", href: "/analytics", icon: BarChart2 }];
+const NAV_BOTTOM = [
+  { label: "Analytics", href: "/analytics", icon: BarChart2 },
+  { label: "Credits", href: "/billing", icon: Coins },
+];
 
 const GOOGLE_APPS: Array<{ label: string; href: string; status: AppKey }> = [
   { label: "Mail", href: "/inbox", status: "gmail" },
@@ -136,6 +140,7 @@ const PAGE_META: Record<string, { title: string; sub: string }> = {
   "/calendar": { title: "Calendar", sub: "Schedule without switching tabs" },
   "/agent": { title: "Agent", sub: "AI assistant — always through Queue" },
   "/analytics": { title: "Analytics", sub: "Queue activity & trends" },
+  "/billing": { title: "Credits", sub: "Balance, top up and usage" },
   "/settings": { title: "Settings", sub: "Account & connections" },
   "/apps/drive": { title: "Drive", sub: "Files Thread can save and organise" },
   "/apps/docs": { title: "Docs", sub: "Documents the agent can read and write" },

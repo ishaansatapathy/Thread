@@ -10,4 +10,5 @@ export * from "./models/gmail-state";
 export * from "./models/calendar-state";
 export * from "./models/agent-upload";
 export * from "./models/meeting-recording";
+export * from "./models/billing";
 export * from "./relations";

@@ -33,6 +33,7 @@ import { agentStreamRouter } from "./routes/agent-stream";
 import { agentUploadsRouter } from "./routes/agent-uploads";
 import { meetingsRouter } from "./routes/meetings";
 import { speechRouter } from "./routes/speech";
+import { billingRouter } from "./routes/billing";
 import { extensionRouter } from "./routes/extension";
 import { syncEventsRouter } from "./routes/sync-events";
 import { attachmentsRouter } from "./routes/attachments";
@@ -231,7 +232,15 @@ app.use(
 
 app.use(requireTrustedOrigin);
 app.use(cookieParser());
-app.use(express.json({ limit: "256kb" }));
+app.use(
+  express.json({
+    limit: "256kb",
+    // Razorpay signs the exact bytes it sends, so the webhook needs the unparsed body as well.
+    verify: (req, _res, buf) => {
+      if (req.url?.startsWith("/billing/webhook")) (req as unknown as { rawBody?: Buffer }).rawBody = buf;
+    },
+  }),
+);
 
 app.get("/", (_req, res) => {
   return res.json({
@@ -347,6 +356,7 @@ app.use("/agent/stream", agentStreamRouter);
 app.use("/agent/uploads", agentUploadsRouter);
 app.use("/meetings", meetingsRouter);
 app.use("/speech", speechRouter);
+app.use("/billing", billingRouter);
 app.use("/extension", extensionRouter);
 app.use("/sync/events", syncEventsRouter);
 app.use("/inbox/attachments", attachmentsRouter);

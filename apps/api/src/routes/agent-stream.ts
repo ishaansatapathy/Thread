@@ -14,6 +14,7 @@ import {
 } from "@repo/services/ai/agent-sessions";
 import { PAGE_CONTEXT_MAX_CHARS } from "@repo/services/ai/agent-page-context";
 import { checkDistributedRateLimit } from "@repo/services/cache/rate-limit";
+import { CREDIT_COSTS, chargeUpfront, respondIfOutOfCredits, usageSource } from "../services/billing";
 
 const toolMemoryEntrySchema = z.object({
   at: z.string(),
@@ -100,6 +101,17 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
     focusMeetingId,
     pageContext,
   } = parsed.data;
+
+  // One credit per message (only while billing is enforced); always logged. Taken before streaming
+  // starts so an empty wallet gets a clean 402 instead of a half-open stream.
+  let spend: Awaited<ReturnType<typeof chargeUpfront>>;
+  try {
+    spend = await chargeUpfront({ userId: user.id, source: usageSource(req), feature: "agent_message" }, CREDIT_COSTS.agentMessage);
+  } catch (error) {
+    if (respondIfOutOfCredits(res, error)) return;
+    logger.warn("agent.stream.credits_failed", { userId: user.id, message: error instanceof Error ? error.message : String(error) });
+    return res.status(500).json({ error: "Could not check your credits. Try again." });
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -209,6 +221,8 @@ agentStreamRouter.post("/", async (req: Request, res: Response) => {
       toolMemory: result.toolMemory ?? effectiveToolMemory,
     });
   } catch (error) {
+    // The user got no answer, so they get their credit back.
+    await spend.refund().catch(() => undefined);
     if (abortController.signal.aborted) return;
     const errMessage = error instanceof Error ? error.message : "Agent encountered an error";
     logger.warn("agent.stream.error", { userId: user.id, error: errMessage });

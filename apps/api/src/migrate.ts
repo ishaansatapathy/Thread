@@ -67,6 +67,50 @@ ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS mode varchar(20) DEFAULT
 ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS meet_url varchar(500);
 ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS summarized_count integer DEFAULT 0 NOT NULL;
 ALTER TABLE meeting_recordings ADD COLUMN IF NOT EXISTS ended_at timestamp;
+
+-- Billing: usage log (also shows how much the Chrome extension is used), credit wallets, Razorpay payments.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source text NOT NULL,
+  feature text NOT NULL,
+  credits integer DEFAULT 0 NOT NULL,
+  charged integer DEFAULT 0 NOT NULL,
+  created_at timestamp DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS usage_events_user_created_idx ON usage_events (user_id, created_at);
+CREATE INDEX IF NOT EXISTS usage_events_created_idx ON usage_events (created_at);
+CREATE TABLE IF NOT EXISTS credit_wallets (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  balance integer DEFAULT 0 NOT NULL,
+  updated_at timestamp DEFAULT now() NOT NULL
+);
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind text NOT NULL,
+  delta integer NOT NULL,
+  balance_after integer NOT NULL,
+  note text,
+  payment_id text,
+  created_at timestamp DEFAULT now() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS credit_transactions_user_created_idx ON credit_transactions (user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_payment_idx ON credit_transactions (payment_id);
+CREATE TABLE IF NOT EXISTS payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  razorpay_order_id text NOT NULL,
+  razorpay_payment_id text,
+  pack_id text NOT NULL,
+  amount integer NOT NULL,
+  credits integer NOT NULL,
+  status text DEFAULT 'created' NOT NULL,
+  created_at timestamp DEFAULT now() NOT NULL,
+  paid_at timestamp
+);
+CREATE UNIQUE INDEX IF NOT EXISTS payments_order_idx ON payments (razorpay_order_id);
+CREATE INDEX IF NOT EXISTS payments_user_idx ON payments (user_id, created_at);
 `;
 
 export async function runMigrations() {
