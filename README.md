@@ -9,17 +9,9 @@ A full-stack productivity application built **entirely on the [Corsair SDK](http
 Short demo clips — click to watch on X:
 
 | # | Link |
-|---|------|
-| Pitch | [**Pitch deck**](https://x.com/i/status/2067656941967679952) |
-| YC style | [It is what it is ep-2](https://x.com/i/status/2067686374627754123) |
-| 1 | [Demo clip 1](https://x.com/i/status/2067065490665824474) |
-| 2 | [Demo clip 2](https://x.com/i/status/2066048923446509906) |
-| 3 | [Demo clip 3](https://x.com/i/status/2065872033465208947) |
-| 4 | [Demo clip 4](https://x.com/i/status/2065345490581962875) |
-| 5 | [Demo clip 5](https://x.com/i/status/2065344446368202923) |
-| 6 | [Demo clip 6](https://x.com/i/status/2064950664061677607) |
+Yt Link :(https://youtu.be/5Myu45hIPR0)
 
-Live app: [thread-web.vercel.app](https://thread-web.vercel.app) · API docs: [thread-api.vercel.app/docs](https://thread-api.vercel.app/docs)
+Live app: [thread-web.vercel.app](https://thread.ishaandev.co.in) · API docs: [thread-api.vercel.app/docs](https://thread-api.vercel.app/docs)
 
 ## Feature Table
 
